@@ -1,0 +1,35 @@
+{
+	"schemaVersion": 1,
+	"id": "chat-upgrade",
+	"version": "${version}",
+	"name": "Chat upgrade",
+	"description": "Bracket-style URL previews in chat.",
+	"authors": [
+		"chat-upgrade"
+	],
+	"icon": "assets/chat-upgrade/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.chat.upgrade.ChatUpgrade"
+		],
+		"client": [
+			"com.chat.upgrade.client.ChatUpgradeClient"
+		],
+		"preLaunch": [
+			"com.chat.upgrade.ChatUpgradeAwtBootstrap"
+		]
+	},
+	"mixins": [
+		{
+			"config": "chat-upgrade.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.18.6",
+		"minecraft": "~26.1",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

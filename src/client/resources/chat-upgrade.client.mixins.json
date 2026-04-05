@@ -1,0 +1,18 @@
+{
+	"required": true,
+	"package": "com.chat.upgrade.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ChatDrawingGraphicsAccessor",
+		"ChatComponentGraphicsScopeMixin",
+		"ChatComponentMixin",
+		"ChatComponentInnerMixin",
+		"GuiMessageLineMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
