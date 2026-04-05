@@ -23,7 +23,10 @@ public final class UpgradeHudInlinePaint {
         GuiGraphicsExtractor gfx = ChatUpgradeRenderScope.current();
         if (gfx == null) return;
 
-        ImageEntry entry = ImageLoader.getOrLoad(resourceUrl);
+        ImageEntry entry = ImageLoader.getIfPresent(resourceUrl);
+        if (entry == null) {
+            return;
+        }
 
         switch (entry.getState()) {
             case FAILED -> {}

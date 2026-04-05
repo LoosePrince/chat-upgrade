@@ -1,12 +1,5 @@
 package com.chat.upgrade.client;
 
-import com.chat.upgrade.ChatUpgrade;
-import com.mojang.blaze3d.platform.NativeImage;
-import com.mojang.blaze3d.platform.Window;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.Identifier;
-
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,6 +11,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.chat.upgrade.ChatUpgrade;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.platform.Window;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
+
 public final class ImageLoader {
     // Preview region: PHANTOM_COUNT lines × 9px/line
     public static final int PHANTOM_COUNT = 6;
@@ -25,8 +26,10 @@ public final class ImageLoader {
     public static final int MAX_PREVIEW_WIDTH = 320;
 
     /**
-     * Extra multiplier on top of {@linkplain #previewTexelsPerGuiPixel(Window) logical→framebuffer density}:
-     * texture is still blitted into the same MC-unit rectangle, but holds more texels for sharper minification.
+     * Extra multiplier on top of {@linkplain #previewTexelsPerGuiPixel(Window)
+     * logical→framebuffer density}:
+     * texture is still blitted into the same MC-unit rectangle, but holds more
+     * texels for sharper minification.
      */
     public static final int PREVIEW_SUPER_SAMPLING = 2;
 
@@ -40,11 +43,14 @@ public final class ImageLoader {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    private ImageLoader() {}
+    private ImageLoader() {
+    }
 
     /**
-     * How many framebuffer pixels correspond to one horizontal GUI unit (and similarly vertical).
-     * Layout stays in MC units; texture resolution tracks this so ~one texel can cover one physical pixel under the quad.
+     * How many framebuffer pixels correspond to one horizontal GUI unit (and
+     * similarly vertical).
+     * Layout stays in MC units; texture resolution tracks this so ~one texel can
+     * cover one physical pixel under the quad.
      */
     public static double previewTexelsPerGuiPixelX(Window window) {
         int sw = window.getGuiScaledWidth();
@@ -57,12 +63,14 @@ public final class ImageLoader {
     }
 
     /**
-     * Releases every registered chat-image texture and clears the URL cache. Call when GUI scale or window size
+     * Releases every registered chat-image texture and clears the URL cache. Call
+     * when GUI scale or window size
      * changes so subsequent loads match the new logical→screen mapping.
      */
     public static void invalidateTextureCache() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null) return;
+        if (mc == null)
+            return;
         var textures = mc.getTextureManager();
         for (ImageEntry e : new ArrayList<>(CACHE.values())) {
             if (e.isLoaded()) {
@@ -78,6 +86,8 @@ public final class ImageLoader {
 
     /**
      * Returns the entry for the given URL, starting a load if not already cached.
+     * Failed loads are not kept in {@link #CACHE}; the next call starts a new
+     * attempt.
      */
     public static ImageEntry getOrLoad(String url) {
         return CACHE.computeIfAbsent(url, u -> {
@@ -131,9 +141,13 @@ public final class ImageLoader {
         entry.setFailed();
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
+            CACHE.remove(url, entry);
             return;
         }
-        mc.execute(() -> UpgradePhantomHudLayout.notifyUrlEntryChanged(url));
+        mc.execute(() -> {
+            UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+            CACHE.remove(url, entry);
+        });
     }
 
     private static void scheduleTextureRegistration(String url, ImageEntry entry, NativeImage img) {
@@ -157,7 +171,8 @@ public final class ImageLoader {
                 displayW = (int) Math.min(rawW * scale, MAX_PREVIEW_WIDTH);
                 displayH = PREVIEW_HEIGHT;
 
-                // If image is wider than tall relative to our constraints, scale by width instead
+                // If image is wider than tall relative to our constraints, scale by width
+                // instead
                 if (rawW > 0 && (double) rawW / rawH > (double) MAX_PREVIEW_WIDTH / PREVIEW_HEIGHT) {
                     scale = (double) MAX_PREVIEW_WIDTH / rawW;
                     displayW = MAX_PREVIEW_WIDTH;
@@ -171,13 +186,13 @@ public final class ImageLoader {
                 if (texW > MAX_TEXTURE_DIMENSION || texH > MAX_TEXTURE_DIMENSION) {
                     double shrink = Math.min(
                             (double) MAX_TEXTURE_DIMENSION / texW,
-                            (double) MAX_TEXTURE_DIMENSION / texH
-                    );
+                            (double) MAX_TEXTURE_DIMENSION / texH);
                     texW = Math.max(1, (int) (texW * shrink));
                     texH = Math.max(1, (int) (texH * shrink));
                 }
 
-                // One resize from full source → supersampled texture; blit still uses displayW×displayH on screen.
+                // One resize from full source → supersampled texture; blit still uses
+                // displayW×displayH on screen.
                 NativeImage scaled = new NativeImage(img.format(), texW, texH, false);
                 img.resizeSubRectTo(0, 0, rawW, rawH, scaled);
                 img.close();

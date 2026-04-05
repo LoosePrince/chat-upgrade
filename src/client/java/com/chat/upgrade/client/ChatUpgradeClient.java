@@ -1,7 +1,13 @@
 package com.chat.upgrade.client;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
@@ -10,11 +16,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 public class ChatUpgradeClient implements ClientModInitializer {
     private static int lastGuiScaledWidth = -1;
@@ -51,55 +52,55 @@ public class ChatUpgradeClient implements ClientModInitializer {
     }
 
     private static void registerCommands() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(
-                        ClientCommands.literal("chatupgrade")
-                                .then(ClientCommands.literal("send")
-                                        .then(ClientCommands.argument("url", StringArgumentType.string())
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+                ClientCommands.literal("chatupgrade")
+                        .then(ClientCommands.literal("send")
+                                .then(ClientCommands.argument("url", StringArgumentType.string())
+                                        .executes(ctx -> sendImageUrl(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "url"),
+                                                "图片"))
+                                        .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                                 .executes(ctx -> sendImageUrl(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "url"),
-                                                        "图片"))
+                                                        StringArgumentType.getString(ctx, "name"))))))
+                        .then(ClientCommands.literal("upload")
+                                .then(ClientCommands.literal("folder")
+                                        .then(ClientCommands.argument("path", StringArgumentType.string())
+                                                .executes(ctx -> uploadFromFolderPath(
+                                                        ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "path"),
+                                                        Optional.empty()))
                                                 .then(ClientCommands.argument("name", StringArgumentType.greedyString())
-                                                        .executes(ctx -> sendImageUrl(ctx.getSource(),
-                                                                StringArgumentType.getString(ctx, "url"),
-                                                                StringArgumentType.getString(ctx, "name"))))
-                                        )
-                                )
-                                .then(ClientCommands.literal("upload")
-                                        .then(ClientCommands.literal("folder")
-                                                .then(ClientCommands.argument("pathAndName", StringArgumentType.greedyString())
                                                         .executes(ctx -> uploadFromFolderPath(
                                                                 ctx.getSource(),
-                                                                StringArgumentType.getString(ctx, "pathAndName")))))
-                                        .then(ClientCommands.literal("pick")
-                                                .executes(ctx -> uploadViaFilePicker(ctx.getSource(), Optional.empty()))
-                                                .then(ClientCommands.argument("displayName", StringArgumentType.greedyString())
-                                                        .executes(ctx -> uploadViaFilePicker(
-                                                                ctx.getSource(),
-                                                                Optional.of(StringArgumentType.getString(ctx, "displayName"))))))
-                                        .then(ClientCommands.literal("paste")
-                                                .executes(ctx -> uploadFromClipboard(ctx.getSource(), Optional.empty()))
-                                                .then(ClientCommands.argument("displayName", StringArgumentType.greedyString())
-                                                        .executes(ctx -> uploadFromClipboard(
-                                                                ctx.getSource(),
-                                                                Optional.of(StringArgumentType.getString(ctx, "displayName"))))))
-                                )
-                                .then(ClientCommands.literal("config")
-                                        .then(ClientCommands.literal("ci")
-                                                .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
-                                                        .executes(ctx -> setCiCompatibility(
-                                                                ctx.getSource(),
-                                                                BoolArgumentType.getBool(ctx, "enabled")))))
-                                        .then(ClientCommands.literal("manual")
-                                                .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
-                                                        .executes(ctx -> setManualImageReveal(
-                                                                ctx.getSource(),
-                                                                BoolArgumentType.getBool(ctx, "enabled")))))
-                                        .then(ClientCommands.literal("reload")
-                                                .executes(ctx -> reloadConfig(ctx.getSource())))
-                                )
-                )
-        );
+                                                                StringArgumentType.getString(ctx, "path"),
+                                                                Optional.of(
+                                                                        StringArgumentType.getString(ctx, "name")))))))
+                                .then(ClientCommands.literal("pick")
+                                        .executes(ctx -> uploadViaFilePicker(ctx.getSource(), Optional.empty()))
+                                        .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                                .executes(ctx -> uploadViaFilePicker(
+                                                        ctx.getSource(),
+                                                        Optional.of(StringArgumentType.getString(ctx, "name"))))))
+                                .then(ClientCommands.literal("paste")
+                                        .executes(ctx -> uploadFromClipboard(ctx.getSource(), Optional.empty()))
+                                        .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                                .executes(ctx -> uploadFromClipboard(
+                                                        ctx.getSource(),
+                                                        Optional.of(StringArgumentType.getString(ctx, "name")))))))
+                        .then(ClientCommands.literal("config")
+                                .then(ClientCommands.literal("ci")
+                                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
+                                                .executes(ctx -> setCiCompatibility(
+                                                        ctx.getSource(),
+                                                        BoolArgumentType.getBool(ctx, "enabled")))))
+                                .then(ClientCommands.literal("manual")
+                                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
+                                                .executes(ctx -> setManualImageReveal(
+                                                        ctx.getSource(),
+                                                        BoolArgumentType.getBool(ctx, "enabled")))))
+                                .then(ClientCommands.literal("reload")
+                                        .executes(ctx -> reloadConfig(ctx.getSource()))))));
     }
 
     private static int setCiCompatibility(FabricClientCommandSource source, boolean enabled) {
@@ -120,8 +121,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
         boolean ci = ChatUpgradeConfig.get().ciCompatibility;
         boolean manual = ChatUpgradeConfig.get().manualImageReveal;
         source.sendFeedback(Component.literal(
-                        "已重载 config/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
-                                + "；手动渲染: " + (manual ? "开" : "关"))
+                "已重载 config/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
+                        + "；手动渲染: " + (manual ? "开" : "关"))
                 .withStyle(ChatFormatting.GREEN));
         return 1;
     }
@@ -150,33 +151,22 @@ public class ChatUpgradeClient implements ClientModInitializer {
     }
 
     /**
-     * {@code pathAndName} 必须以英文 {@code "} 开头与结束路径段；路径后可跟可选显示名，例如：
-     * {@code "D:\img\a.png"} 或 {@code "D:\img\a.png" 截图} 或 {@code "D:\Pictures"} 文件夹图。
+     * {@code path} 由 Brigadier 的 {@link StringArgumentType#string()}
+     * 解析（可引用短语）：含空格的路径用一对 {@code "} 包成<strong>一个</strong>参数，
+     * 例如 {@code "D:\My Pictures\a.png"}；无空格时可不写引号。可选的 {@code name}
+     * 为第二个参数（greedy，可含空格）。
      */
-    private static int uploadFromFolderPath(FabricClientCommandSource source, String pathAndName) {
+    private static int uploadFromFolderPath(FabricClientCommandSource source, String path,
+            Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
             source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
             return 0;
         }
-        String t = pathAndName.trim();
-        if (t.length() < 2 || t.charAt(0) != '"') {
-            source.sendError(Component.literal(
-                    "路径必须用一对英文双引号 \"\" 括起来，例如：/chatupgrade upload folder \"D:\\\\Pictures\\\\a.png\" 或 \"D:\\\\Pictures\" 显示名称")
-                    .withStyle(ChatFormatting.RED));
-            return 0;
-        }
-        int closeQuote = t.indexOf('"', 1);
-        if (closeQuote < 0) {
-            source.sendError(Component.literal("缺少结束的英文双引号 \"。").withStyle(ChatFormatting.RED));
-            return 0;
-        }
-        String innerPath = t.substring(1, closeQuote).trim();
+        String innerPath = path.trim();
         if (innerPath.isEmpty()) {
-            source.sendError(Component.literal("引号内的路径不能为空。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.literal("路径不能为空。").withStyle(ChatFormatting.RED));
             return 0;
         }
-        String tail = t.substring(closeQuote + 1).trim();
-        Optional<String> nameArg = tail.isEmpty() ? Optional.empty() : Optional.of(tail);
 
         Path root = Path.of(innerPath);
         Optional<Path> image = LocalImageSources.resolveFolderOrFile(root);
@@ -187,7 +177,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         Path file = image.get();
-        String displayName = nameArg.orElseGet(() -> displayNameFromPath(file));
+        String displayName = displayNameArg.filter(s -> !s.isBlank())
+                .orElseGet(() -> displayNameFromPath(file));
         source.sendFeedback(Component.literal("正在上传到 Catbox…").withStyle(ChatFormatting.GRAY));
         finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
         return 1;
@@ -240,8 +231,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static void finishUploadAndSend(
             FabricClientCommandSource source,
             CompletableFuture<Optional<String>> uploadFuture,
-            String displayName
-    ) {
+            String displayName) {
         uploadFuture.thenAccept(urlOpt -> Minecraft.getInstance().execute(() -> {
             if (source.getPlayer() == null) {
                 return;
