@@ -22,9 +22,16 @@ public final class ChatUpgradeConfig {
     /** When true, parse and emit {@code [[CICode,...]]}; when false, {@code [[ChatUpgrade,...]]}. */
     public boolean ciCompatibility;
 
+    /**
+     * When true, incoming image URLs are not fetched until the player clicks the aqua {@code [图片: …]} placeholder
+     * in the chat screen (client-side {@link com.chat.upgrade.client.ManualRevealClickEvent}).
+     */
+    public boolean manualImageReveal;
+
     private static ChatUpgradeConfig defaults() {
         ChatUpgradeConfig c = new ChatUpgradeConfig();
         c.ciCompatibility = false;
+        c.manualImageReveal = false;
         return c;
     }
 
@@ -81,6 +88,13 @@ public final class ChatUpgradeConfig {
     public static void setCiCompatibilityAndSave(boolean value) throws IOException {
         synchronized (LOCK) {
             instance.ciCompatibility = value;
+            writeConfigFile();
+        }
+    }
+
+    public static void setManualImageRevealAndSave(boolean value) throws IOException {
+        synchronized (LOCK) {
+            instance.manualImageReveal = value;
             writeConfigFile();
         }
     }

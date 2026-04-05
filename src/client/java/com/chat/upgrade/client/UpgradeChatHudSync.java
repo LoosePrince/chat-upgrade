@@ -8,4 +8,7 @@ import net.minecraft.client.gui.components.ChatComponent;
  */
 public interface UpgradeChatHudSync {
     void refreshInlineLayoutForUrl(String url);
+
+    /** Insert phantom preview rows immediately after {@link ImageLoader#getOrLoad(String)} (e.g. manual reveal click). */
+    void requestLayoutSyncForUrl(String url);
 }

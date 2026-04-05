@@ -1,5 +1,6 @@
 package com.chat.upgrade.client.mixin;
 
+import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ImageLoader;
 import com.chat.upgrade.client.UpgradeBracketCodec;
 import com.chat.upgrade.client.UpgradeChatHudSync;
@@ -54,7 +55,9 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
         if (decoded.hasUrl()) {
             UpgradePhantomCoordinator.pendingDecodedUrl = decoded.url();
-            ImageLoader.getOrLoad(decoded.url());
+            if (!ChatUpgradeConfig.get().manualImageReveal) {
+                ImageLoader.getOrLoad(decoded.url());
+            }
             return decoded.modified();
         }
         return original;
@@ -103,6 +106,11 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @Override
     public void refreshInlineLayoutForUrl(String url) {
+        UpgradePhantomHudLayout.syncLayoutForUrl(url, trimmedMessages);
+    }
+
+    @Override
+    public void requestLayoutSyncForUrl(String url) {
         UpgradePhantomHudLayout.syncLayoutForUrl(url, trimmedMessages);
     }
 }

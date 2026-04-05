@@ -90,6 +90,11 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                         .executes(ctx -> setCiCompatibility(
                                                                 ctx.getSource(),
                                                                 BoolArgumentType.getBool(ctx, "enabled")))))
+                                        .then(ClientCommands.literal("manual")
+                                                .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
+                                                        .executes(ctx -> setManualImageReveal(
+                                                                ctx.getSource(),
+                                                                BoolArgumentType.getBool(ctx, "enabled")))))
                                         .then(ClientCommands.literal("reload")
                                                 .executes(ctx -> reloadConfig(ctx.getSource())))
                                 )
@@ -113,9 +118,25 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int reloadConfig(FabricClientCommandSource source) {
         ChatUpgradeConfig.load();
         boolean ci = ChatUpgradeConfig.get().ciCompatibility;
-        source.sendFeedback(Component.literal("已重载 config/chat-upgrade.json 。CICode 格式: " + (ci ? "开" : "关"))
+        boolean manual = ChatUpgradeConfig.get().manualImageReveal;
+        source.sendFeedback(Component.literal(
+                        "已重载 config/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
+                                + "；手动渲染: " + (manual ? "开" : "关"))
                 .withStyle(ChatFormatting.GREEN));
         return 1;
+    }
+
+    private static int setManualImageReveal(FabricClientCommandSource source, boolean enabled) {
+        try {
+            ChatUpgradeConfig.setManualImageRevealAndSave(enabled);
+            source.sendFeedback(Component.literal(
+                    "手动渲染（点击 [图片: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
     }
 
     private static int sendImageUrl(FabricClientCommandSource source, String url, String name) {

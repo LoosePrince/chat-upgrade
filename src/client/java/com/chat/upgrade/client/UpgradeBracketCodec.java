@@ -2,6 +2,7 @@ package com.chat.upgrade.client;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
@@ -53,11 +54,11 @@ public final class UpgradeBracketCodec {
         String name = m.group(3) != null ? m.group(3).trim() : "图片";
         String matched = m.group(0);
 
-        Component modified = replaceMatchedPayload(original, matched, name);
+        Component modified = replaceMatchedPayload(original, matched, name, url);
         return new DecodedBracket(modified, url, name);
     }
 
-    private static Component replaceMatchedPayload(Component component, String exactPayload, String name) {
+    private static Component replaceMatchedPayload(Component component, String exactPayload, String name, String url) {
         String probe = buildFullText(component);
         if (!probe.contains("[[" + WIRE_TAG_NATIVE) && !probe.contains("[[" + WIRE_TAG_LEGACY)) {
             return component;
@@ -65,7 +66,7 @@ public final class UpgradeBracketCodec {
 
         List<StyledRun> runs = collectStyledRuns(component, Style.EMPTY);
         if (runs.isEmpty()) {
-            return replaceMatchedPayloadFlatten(component, probe, exactPayload, name);
+            return replaceMatchedPayloadFlatten(component, probe, exactPayload, name, url);
         }
 
         StringBuilder joined = new StringBuilder();
@@ -107,7 +108,7 @@ public final class UpgradeBracketCodec {
                 appendStyledFragment(out, run.style, run.text.substring(0, replaceStart - rb));
             }
             if (!inserted) {
-                out.append(buildPlaceholderComponent(name));
+                out.append(buildPlaceholderComponent(name, url));
                 inserted = true;
             }
             if (re > replaceEnd) {
@@ -116,13 +117,13 @@ public final class UpgradeBracketCodec {
         }
 
         if (!inserted) {
-            return replaceMatchedPayloadFlatten(component, fullText, exactPayload, name);
+            return replaceMatchedPayloadFlatten(component, fullText, exactPayload, name, url);
         }
         return out;
     }
 
     /** Fallback when structured visit yields no runs (e.g. unusual {@link Component} types). */
-    private static Component replaceMatchedPayloadFlatten(Component component, String fullText, String exactPayload, String name) {
+    private static Component replaceMatchedPayloadFlatten(Component component, String fullText, String exactPayload, String name, String url) {
         String replaced = fullText.replace(exactPayload, buildPlaceholder(name));
         if (replaced.equals(fullText)) {
             replaced = BRACKET_PAYLOAD_LOOSE.matcher(fullText).replaceFirst(Matcher.quoteReplacement(buildPlaceholder(name)));
@@ -175,9 +176,14 @@ public final class UpgradeBracketCodec {
         return sb.toString();
     }
 
-    public static Component buildPlaceholderComponent(String name) {
-        return Component.literal("[图片: " + name + "]")
-                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withItalic(true));
+    public static Component buildPlaceholderComponent(String name, String imageUrl) {
+        Style style = Style.EMPTY.withColor(ChatFormatting.AQUA).withItalic(true);
+        if (ChatUpgradeConfig.get().manualImageReveal && imageUrl != null && !imageUrl.isBlank()) {
+            style = style.withUnderlined(true)
+                    .withClickEvent(ManualRevealClickEvent.forUrl(imageUrl))
+                    .withHoverEvent(new HoverEvent.ShowText(Component.literal("点击加载图片预览")));
+        }
+        return Component.literal("[图片: " + name + "]").withStyle(style);
     }
 
     private static String buildPlaceholder(String name) {

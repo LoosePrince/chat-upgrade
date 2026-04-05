@@ -1,8 +1,13 @@
 # Chat upgrade
 
+<div align="center">
+
+![Page views](https://count.getloli.com/@LoosePrince#ChatUpgrade)
+
 [![Fabric](https://img.shields.io/badge/Fabric-loader-141417?style=flat-square)](https://fabricmc.net/)
 [![Java](https://img.shields.io/badge/Java-25%2B-ea7100?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/)
-![Page views](https://count.getloli.com/@LoosePrince#ChatUpgrade)
+
+</div>
 
 基于 **Fabric** 的 Minecraft **客户端**模组：在聊天里识别形如 `[[ChatUpgrade,url=…]]`（可选 `[[CICode,url=…]]`）的括号载荷，把链接换成简短占位文案，并在聊天栏旁绘制 URL 预览图（下载中 / 失败提示 / 缩放后的贴图）。
 

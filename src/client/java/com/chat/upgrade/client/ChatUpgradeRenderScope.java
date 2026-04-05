@@ -8,21 +8,25 @@ import java.util.Deque;
 
 /**
  * Holds the active {@link GuiGraphicsExtractor} while {@link net.minecraft.client.gui.components.ChatComponent}
- * runs {@code extractRenderState} (and clears during {@code captureClickableText}). Uses a per-thread stack so
- * nested extract paths stay balanced.
+ * runs {@code extractRenderState}. Uses a per-thread stack so nested extract paths stay balanced.
+ * <p>
+ * {@link ChatComponent}'s {@code captureClickableText} also calls {@code extractRenderState} with a
+ * {@code ChatGraphicsAccess} that does not wrap a {@link GuiGraphicsExtractor}; we push a sentinel instead of
+ * {@code null} because {@link ArrayDeque} rejects null elements.
  */
 public final class ChatUpgradeRenderScope {
-    private static final ThreadLocal<Deque<GuiGraphicsExtractor>> STACK =
-            ThreadLocal.withInitial(ArrayDeque::new);
+    private static final Object NO_EXTRACTOR = new Object();
+
+    private static final ThreadLocal<Deque<Object>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
 
     private ChatUpgradeRenderScope() {}
 
     public static void push(@Nullable GuiGraphicsExtractor extractor) {
-        STACK.get().push(extractor);
+        STACK.get().push(extractor != null ? extractor : NO_EXTRACTOR);
     }
 
     public static void pop() {
-        Deque<GuiGraphicsExtractor> d = STACK.get();
+        Deque<Object> d = STACK.get();
         if (!d.isEmpty()) {
             d.pop();
         }
@@ -34,7 +38,11 @@ public final class ChatUpgradeRenderScope {
     }
 
     public static @Nullable GuiGraphicsExtractor current() {
-        Deque<GuiGraphicsExtractor> d = STACK.get();
-        return d.isEmpty() ? null : d.peek();
+        Deque<Object> d = STACK.get();
+        if (d.isEmpty()) {
+            return null;
+        }
+        Object top = d.peek();
+        return top instanceof GuiGraphicsExtractor g ? g : null;
     }
 }
