@@ -10,7 +10,7 @@ import java.util.Optional;
 public final class AudioControlClickEvent {
     public static final Identifier ID = Identifier.fromNamespaceAndPath(ChatUpgrade.MOD_ID, "audio_control");
 
-    public enum Action { TOGGLE, SEEK }
+    public enum Action { TOGGLE, TOGGLE_LOOP, SEEK }
 
     public record Parsed(Action action, String url, double ratio) {}
 
@@ -23,6 +23,10 @@ public final class AudioControlClickEvent {
     public static ClickEvent forSeek(String url, double ratio) {
         double r = Math.clamp(ratio, 0.0, 1.0);
         return new ClickEvent.Custom(ID, Optional.of(StringTag.valueOf("seek|" + url + "|" + r)));
+    }
+
+    public static ClickEvent forToggleLoop(String url) {
+        return new ClickEvent.Custom(ID, Optional.of(StringTag.valueOf("loop|" + url)));
     }
 
     public static Optional<Parsed> parse(ClickEvent event) {
@@ -57,6 +61,9 @@ public final class AudioControlClickEvent {
                 }
             }
             return Optional.of(new Parsed(Action.SEEK, url, Math.clamp(ratio, 0.0, 1.0)));
+        }
+        if ("loop".equalsIgnoreCase(action)) {
+            return Optional.of(new Parsed(Action.TOGGLE_LOOP, url, 0));
         }
         return Optional.empty();
     }

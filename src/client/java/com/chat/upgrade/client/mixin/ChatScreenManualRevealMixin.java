@@ -45,10 +45,10 @@ public abstract class ChatScreenManualRevealMixin {
         if (audioOpt.isPresent()) {
             AudioControlClickEvent.Parsed p = audioOpt.get();
             AudioLoader.getOrLoad(p.url());
-            if (p.action() == AudioControlClickEvent.Action.TOGGLE) {
-                AudioPlayerService.toggle(p.url());
-            } else {
-                AudioPlayerService.seek(p.url(), p.ratio());
+            switch (p.action()) {
+                case TOGGLE -> AudioPlayerService.toggle(p.url());
+                case TOGGLE_LOOP -> AudioPlayerService.toggleLoop(p.url());
+                case SEEK -> AudioPlayerService.seek(p.url(), p.ratio());
             }
             if (Minecraft.getInstance().gui.getChat() instanceof UpgradeChatHudSync sync) {
                 sync.requestLayoutSyncForUrl("audio:" + p.url());

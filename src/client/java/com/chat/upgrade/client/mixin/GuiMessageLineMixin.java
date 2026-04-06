@@ -23,6 +23,8 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     public abstract boolean endOfEntry();
     @Unique
     private @Nullable String chatupgrade$imageUrl;
+    @Unique
+    private @Nullable String chatupgrade$resourceName;
 
     @Unique
     private boolean chatupgrade$imageIsContinuation;
@@ -32,9 +34,11 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Inject(method = "<init>", at = @At("TAIL"))
     private void chatupgrade$captureImageData(CallbackInfo ci) {
         this.chatupgrade$resourceType = UpgradePhantomCoordinator.nextPhantomTopType;
+        this.chatupgrade$resourceName = UpgradePhantomCoordinator.nextPhantomTopName;
         if (UpgradePhantomCoordinator.nextPhantomTopUrl != null) {
             this.chatupgrade$imageUrl = UpgradePhantomCoordinator.nextPhantomTopUrl;
             UpgradePhantomCoordinator.nextPhantomTopUrl = null;
+            UpgradePhantomCoordinator.nextPhantomTopName = null;
             UpgradePhantomCoordinator.nextPhantomTopType = InlineResourceType.IMAGE;
         }
         this.chatupgrade$imageIsContinuation = UpgradePhantomCoordinator.nextPhantomContinuation;
@@ -54,6 +58,11 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Override
     public @Nullable String chatupgrade$getImageUrl() {
         return chatupgrade$imageUrl;
+    }
+
+    @Override
+    public @Nullable String chatupgrade$getResourceName() {
+        return chatupgrade$resourceName;
     }
 
     @Override

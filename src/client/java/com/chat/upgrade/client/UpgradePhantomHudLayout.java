@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Extra preview rows, failure substitution, and per-line paint dispatch for decoded URL payloads. */
 public final class UpgradePhantomHudLayout {
+    private static final int AUDIO_PHANTOM_COUNT = 3;
     private static final ConcurrentHashMap<String, Set<GuiMessage>> URL_TO_MESSAGE_PARENTS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Set<GuiMessage>> AUDIO_URL_TO_MESSAGE_PARENTS = new ConcurrentHashMap<>();
 
@@ -200,13 +201,14 @@ public final class UpgradePhantomHudLayout {
             return;
         }
         int insertAt = lastText + 1;
+        int phantomCount = type == InlineResourceType.AUDIO ? AUDIO_PHANTOM_COUNT : ImageLoader.PHANTOM_COUNT;
         UpgradePhantomCoordinator.nextPhantomTopType = type;
-        for (int i = 0; i < ImageLoader.PHANTOM_COUNT - 1; i++) {
+        for (int i = 0; i < phantomCount - 1; i++) {
             UpgradePhantomCoordinator.nextPhantomContinuation = true;
             trim.add(insertAt, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
         }
         UpgradePhantomCoordinator.nextPhantomTopUrl = url;
-        trim.add(insertAt + ImageLoader.PHANTOM_COUNT - 1, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
+        trim.add(insertAt + phantomCount - 1, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
     }
 
     private static void stripPhantomBlock(List<GuiMessage.Line> trim, GuiMessage parent, String url, InlineResourceType type) {

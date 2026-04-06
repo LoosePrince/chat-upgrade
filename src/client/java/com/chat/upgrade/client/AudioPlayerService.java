@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class AudioPlayerService {
     private static final ConcurrentHashMap<String, AudioSession> SESSIONS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Boolean> LOOP_ENABLED = new ConcurrentHashMap<>();
     private static volatile String activeUrl;
 
     private AudioPlayerService() {}
@@ -79,6 +80,7 @@ public final class AudioPlayerService {
             s.close();
         }
         SESSIONS.clear();
+        LOOP_ENABLED.clear();
         activeUrl = null;
     }
 
@@ -109,10 +111,36 @@ public final class AudioPlayerService {
             if (s.clip.getMicrosecondPosition() >= s.clip.getMicrosecondLength()) {
                 s.clip.setMicrosecondPosition(0L);
             }
-            s.clip.start();
+            if (isLoopEnabled(url)) {
+                s.clip.loop(Clip.LOOP_CONTINUOUSLY);
+            } else {
+                s.clip.start();
+            }
             activeUrl = url;
             return true;
         }
+    }
+
+    public static boolean toggleLoop(String url) {
+        boolean enabled = !isLoopEnabled(url);
+        LOOP_ENABLED.put(url, enabled);
+        AudioSession s = SESSIONS.get(url);
+        if (s != null) {
+            synchronized (s) {
+                if (s.clip.isRunning()) {
+                    if (enabled) {
+                        s.clip.loop(Clip.LOOP_CONTINUOUSLY);
+                    } else {
+                        s.clip.start();
+                    }
+                }
+            }
+        }
+        return enabled;
+    }
+
+    public static boolean isLoopEnabled(String url) {
+        return Boolean.TRUE.equals(LOOP_ENABLED.get(url));
     }
 
     public static void seek(String url, double ratio) {
@@ -134,7 +162,11 @@ public final class AudioPlayerService {
             }
             clip.setMicrosecondPosition(Math.max(0L, Math.min(len, target)));
             if (running) {
-                clip.start();
+                if (isLoopEnabled(url)) {
+                    clip.loop(Clip.LOOP_CONTINUOUSLY);
+                } else {
+                    clip.start();
+                }
             }
         }
     }

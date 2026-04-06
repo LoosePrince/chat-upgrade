@@ -57,6 +57,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
         if (decoded.hasUrl()) {
             UpgradePhantomCoordinator.pendingDecodedUrl = decoded.url();
+            UpgradePhantomCoordinator.pendingDecodedName = decoded.name();
             UpgradePhantomCoordinator.pendingDecodedType = decoded.resourceType();
             if (decoded.resourceType() == InlineResourceType.IMAGE) {
                 if (!ChatUpgradeConfig.get().manualImageReveal) {
@@ -99,8 +100,10 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Unique
     private void chatupgrade$insertPhantoms() {
         String url = UpgradePhantomCoordinator.pendingDecodedUrl;
+        String name = UpgradePhantomCoordinator.pendingDecodedName;
         InlineResourceType type = UpgradePhantomCoordinator.pendingDecodedType;
         UpgradePhantomCoordinator.pendingDecodedUrl = null;
+        UpgradePhantomCoordinator.pendingDecodedName = null;
         UpgradePhantomCoordinator.pendingDecodedType = InlineResourceType.IMAGE;
         if (url == null) {
             return;
@@ -109,6 +112,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         if (linesAdded <= 0) {
             return;
         }
+        UpgradePhantomCoordinator.nextPhantomTopName = name;
         GuiMessage parentMessage = trimmedMessages.get(0).parent();
         if (type == InlineResourceType.AUDIO) {
             UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);
