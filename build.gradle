@@ -38,7 +38,11 @@ dependencies {
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
 	// WebP via ImageIO SPI (nested in mod jar for release)
+	include(implementation("com.twelvemonkeys.common:common-lang:3.12.0"))
+	include(implementation("com.twelvemonkeys.common:common-io:3.12.0"))
+	include(implementation("com.twelvemonkeys.common:common-image:3.12.0"))
 	include(implementation("com.twelvemonkeys.imageio:imageio-core:3.12.0"))
+	include(implementation("com.twelvemonkeys.imageio:imageio-metadata:3.12.0"))
 	include(implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0"))
 
 	// MP3 decode support for Java Sound (AudioSystem.getAudioInputStream)
@@ -47,6 +51,11 @@ dependencies {
 	include(implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4"))
 
 	// Video decode support (JavaCPP FFmpeg)
+	// NOTE:
+	// Explicitly include core JavaCPP/FFmpeg jars so production jar-in-jar runtime
+	// can always resolve org.bytedeco.javacpp.* classes (e.g. Pointer).
+	include(implementation("org.bytedeco:javacpp:1.5.11"))
+	include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11"))
 	include(implementation("org.bytedeco:ffmpeg-platform:7.1-1.5.11"))
 }
 
