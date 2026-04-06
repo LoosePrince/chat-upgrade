@@ -6,15 +6,24 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
-import org.jcodec.api.FrameGrab;
-import org.jcodec.api.JCodecException;
-import org.jcodec.common.io.ByteBufferSeekableByteChannel;
-import org.jcodec.common.model.Picture;
-import org.jcodec.common.model.Size;
-import org.jcodec.scale.AWTUtil;
+import org.bytedeco.ffmpeg.avcodec.AVCodec;
+import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
+import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
+import org.bytedeco.ffmpeg.avcodec.AVPacket;
+import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVStream;
+import org.bytedeco.ffmpeg.avutil.AVDictionary;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
+import org.bytedeco.ffmpeg.avutil.AVRational;
+import org.bytedeco.ffmpeg.swscale.SwsContext;
+import org.bytedeco.javacpp.BytePointer;
+import org.bytedeco.javacpp.IntPointer;
+import org.bytedeco.javacpp.PointerPointer;
+import org.bytedeco.javacpp.presets.javacpp;
 
 import java.awt.image.BufferedImage;
-import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -23,6 +32,41 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_NONE;
+import static org.bytedeco.ffmpeg.global.avcodec.av_packet_alloc;
+import static org.bytedeco.ffmpeg.global.avcodec.av_packet_free;
+import static org.bytedeco.ffmpeg.global.avcodec.av_packet_unref;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_alloc_context3;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_find_decoder;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_flush_buffers;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_free_context;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_open2;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_parameters_to_context;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_receive_frame;
+import static org.bytedeco.ffmpeg.global.avcodec.avcodec_send_packet;
+import static org.bytedeco.ffmpeg.global.avformat.AVSEEK_FLAG_BACKWARD;
+import static org.bytedeco.ffmpeg.global.avformat.av_find_best_stream;
+import static org.bytedeco.ffmpeg.global.avformat.av_read_frame;
+import static org.bytedeco.ffmpeg.global.avformat.av_seek_frame;
+import static org.bytedeco.ffmpeg.global.avformat.avformat_close_input;
+import static org.bytedeco.ffmpeg.global.avformat.avformat_find_stream_info;
+import static org.bytedeco.ffmpeg.global.avformat.avformat_open_input;
+import static org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_VIDEO;
+import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
+import static org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA;
+import static org.bytedeco.ffmpeg.global.avutil.av_free;
+import static org.bytedeco.ffmpeg.global.avutil.av_frame_alloc;
+import static org.bytedeco.ffmpeg.global.avutil.av_frame_free;
+import static org.bytedeco.ffmpeg.global.avutil.av_image_fill_arrays;
+import static org.bytedeco.ffmpeg.global.avutil.av_image_get_buffer_size;
+import static org.bytedeco.ffmpeg.global.avutil.av_q2d;
+import static org.bytedeco.ffmpeg.global.avutil.av_rescale_q;
+import static org.bytedeco.ffmpeg.global.avutil.av_malloc;
+import static org.bytedeco.ffmpeg.global.swscale.SWS_BILINEAR;
+import static org.bytedeco.ffmpeg.global.swscale.sws_freeContext;
+import static org.bytedeco.ffmpeg.global.swscale.sws_getContext;
+import static org.bytedeco.ffmpeg.global.swscale.sws_scale;
 
 public final class VideoPlayerService {
     private static final int TARGET_FPS = 12;
@@ -46,14 +90,15 @@ public final class VideoPlayerService {
             prev.close();
         }
 
-        DecodedMeta meta = decodeMetaAndFirstFrame(videoBytes);
+        Path tempFile = writeTempVideoFile(videoBytes);
+        DecodedMeta meta = decodeMetaAndFirstFrame(tempFile);
         CachePlan plan = planCache(meta.durationMs());
         Identifier firstFrameId = registerTextureOnRenderThread(meta.firstFrame());
         Identifier[] frameIds = new Identifier[plan.frames()];
         frameIds[0] = firstFrameId;
-        VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs());
+        VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile);
         SESSIONS.put(url, session);
-        schedulePredecode(url, session, videoBytes, meta.durationMs(), plan.intervalMs(), plan.frames());
+        schedulePredecode(url, session, tempFile, meta.durationMs(), plan.intervalMs(), plan.frames());
         return new Prepared(meta.durationMs(), meta.rawWidth(), meta.rawHeight());
     }
 
@@ -200,51 +245,13 @@ public final class VideoPlayerService {
         return Math.max(0L, Math.min(duration, pos));
     }
 
-    private static DecodedMeta decodeMetaAndFirstFrame(byte[] bytes) throws Exception {
-        try (ByteBufferSeekableByteChannel ch = new ByteBufferSeekableByteChannel(ByteBuffer.wrap(bytes), bytes.length)) {
-            FrameGrab grab = FrameGrab.createFrameGrab(ch);
-            Picture first = grab.getNativeFrame();
-            if (first == null) {
-                throw new IllegalStateException("No video frame");
-            }
-            BufferedImage bi = AWTUtil.toBufferedImage(first);
-            NativeImage ni = RasterImageDecoder.fromBufferedImage(bi);
-
-            double durationSec = 0.0;
-            int width = bi.getWidth();
-            int height = bi.getHeight();
-            try {
-                var meta = grab.getVideoTrack().getMeta();
-                durationSec = meta.getTotalDuration();
-                if (meta.getVideoCodecMeta() != null) {
-                    Size size = meta.getVideoCodecMeta().getSize();
-                    if (size != null) {
-                        width = size.getWidth();
-                        height = size.getHeight();
-                    }
-                }
-            } catch (Exception ignored) {
-            }
-            long durationMs = Math.max(0L, (long) (durationSec * 1000.0));
-            return new DecodedMeta(durationMs, width, height, ni);
-        } catch (JCodecException e) {
-            throw new IllegalStateException("Unsupported video format", e);
-        }
+    private static DecodedMeta decodeMetaAndFirstFrame(Path path) throws Exception {
+        DecodedFrame frame = decodeFrame(path, 0L, false);
+        return new DecodedMeta(frame.durationMs(), frame.rawWidth(), frame.rawHeight(), frame.image());
     }
 
-    private static NativeImage decodeFrameAtMs(byte[] bytes, long ms) throws Exception {
-        double sec = Math.max(0.0, ms / 1000.0);
-        try (ByteBufferSeekableByteChannel ch = new ByteBufferSeekableByteChannel(ByteBuffer.wrap(bytes), bytes.length)) {
-            FrameGrab grab = FrameGrab.createFrameGrab(ch);
-            grab.seekToSecondPrecise(sec);
-            Picture picture = grab.getNativeFrame();
-            if (picture == null) {
-                throw new IllegalStateException("No decoded frame");
-            }
-            return RasterImageDecoder.fromBufferedImage(AWTUtil.toBufferedImage(picture));
-        } catch (JCodecException e) {
-            throw new IllegalStateException("Unsupported video format", e);
-        }
+    private static NativeImage decodeFrameAtMs(Path path, long ms) throws Exception {
+        return decodeFrame(path, ms, true).image();
     }
 
     private static CachePlan planCache(long durationMs) {
@@ -260,7 +267,7 @@ public final class VideoPlayerService {
     private static void schedulePredecode(
             String url,
             VideoSession session,
-            byte[] videoBytes,
+            Path videoPath,
             long durationMs,
             long intervalMs,
             int frameCount
@@ -273,7 +280,7 @@ public final class VideoPlayerService {
                 long t = Math.min(durationMs, i * intervalMs);
                 NativeImage frame;
                 try {
-                    frame = decodeFrameAtMs(videoBytes, t);
+                    frame = decodeFrameAtMs(videoPath, t);
                 } catch (Exception e) {
                     ChatUpgrade.LOGGER.debug("chat-upgrade: predecode frame {} failed for {}: {}", i, url, e.getMessage());
                     continue;
@@ -331,6 +338,8 @@ public final class VideoPlayerService {
 
     private record DecodedMeta(long durationMs, int rawWidth, int rawHeight, NativeImage firstFrame) {}
 
+    private record DecodedFrame(NativeImage image, int rawWidth, int rawHeight, long durationMs) {}
+
     private record CachePlan(long intervalMs, int frames) {}
 
     private static final class VideoSession {
@@ -338,16 +347,18 @@ public final class VideoPlayerService {
         final long durationMs;
         final Identifier[] frameTextureIds;
         final long frameIntervalMs;
+        final Path tempFile;
         boolean playing;
         volatile boolean closed;
         long playStartedAtMs;
         long pausedPositionMs;
 
-        VideoSession(String url, long durationMs, Identifier[] frameTextureIds, long frameIntervalMs) {
+        VideoSession(String url, long durationMs, Identifier[] frameTextureIds, long frameIntervalMs, Path tempFile) {
             this.url = url;
             this.durationMs = durationMs;
             this.frameTextureIds = frameTextureIds;
             this.frameIntervalMs = frameIntervalMs;
+            this.tempFile = tempFile;
             this.playing = false;
             this.closed = false;
             this.playStartedAtMs = 0L;
@@ -362,6 +373,170 @@ public final class VideoPlayerService {
                     releaseTexture(id);
                 }
             }
+            try {
+                Files.deleteIfExists(tempFile);
+            } catch (Exception ignored) {
+            }
         }
+    }
+
+    private static Path writeTempVideoFile(byte[] bytes) throws Exception {
+        Path path = Files.createTempFile("chat-upgrade-video-", ".bin");
+        Files.write(path, bytes);
+        return path;
+    }
+
+    private static DecodedFrame decodeFrame(Path path, long targetMs, boolean seek) throws Exception {
+        AVFormatContext fmt = new AVFormatContext(null);
+        AVCodecContext codecCtx = null;
+        AVPacket pkt = null;
+        AVFrame frame = null;
+        AVFrame rgba = null;
+        BytePointer rgbaBuffer = null;
+        SwsContext sws = null;
+        try {
+            if (avformat_open_input(fmt, path.toString(), null, (AVDictionary) null) < 0) {
+                throw new IllegalStateException("open input failed");
+            }
+            if (avformat_find_stream_info(fmt, (PointerPointer<?>) null) < 0) {
+                throw new IllegalStateException("stream info failed");
+            }
+            int videoIdx = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, (AVCodec) null, 0);
+            if (videoIdx < 0) {
+                throw new IllegalStateException("no video stream");
+            }
+            AVStream stream = fmt.streams(videoIdx);
+            AVCodecParameters codecpar = stream.codecpar();
+            AVCodec codec = avcodec_find_decoder(codecpar.codec_id());
+            if (codec == null || codec.id() == AV_CODEC_ID_NONE) {
+                throw new IllegalStateException("no decoder");
+            }
+            codecCtx = avcodec_alloc_context3(codec);
+            if (codecCtx == null) {
+                throw new IllegalStateException("alloc codec ctx failed");
+            }
+            if (avcodec_parameters_to_context(codecCtx, codecpar) < 0) {
+                throw new IllegalStateException("copy codec params failed");
+            }
+            if (avcodec_open2(codecCtx, codec, (AVDictionary) null) < 0) {
+                throw new IllegalStateException("open codec failed");
+            }
+
+            if (seek) {
+                AVRational tb = stream.time_base();
+                long ts = av_rescale_q(targetMs * 1000L,
+                        new AVRational().num(1).den(1000000),
+                        tb);
+                av_seek_frame(fmt, videoIdx, ts, AVSEEK_FLAG_BACKWARD);
+                avcodec_flush_buffers(codecCtx);
+            }
+
+            pkt = av_packet_alloc();
+            frame = av_frame_alloc();
+            if (pkt == null || frame == null) {
+                throw new IllegalStateException("alloc frame/packet failed");
+            }
+
+            long durationMs = durationFrom(fmt, stream);
+            int rawW = codecCtx.width();
+            int rawH = codecCtx.height();
+
+            while (av_read_frame(fmt, pkt) >= 0) {
+                try {
+                    if (pkt.stream_index() != videoIdx) {
+                        continue;
+                    }
+                    if (avcodec_send_packet(codecCtx, pkt) < 0) {
+                        continue;
+                    }
+                    while (avcodec_receive_frame(codecCtx, frame) >= 0) {
+                        if (seek) {
+                            long frameMs = timestampMs(frame.best_effort_timestamp(), stream.time_base());
+                            if (frameMs + 2 < targetMs) {
+                                continue;
+                            }
+                        }
+                        int w = frame.width();
+                        int h = frame.height();
+                        sws = sws_getContext(
+                                w, h, frame.format(),
+                                w, h, AV_PIX_FMT_RGBA,
+                                SWS_BILINEAR,
+                                null, null, (double[]) null);
+                        if (sws == null) {
+                            throw new IllegalStateException("sws context failed");
+                        }
+                        rgba = av_frame_alloc();
+                        int bufferSize = av_image_get_buffer_size(AV_PIX_FMT_RGBA, w, h, 1);
+                        rgbaBuffer = new BytePointer(av_malloc(bufferSize));
+                        av_image_fill_arrays(rgba.data(), new IntPointer(rgba.linesize()), rgbaBuffer, AV_PIX_FMT_RGBA, w, h, 1);
+                        sws_scale(sws, frame.data(), frame.linesize(), 0, h, rgba.data(), rgba.linesize());
+                        BufferedImage bi = bufferedImageFromRgba(rgbaBuffer, rgba.linesize(0), w, h);
+                        NativeImage out = RasterImageDecoder.fromBufferedImage(bi);
+                        return new DecodedFrame(out, rawW > 0 ? rawW : w, rawH > 0 ? rawH : h, durationMs);
+                    }
+                } finally {
+                    av_packet_unref(pkt);
+                }
+            }
+            throw new IllegalStateException("no decoded video frame");
+        } finally {
+            if (sws != null) {
+                sws_freeContext(sws);
+            }
+            if (rgbaBuffer != null) {
+                av_free(rgbaBuffer);
+            }
+            if (rgba != null) {
+                av_frame_free(rgba);
+            }
+            if (frame != null) {
+                av_frame_free(frame);
+            }
+            if (pkt != null) {
+                av_packet_free(pkt);
+            }
+            if (codecCtx != null) {
+                avcodec_free_context(codecCtx);
+            }
+            avformat_close_input(fmt);
+        }
+    }
+
+    private static long durationFrom(AVFormatContext fmt, AVStream stream) {
+        try {
+            if (stream != null && stream.duration() > 0 && stream.time_base() != null) {
+                return timestampMs(stream.duration(), stream.time_base());
+            }
+        } catch (Exception ignored) {
+        }
+        long d = fmt.duration();
+        if (d <= 0) {
+            return 0L;
+        }
+        return d / 1000L;
+    }
+
+    private static long timestampMs(long pts, AVRational tb) {
+        if (pts == AV_NOPTS_VALUE || tb == null) {
+            return 0L;
+        }
+        return Math.max(0L, (long) (pts * av_q2d(tb) * 1000.0));
+    }
+
+    private static BufferedImage bufferedImageFromRgba(BytePointer src, int stride, int w, int h) {
+        BufferedImage bi = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            int row = y * stride;
+            for (int x = 0; x < w; x++) {
+                int i = row + x * 4;
+                int r = src.get(i) & 0xFF;
+                int g = src.get(i + 1) & 0xFF;
+                int b = src.get(i + 2) & 0xFF;
+                int a = src.get(i + 3) & 0xFF;
+                bi.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        return bi;
     }
 }
