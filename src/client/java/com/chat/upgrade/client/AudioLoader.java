@@ -1,30 +1,17 @@
 package com.chat.upgrade.client;
 
-import com.chat.upgrade.ChatUpgrade;
-import net.minecraft.client.Minecraft;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.security.MessageDigest;
-import java.time.Duration;
-import java.util.HexFormat;
-import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.chat.upgrade.ChatUpgrade;
+
+import net.minecraft.client.Minecraft;
+
 public final class AudioLoader {
     private static final ConcurrentHashMap<String, AudioEntry> CACHE = new ConcurrentHashMap<>();
-    private static final HttpClient HTTP = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
 
-    private AudioLoader() {}
+    private AudioLoader() {
+    }
 
     public static void invalidateAudioCache() {
         CACHE.clear();
@@ -45,33 +32,17 @@ public final class AudioLoader {
 
     private static void startLoad(String url, AudioEntry entry) {
         CompletableFuture.supplyAsync(() -> {
-            try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(20))
-                        .GET()
-                        .build();
-                return HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to fetch audio {}: {}", url, e.getMessage());
-                return null;
-            }
+            return MediaFetchSupport.sendGet(url, 20, "audio");
         }).thenAccept(response -> {
             if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
                 markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
                 return;
             }
             int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
-            try (InputStream raw = response.body()) {
-                OptionalLong clOpt = response.headers().firstValueAsLong("Content-Length");
-                if (clOpt.isPresent() && clOpt.getAsLong() > maxReceive) {
-                    markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
-                    return;
-                }
-                byte[] body = readBodyCapped(raw, maxReceive);
-                String contentType = response.headers().firstValue("Content-Type").orElse(null);
-                String md5Hex = md5Hex(body);
-                entry.setTransferMetadata(body.length, contentType, md5Hex);
+            try {
+                MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, maxReceive);
+                byte[] body = payload.body();
+                entry.setTransferMetadata(body.length, payload.contentType(), payload.md5Hex());
                 entry.setLoadPhase(AudioEntry.LoadPhase.DECODE);
                 long durationMs;
                 try {
@@ -83,7 +54,7 @@ public final class AudioLoader {
                 }
                 entry.setLoaded(durationMs);
                 notifyChanged(url);
-            } catch (ResponseBodyTooLarge e) {
+            } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
                 markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode audio {}: {}", url, e.getMessage());
@@ -106,36 +77,5 @@ public final class AudioLoader {
             return;
         }
         mc.execute(() -> UpgradePhantomHudLayout.notifyAudioEntryChanged(url));
-    }
-
-    private static byte[] readBodyCapped(InputStream is, int maxBytes) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(maxBytes, 65536));
-        byte[] buf = new byte[8192];
-        long total = 0;
-        while (true) {
-            int n = is.read(buf);
-            if (n < 0) {
-                break;
-            }
-            if (total + n > maxBytes) {
-                throw new ResponseBodyTooLarge();
-            }
-            out.write(buf, 0, n);
-            total += n;
-        }
-        return out.toByteArray();
-    }
-
-    private static String md5Hex(byte[] data) {
-        try {
-            byte[] digest = MessageDigest.getInstance("MD5").digest(data);
-            return HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static final class ResponseBodyTooLarge extends RuntimeException {
-        private static final long serialVersionUID = 1L;
     }
 }

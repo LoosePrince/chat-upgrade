@@ -1,38 +1,5 @@
 package com.chat.upgrade.client;
 
-import com.chat.upgrade.ChatUpgrade;
-import com.mojang.blaze3d.platform.NativeImage;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.Identifier;
-import net.minecraft.util.Util;
-import org.bytedeco.ffmpeg.avcodec.AVCodec;
-import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
-import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
-import org.bytedeco.ffmpeg.avcodec.AVPacket;
-import org.bytedeco.ffmpeg.avformat.AVFormatContext;
-import org.bytedeco.ffmpeg.avformat.AVStream;
-import org.bytedeco.ffmpeg.avutil.AVDictionary;
-import org.bytedeco.ffmpeg.avutil.AVFrame;
-import org.bytedeco.ffmpeg.avutil.AVRational;
-import org.bytedeco.ffmpeg.swscale.SwsContext;
-import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.javacpp.IntPointer;
-import org.bytedeco.javacpp.PointerPointer;
-import org.bytedeco.javacpp.presets.javacpp;
-
-import java.awt.image.BufferedImage;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_NONE;
 import static org.bytedeco.ffmpeg.global.avcodec.av_packet_alloc;
 import static org.bytedeco.ffmpeg.global.avcodec.av_packet_free;
@@ -55,18 +22,52 @@ import static org.bytedeco.ffmpeg.global.avformat.avformat_open_input;
 import static org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_VIDEO;
 import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
 import static org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA;
-import static org.bytedeco.ffmpeg.global.avutil.av_free;
 import static org.bytedeco.ffmpeg.global.avutil.av_frame_alloc;
 import static org.bytedeco.ffmpeg.global.avutil.av_frame_free;
+import static org.bytedeco.ffmpeg.global.avutil.av_free;
 import static org.bytedeco.ffmpeg.global.avutil.av_image_fill_arrays;
 import static org.bytedeco.ffmpeg.global.avutil.av_image_get_buffer_size;
+import static org.bytedeco.ffmpeg.global.avutil.av_malloc;
 import static org.bytedeco.ffmpeg.global.avutil.av_q2d;
 import static org.bytedeco.ffmpeg.global.avutil.av_rescale_q;
-import static org.bytedeco.ffmpeg.global.avutil.av_malloc;
 import static org.bytedeco.ffmpeg.global.swscale.SWS_BILINEAR;
 import static org.bytedeco.ffmpeg.global.swscale.sws_freeContext;
 import static org.bytedeco.ffmpeg.global.swscale.sws_getContext;
 import static org.bytedeco.ffmpeg.global.swscale.sws_scale;
+
+import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.bytedeco.ffmpeg.avcodec.AVCodec;
+import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
+import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
+import org.bytedeco.ffmpeg.avcodec.AVPacket;
+import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVStream;
+import org.bytedeco.ffmpeg.avutil.AVDictionary;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
+import org.bytedeco.ffmpeg.avutil.AVRational;
+import org.bytedeco.ffmpeg.swscale.SwsContext;
+import org.bytedeco.javacpp.BytePointer;
+import org.bytedeco.javacpp.IntPointer;
+import org.bytedeco.javacpp.PointerPointer;
+
+import com.chat.upgrade.ChatUpgrade;
+import com.mojang.blaze3d.platform.NativeImage;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 
 public final class VideoPlayerService {
     private static final int TARGET_FPS = 12;
@@ -78,11 +79,13 @@ public final class VideoPlayerService {
         t.setDaemon(true);
         return t;
     });
-    private static volatile String activeUrl;
+    private static final SingleActivePlaybackCoordinator ACTIVE_PLAYBACK = new SingleActivePlaybackCoordinator();
 
-    private VideoPlayerService() {}
+    private VideoPlayerService() {
+    }
 
-    public record Prepared(long durationMs, int rawWidth, int rawHeight) {}
+    public record Prepared(long durationMs, int rawWidth, int rawHeight) {
+    }
 
     public static Prepared prepare(String url, byte[] videoBytes) throws Exception {
         VideoSession prev = SESSIONS.remove(url);
@@ -107,7 +110,7 @@ public final class VideoPlayerService {
             s.close();
         }
         SESSIONS.clear();
-        activeUrl = null;
+        ACTIVE_PLAYBACK.clear();
     }
 
     public static void remove(String url) {
@@ -115,9 +118,7 @@ public final class VideoPlayerService {
         if (s != null) {
             s.close();
         }
-        if (url.equals(activeUrl)) {
-            activeUrl = null;
-        }
+        ACTIVE_PLAYBACK.deactivateIfActive(url);
     }
 
     public static Identifier textureIdAtMillis(String url, long nowMs) {
@@ -157,29 +158,26 @@ public final class VideoPlayerService {
             if (s.playing) {
                 s.pausedPositionMs = positionMsLocked(s, now);
                 s.playing = false;
-                if (url.equals(activeUrl)) {
-                    activeUrl = null;
-                }
+                ACTIVE_PLAYBACK.deactivateIfActive(url);
                 return false;
             }
-            String current = activeUrl;
-            if (current != null && !current.equals(url)) {
+            ACTIVE_PLAYBACK.activate(url, current -> {
                 VideoSession other = SESSIONS.get(current);
-                if (other != null) {
-                    synchronized (other) {
-                        if (other.playing) {
-                            other.pausedPositionMs = positionMsLocked(other, now);
-                            other.playing = false;
-                        }
+                if (other == null) {
+                    return;
+                }
+                synchronized (other) {
+                    if (other.playing) {
+                        other.pausedPositionMs = positionMsLocked(other, now);
+                        other.playing = false;
                     }
                 }
-            }
+            });
             if (s.pausedPositionMs >= s.durationMs) {
                 s.pausedPositionMs = 0L;
             }
             s.playStartedAtMs = now - s.pausedPositionMs;
             s.playing = true;
-            activeUrl = url;
             return true;
         }
     }
@@ -230,9 +228,7 @@ public final class VideoPlayerService {
         if (pos >= s.durationMs) {
             s.playing = false;
             s.pausedPositionMs = s.durationMs;
-            if (s.url.equals(activeUrl)) {
-                activeUrl = null;
-            }
+            ACTIVE_PLAYBACK.deactivateIfActive(s.url);
             return s.durationMs;
         }
         return clampDuration(pos, s.durationMs);
@@ -270,8 +266,7 @@ public final class VideoPlayerService {
             Path videoPath,
             long durationMs,
             long intervalMs,
-            int frameCount
-    ) {
+            int frameCount) {
         PREDECODE_EXECUTOR.execute(() -> {
             for (int i = 1; i < frameCount; i++) {
                 if (session.closed) {
@@ -282,7 +277,8 @@ public final class VideoPlayerService {
                 try {
                     frame = decodeFrameAtMs(videoPath, t);
                 } catch (Exception e) {
-                    ChatUpgrade.LOGGER.debug("chat-upgrade: predecode frame {} failed for {}: {}", i, url, e.getMessage());
+                    ChatUpgrade.LOGGER.debug("chat-upgrade: predecode frame {} failed for {}: {}", i, url,
+                            e.getMessage());
                     continue;
                 }
                 try {
@@ -295,7 +291,8 @@ public final class VideoPlayerService {
                         session.frameTextureIds[i] = id;
                     }
                 } catch (Exception e) {
-                    ChatUpgrade.LOGGER.debug("chat-upgrade: upload predecoded frame {} failed for {}: {}", i, url, e.getMessage());
+                    ChatUpgrade.LOGGER.debug("chat-upgrade: upload predecoded frame {} failed for {}: {}", i, url,
+                            e.getMessage());
                     try {
                         frame.close();
                     } catch (Exception ignored) {
@@ -336,11 +333,14 @@ public final class VideoPlayerService {
         mc.execute(() -> mc.getTextureManager().release(textureId));
     }
 
-    private record DecodedMeta(long durationMs, int rawWidth, int rawHeight, NativeImage firstFrame) {}
+    private record DecodedMeta(long durationMs, int rawWidth, int rawHeight, NativeImage firstFrame) {
+    }
 
-    private record DecodedFrame(NativeImage image, int rawWidth, int rawHeight, long durationMs) {}
+    private record DecodedFrame(NativeImage image, int rawWidth, int rawHeight, long durationMs) {
+    }
 
-    private record CachePlan(long intervalMs, int frames) {}
+    private record CachePlan(long intervalMs, int frames) {
+    }
 
     private static final class VideoSession {
         final String url;
@@ -424,9 +424,12 @@ public final class VideoPlayerService {
 
             if (seek) {
                 AVRational tb = stream.time_base();
-                long ts = av_rescale_q(targetMs * 1000L,
-                        new AVRational().num(1).den(1000000),
-                        tb);
+                long ts;
+                try (AVRational micros = new AVRational()) {
+                    micros.num(1);
+                    micros.den(1000000);
+                    ts = av_rescale_q(targetMs * 1000L, micros, tb);
+                }
                 av_seek_frame(fmt, videoIdx, ts, AVSEEK_FLAG_BACKWARD);
                 avcodec_flush_buffers(codecCtx);
             }
@@ -469,7 +472,8 @@ public final class VideoPlayerService {
                         rgba = av_frame_alloc();
                         int bufferSize = av_image_get_buffer_size(AV_PIX_FMT_RGBA, w, h, 1);
                         rgbaBuffer = new BytePointer(av_malloc(bufferSize));
-                        av_image_fill_arrays(rgba.data(), new IntPointer(rgba.linesize()), rgbaBuffer, AV_PIX_FMT_RGBA, w, h, 1);
+                        av_image_fill_arrays(rgba.data(), new IntPointer(rgba.linesize()), rgbaBuffer, AV_PIX_FMT_RGBA,
+                                w, h, 1);
                         sws_scale(sws, frame.data(), frame.linesize(), 0, h, rgba.data(), rgba.linesize());
                         BufferedImage bi = bufferedImageFromRgba(rgbaBuffer, rgba.linesize(0), w, h);
                         NativeImage out = RasterImageDecoder.fromBufferedImage(bi);

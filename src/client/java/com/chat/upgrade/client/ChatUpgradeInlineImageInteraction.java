@@ -1,41 +1,46 @@
 package com.chat.upgrade.client;
 
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.joml.Matrix3x2f;
+import org.joml.Matrix3x2fc;
+import org.joml.Vector2f;
+import org.jspecify.annotations.Nullable;
+
 import com.chat.upgrade.client.mixin.ChatUpgradeClickableTextOnlyGraphicsAccessor;
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingBackgroundAccessor;
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingFocusedAccessor;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
-import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
-import org.joml.Matrix3x2f;
-import org.joml.Matrix3x2fc;
-import org.joml.Vector2f;
-import org.jspecify.annotations.Nullable;
-
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
- * Registers screen-space hit parallelograms for inline chat images (same pose stack as
+ * Registers screen-space hit parallelograms for inline chat images (same pose
+ * stack as
  * {@link ChatComponent} text) and resolves click / hover.
  */
 public final class ChatUpgradeInlineImageInteraction {
     private static final List<Plane> PLANES = new ArrayList<>();
 
-    private ChatUpgradeInlineImageInteraction() {}
+    private ChatUpgradeInlineImageInteraction() {
+    }
 
     public static void clearForExtractPass() {
         PLANES.clear();
     }
 
-    public static void afterChatLinePaint(ChatComponent.ChatGraphicsAccess graphics, GuiMessage.Line line, int textTop, float textOpacity) {
+    public static void afterChatLinePaint(ChatComponent.ChatGraphicsAccess graphics, GuiMessage.Line line, int textTop,
+            float textOpacity) {
         if (!(((Object) line) instanceof ImageAttachable attachable)) {
             return;
         }
@@ -118,8 +123,7 @@ public final class ChatUpgradeInlineImageInteraction {
             String url,
             GuiMessage parent,
             ImageEntry entry,
-            float textOpacity
-    ) {
+            float textOpacity) {
         if (!(graphics instanceof ChatUpgradeDrawingFocusedAccessor acc)) {
             return;
         }
@@ -140,7 +144,8 @@ public final class ChatUpgradeInlineImageInteraction {
             case FAILED -> "图片加载失败";
         };
         Component tip = Component.literal(state + "\n预览区域：仅显示内容\n链接与详情：请悬停 [类型:名称] 或点击 [url]");
-        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(), acc.chatupgrade$globalMouseY());
+        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(),
+                acc.chatupgrade$globalMouseY());
     }
 
     public static @Nullable Style styleForScreenClick(int screenX, int screenY) {
@@ -172,71 +177,33 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     private static @Nullable Style styleForAudioClick(Plane p, float localX, float localY) {
-        int x0 = p.localLeft;
-        int y0 = p.localTop;
-        AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom())) {
-            return Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggle(p.url));
-        }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom())) {
-            return Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggleLoop(p.url));
-        }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom())) {
-            URI uri;
-            try {
-                uri = URI.create(p.url);
-            } catch (Exception e) {
-                return null;
+        AudioAction action = resolveAudioAction(localX, localY, p.localLeft, p.localTop, p.localRight);
+        return switch (action.kind()) {
+            case TOGGLE -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggle(p.url));
+            case TOGGLE_LOOP -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggleLoop(p.url));
+            case OPEN_URL -> {
+                try {
+                    yield Style.EMPTY.withClickEvent(new ClickEvent.OpenUrl(URI.create(p.url)));
+                } catch (Exception e) {
+                    yield null;
+                }
             }
-            return Style.EMPTY.withClickEvent(new ClickEvent.OpenUrl(uri));
-        }
-        int barX0 = x0 + UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barX1 = p.localRight - UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-        int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = (localX - barX0) / Math.max(1.0, barX1 - barX0);
-            return Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(p.url, ratio));
-        }
-        return null;
+            case SEEK -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(p.url, action.ratio()));
+            case NONE -> null;
+        };
     }
 
     private static @Nullable Style styleForVideoClick(Plane p, float localX, float localY) {
-        int x0 = p.localLeft;
-        int y0 = p.localTop;
-        int x1 = p.localRight;
         VideoEntry entry = VideoLoader.getIfPresent(p.url);
-        int rawW = entry != null ? entry.getRawWidth() : 0;
-        int rawH = entry != null ? entry.getRawHeight() : 0;
-        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(x0, y0, x1 - x0, rawW, rawH);
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(), rect.bottom())) {
-            return Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
+        if (entry == null) {
+            return null;
         }
-        int btnX0 = x0 + VideoUiLayout.PAD_X;
-        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
-        int btnY0 = y0 + VideoUiLayout.CONTROL_TOP;
-        int btnY1 = btnY0 + VideoUiLayout.BTN_H;
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, btnX0, btnY0, btnX1, btnY1)) {
-            return Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
-        }
-        long total = VideoPlayerService.durationMs(p.url);
-        if (entry != null && total <= 0) {
-            total = entry.getDurationMs();
-        }
-        long pos = VideoPlayerService.positionMs(p.url);
-        String left = formatMs(pos);
-        String right = formatMs(total);
-        int leftX = btnX1 + 4;
-        int rightX = x1 - VideoUiLayout.PAD_X - Minecraft.getInstance().font.width(right);
-        int barX0 = leftX + Minecraft.getInstance().font.width(left) + 4;
-        int barX1 = rightX - 4;
-        int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
-        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
-        if (barX1 > barX0 && ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = (localX - barX0) / Math.max(1.0, barX1 - barX0);
-            return Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(p.url, ratio));
-        }
-        return null;
+        VideoAction action = resolveVideoAction(localX, localY, p.localLeft, p.localTop, p.localRight, p.url, entry);
+        return switch (action.kind()) {
+            case TOGGLE -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
+            case SEEK -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(p.url, action.ratio()));
+            case NONE -> null;
+        };
     }
 
     private static void tryAudioTooltipOnFocused(
@@ -247,8 +214,7 @@ public final class ChatUpgradeInlineImageInteraction {
             String url,
             GuiMessage parent,
             AudioEntry entry,
-            float textOpacity
-    ) {
+            float textOpacity) {
         if (!(graphics instanceof ChatUpgradeDrawingFocusedAccessor acc)) {
             return;
         }
@@ -263,7 +229,8 @@ public final class ChatUpgradeInlineImageInteraction {
         GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
         String tipText = describeAudioHoverAction(local.x, local.y, textTop, drawW, url, entry);
         Component tip = Component.literal(tipText);
-        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(), acc.chatupgrade$globalMouseY());
+        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(),
+                acc.chatupgrade$globalMouseY());
     }
 
     private static void tryVideoTooltipOnFocused(
@@ -274,8 +241,7 @@ public final class ChatUpgradeInlineImageInteraction {
             String url,
             GuiMessage parent,
             VideoEntry entry,
-            float textOpacity
-    ) {
+            float textOpacity) {
         if (!(graphics instanceof ChatUpgradeDrawingFocusedAccessor acc)) {
             return;
         }
@@ -290,61 +256,97 @@ public final class ChatUpgradeInlineImageInteraction {
         GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
         String tipText = describeVideoHoverAction(local.x, local.y, textTop, drawW, url, entry);
         Component tip = Component.literal(tipText);
-        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(), acc.chatupgrade$globalMouseY());
+        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(),
+                acc.chatupgrade$globalMouseY());
     }
 
-    private static String describeAudioHoverAction(float localX, float localY, int textTop, int drawW, String url, AudioEntry entry) {
-        int x0 = 0;
-        int y0 = textTop;
-        AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
+    private static String describeAudioHoverAction(float localX, float localY, int textTop, int drawW, String url,
+            AudioEntry entry) {
+        AudioAction action = resolveAudioAction(localX, localY, 0, textTop, drawW);
         long total = AudioPlayerService.durationMs(url);
         if (total <= 0L) {
             total = entry.getDurationMs();
         }
         long pos = AudioPlayerService.positionMs(url);
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom())) {
-            return AudioPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
+        return switch (action.kind()) {
+            case TOGGLE -> AudioPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
+            case TOGGLE_LOOP -> AudioPlayerService.isLoopEnabled(url) ? "按钮：关闭循环播放" : "按钮：开启循环播放";
+            case OPEN_URL -> "按钮：打开链接";
+            case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
+            case NONE ->
+                "音频播放器区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total);
+        };
+    }
+
+    private static String describeVideoHoverAction(float localX, float localY, int textTop, int drawW, String url,
+            VideoEntry entry) {
+        VideoAction action = resolveVideoAction(localX, localY, 0, textTop, drawW, url, entry);
+        long total = VideoPlayerService.durationMs(url);
+        if (total <= 0L) {
+            total = entry.getDurationMs();
         }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom())) {
-            return AudioPlayerService.isLoopEnabled(url) ? "按钮：关闭循环播放" : "按钮：开启循环播放";
+        long pos = VideoPlayerService.positionMs(url);
+        return switch (action.kind()) {
+            case TOGGLE -> VideoPlayerService.isPlaying(url) ? "视频画面：点击暂停" : "视频画面：点击播放";
+            case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
+            case NONE ->
+                "视频播放器区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total);
+        };
+    }
+
+    private static AudioAction resolveAudioAction(float localX, float localY, int x0, int y0, int x1) {
+        AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.playLeft(), rects.top(), rects.playRight(),
+                rects.bottom())) {
+            return new AudioAction(AudioActionKind.TOGGLE, 0.0);
         }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom())) {
-            return "按钮：打开链接";
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.loopLeft(), rects.top(), rects.loopRight(),
+                rects.bottom())) {
+            return new AudioAction(AudioActionKind.TOGGLE_LOOP, 0.0);
+        }
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.openLeft(), rects.top(), rects.openRight(),
+                rects.bottom())) {
+            return new AudioAction(AudioActionKind.OPEN_URL, 0.0);
         }
         int barX0 = x0 + UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barX1 = x0 + drawW - UpgradeHudInlinePaint.AUDIO_PAD_X;
+        int barX1 = x1 - UpgradeHudInlinePaint.AUDIO_PAD_X;
         int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
         int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
         if (ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = (localX - barX0) / Math.max(1.0, barX1 - barX0);
-            long target = (long) (Math.clamp(ratio, 0.0, 1.0) * Math.max(0L, total));
-            return "进度条：点击将跳转到 " + formatMs(target);
+            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+            return new AudioAction(AudioActionKind.SEEK, ratio);
         }
-        return "音频播放器区域\n当前: " + formatMs(pos) + " / " + formatMs(total);
+        return new AudioAction(AudioActionKind.NONE, 0.0);
     }
 
-    private static String describeVideoHoverAction(float localX, float localY, int textTop, int drawW, String url, VideoEntry entry) {
-        int x0 = 0;
-        int y0 = textTop;
-        int x1 = x0 + drawW;
-        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(x0, y0, drawW, entry.getRawWidth(), entry.getRawHeight());
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(), rect.bottom())) {
-            return VideoPlayerService.isPlaying(url) ? "视频画面：点击暂停" : "视频画面：点击播放";
+    private static VideoAction resolveVideoAction(
+            float localX,
+            float localY,
+            int x0,
+            int y0,
+            int x1,
+            String url,
+            VideoEntry entry) {
+        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(x0, y0, x1 - x0, entry.getRawWidth(),
+                entry.getRawHeight());
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(),
+                rect.bottom())) {
+            return new VideoAction(VideoActionKind.TOGGLE, 0.0);
         }
         int btnX0 = x0 + VideoUiLayout.PAD_X;
         int btnX1 = btnX0 + VideoUiLayout.BTN_W;
         int btnY0 = y0 + VideoUiLayout.CONTROL_TOP;
         int btnY1 = btnY0 + VideoUiLayout.BTN_H;
         if (ActiveTextCollector.isPointInRectangle(localX, localY, btnX0, btnY0, btnX1, btnY1)) {
-            return VideoPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
+            return new VideoAction(VideoActionKind.TOGGLE, 0.0);
         }
         long total = VideoPlayerService.durationMs(url);
         if (total <= 0L) {
             total = entry.getDurationMs();
         }
         long pos = VideoPlayerService.positionMs(url);
-        String left = formatMs(pos);
-        String right = formatMs(total);
+        String left = ChatUpgradeFormatters.formatMs(pos);
+        String right = ChatUpgradeFormatters.formatMs(total);
         int leftX = btnX1 + 4;
         int rightX = x1 - VideoUiLayout.PAD_X - Minecraft.getInstance().font.width(right);
         int barX0 = leftX + Minecraft.getInstance().font.width(left) + 4;
@@ -352,18 +354,24 @@ public final class ChatUpgradeInlineImageInteraction {
         int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
         int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
         if (barX1 > barX0 && ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = (localX - barX0) / Math.max(1.0, barX1 - barX0);
-            long target = (long) (Math.clamp(ratio, 0.0, 1.0) * Math.max(0L, total));
-            return "进度条：点击将跳转到 " + formatMs(target);
+            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+            return new VideoAction(VideoActionKind.SEEK, ratio);
         }
-        return "视频播放器区域\n当前: " + formatMs(pos) + " / " + formatMs(total);
+        return new VideoAction(VideoActionKind.NONE, 0.0);
     }
 
-    private static String formatMs(long ms) {
-        long s = Math.max(0L, ms / 1000L);
-        long m = s / 60L;
-        long r = s % 60L;
-        return String.format("%d:%02d", m, r);
+    private enum AudioActionKind {
+        TOGGLE, TOGGLE_LOOP, OPEN_URL, SEEK, NONE
+    }
+
+    private record AudioAction(AudioActionKind kind, double ratio) {
+    }
+
+    private enum VideoActionKind {
+        TOGGLE, SEEK, NONE
+    }
+
+    private record VideoAction(VideoActionKind kind, double ratio) {
     }
 
     private static boolean containsScreenPoint(Plane p, int screenX, int screenY) {
@@ -398,6 +406,6 @@ public final class ChatUpgradeInlineImageInteraction {
             int localBottom,
             String url,
             GuiMessage parent,
-            InlineResourceType resourceType
-    ) {}
+            InlineResourceType resourceType) {
+    }
 }

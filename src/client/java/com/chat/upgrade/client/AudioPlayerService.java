@@ -1,21 +1,23 @@
 package com.chat.upgrade.client;
 
-import com.chat.upgrade.ChatUpgrade;
+import java.io.ByteArrayInputStream;
+import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
-import java.io.ByteArrayInputStream;
-import java.lang.reflect.Method;
-import java.util.concurrent.ConcurrentHashMap;
+
+import com.chat.upgrade.ChatUpgrade;
 
 public final class AudioPlayerService {
     private static final ConcurrentHashMap<String, AudioSession> SESSIONS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> LOOP_ENABLED = new ConcurrentHashMap<>();
-    private static volatile String activeUrl;
+    private static final SingleActivePlaybackCoordinator ACTIVE_PLAYBACK = new SingleActivePlaybackCoordinator();
 
-    private AudioPlayerService() {}
+    private AudioPlayerService() {
+    }
 
     public static long prepare(String url, byte[] audioBytes) throws Exception {
         AudioSession prev = SESSIONS.remove(url);
@@ -26,7 +28,8 @@ public final class AudioPlayerService {
         try {
             clip = openClipWithAudioSystem(audioBytes);
         } catch (Exception primary) {
-            ChatUpgrade.LOGGER.debug("chat-upgrade: AudioSystem decode failed, trying mp3spi fallback: {}", primary.getMessage());
+            ChatUpgrade.LOGGER.debug("chat-upgrade: AudioSystem decode failed, trying mp3spi fallback: {}",
+                    primary.getMessage());
             clip = openClipWithMp3SpiFallback(audioBytes);
         }
         if (clip == null) {
@@ -39,7 +42,7 @@ public final class AudioPlayerService {
 
     private static Clip openClipWithAudioSystem(byte[] audioBytes) throws Exception {
         try (AudioInputStream ais = AudioSystem.getAudioInputStream(new ByteArrayInputStream(audioBytes));
-             AudioInputStream pcm = toPcmIfNeeded(ais)) {
+                AudioInputStream pcm = toPcmIfNeeded(ais)) {
             Clip clip = AudioSystem.getClip();
             clip.open(pcm);
             return clip;
@@ -51,7 +54,7 @@ public final class AudioPlayerService {
         Object reader = readerClass.getDeclaredConstructor().newInstance();
         Method readMethod = readerClass.getMethod("getAudioInputStream", java.io.InputStream.class);
         try (AudioInputStream ais = (AudioInputStream) readMethod.invoke(reader, new ByteArrayInputStream(audioBytes));
-             AudioInputStream pcm = toPcmIfNeeded(ais)) {
+                AudioInputStream pcm = toPcmIfNeeded(ais)) {
             Clip clip = AudioSystem.getClip();
             clip.open(pcm);
             return clip;
@@ -70,8 +73,7 @@ public final class AudioPlayerService {
                 Math.max(1, base.getChannels()),
                 Math.max(1, base.getChannels()) * 2,
                 base.getSampleRate(),
-                false
-        );
+                false);
         return AudioSystem.getAudioInputStream(decoded, ais);
     }
 
@@ -81,7 +83,7 @@ public final class AudioPlayerService {
         }
         SESSIONS.clear();
         LOOP_ENABLED.clear();
-        activeUrl = null;
+        ACTIVE_PLAYBACK.clear();
     }
 
     public static boolean toggle(String url) {
@@ -92,22 +94,20 @@ public final class AudioPlayerService {
         synchronized (s) {
             if (s.clip.isRunning()) {
                 s.clip.stop();
-                if (url.equals(activeUrl)) {
-                    activeUrl = null;
-                }
+                ACTIVE_PLAYBACK.deactivateIfActive(url);
                 return false;
             }
-            String current = activeUrl;
-            if (current != null && !current.equals(url)) {
+            ACTIVE_PLAYBACK.activate(url, current -> {
                 AudioSession cur = SESSIONS.get(current);
-                if (cur != null) {
-                    synchronized (cur) {
-                        if (cur.clip.isRunning()) {
-                            cur.clip.stop();
-                        }
+                if (cur == null) {
+                    return;
+                }
+                synchronized (cur) {
+                    if (cur.clip.isRunning()) {
+                        cur.clip.stop();
                     }
                 }
-            }
+            });
             if (s.clip.getMicrosecondPosition() >= s.clip.getMicrosecondLength()) {
                 s.clip.setMicrosecondPosition(0L);
             }
@@ -116,7 +116,6 @@ public final class AudioPlayerService {
             } else {
                 s.clip.start();
             }
-            activeUrl = url;
             return true;
         }
     }

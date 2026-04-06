@@ -1,19 +1,7 @@
 package com.chat.upgrade.client.mixin;
 
-import com.chat.upgrade.client.ChatUpgradeConfig;
-import com.chat.upgrade.client.AudioLoader;
-import com.chat.upgrade.client.ImageLoader;
-import com.chat.upgrade.client.InlineResourceType;
-import com.chat.upgrade.client.VideoLoader;
-import com.chat.upgrade.client.UpgradeBracketCodec;
-import com.chat.upgrade.client.UpgradeChatHudSync;
-import com.chat.upgrade.client.UpgradePhantomCoordinator;
-import com.chat.upgrade.client.UpgradePhantomHudLayout;
-import net.minecraft.client.gui.components.ChatComponent;
-import net.minecraft.client.multiplayer.chat.GuiMessage;
-import net.minecraft.client.multiplayer.chat.GuiMessageTag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MessageSignature;
+import java.util.List;
+
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,31 +12,38 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.List;
+import com.chat.upgrade.client.AudioLoader;
+import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.ImageLoader;
+import com.chat.upgrade.client.InlineResourceType;
+import com.chat.upgrade.client.UpgradeBracketCodec;
+import com.chat.upgrade.client.UpgradeChatHudSync;
+import com.chat.upgrade.client.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.UpgradePhantomHudLayout;
+import com.chat.upgrade.client.VideoLoader;
+
+import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.client.multiplayer.chat.GuiMessage;
+import net.minecraft.client.multiplayer.chat.GuiMessageTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MessageSignature;
 
 @Mixin(ChatComponent.class)
 public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
-    @Shadow @Final private List<GuiMessage.Line> trimmedMessages;
+    @Shadow
+    @Final
+    private List<GuiMessage.Line> trimmedMessages;
 
-    @Unique private int chatupgrade$sizeBeforeAdd;
+    @Unique
+    private int chatupgrade$sizeBeforeAdd;
 
-    @ModifyVariable(
-            method = "addPlayerMessage",
-            at = @At("HEAD"),
-            argsOnly = true,
-            ordinal = 0
-    )
+    @ModifyVariable(method = "addPlayerMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component chatupgrade$parsePlayerMessage(Component original) {
         return chatupgrade$processIncoming(original);
     }
 
-    @ModifyVariable(
-            method = "addServerSystemMessage",
-            at = @At("HEAD"),
-            argsOnly = true,
-            ordinal = 0
-    )
+    @ModifyVariable(method = "addServerSystemMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component chatupgrade$parseSystemMessage(Component original) {
         return chatupgrade$processIncoming(original);
     }
@@ -57,9 +52,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     private Component chatupgrade$processIncoming(Component original) {
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
         if (decoded.hasUrl()) {
-            UpgradePhantomCoordinator.pendingDecodedUrl = decoded.url();
-            UpgradePhantomCoordinator.pendingDecodedName = decoded.name();
-            UpgradePhantomCoordinator.pendingDecodedType = decoded.resourceType();
+            UpgradePhantomCoordinator.setPendingDecoded(decoded.url(), decoded.name(), decoded.resourceType());
             if (decoded.resourceType() == InlineResourceType.IMAGE) {
                 if (!ChatUpgradeConfig.get().manualImageReveal) {
                     ImageLoader.getOrLoad(decoded.url());
@@ -77,8 +70,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Inject(method = "addPlayerMessage", at = @At("HEAD"))
     private void chatupgrade$recordSizeBefore(
             Component message, @Nullable MessageSignature sig, @Nullable GuiMessageTag tag,
-            CallbackInfo ci
-    ) {
+            CallbackInfo ci) {
         chatupgrade$sizeBeforeAdd = trimmedMessages.size();
     }
 
@@ -90,8 +82,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Inject(method = "addPlayerMessage", at = @At("TAIL"))
     private void chatupgrade$insertPhantomLinesPlayer(
             Component message, @Nullable MessageSignature sig, @Nullable GuiMessageTag tag,
-            CallbackInfo ci
-    ) {
+            CallbackInfo ci) {
         chatupgrade$insertPhantoms();
     }
 
@@ -102,12 +93,10 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @Unique
     private void chatupgrade$insertPhantoms() {
-        String url = UpgradePhantomCoordinator.pendingDecodedUrl;
-        String name = UpgradePhantomCoordinator.pendingDecodedName;
-        InlineResourceType type = UpgradePhantomCoordinator.pendingDecodedType;
-        UpgradePhantomCoordinator.pendingDecodedUrl = null;
-        UpgradePhantomCoordinator.pendingDecodedName = null;
-        UpgradePhantomCoordinator.pendingDecodedType = InlineResourceType.IMAGE;
+        UpgradePhantomCoordinator.PendingDecoded pending = UpgradePhantomCoordinator.consumePendingDecoded();
+        String url = pending.url();
+        String name = pending.name();
+        InlineResourceType type = pending.type();
         if (url == null) {
             return;
         }
@@ -115,7 +104,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         if (linesAdded <= 0) {
             return;
         }
-        UpgradePhantomCoordinator.nextPhantomTopName = name;
+        UpgradePhantomCoordinator.prepareNextPhantomTop(type, name, null);
         GuiMessage parentMessage = trimmedMessages.get(0).parent();
         switch (type) {
             case AUDIO -> UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);

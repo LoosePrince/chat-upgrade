@@ -1,11 +1,5 @@
 package com.chat.upgrade.client.mixin;
 
-import com.chat.upgrade.client.UpgradePhantomCoordinator;
-import com.chat.upgrade.client.InlineResourceType;
-import com.chat.upgrade.client.mixininterface.GuiMessageLineReadable;
-import com.chat.upgrade.client.mixininterface.ImageAttachable;
-import net.minecraft.client.multiplayer.chat.GuiMessage;
-import net.minecraft.util.FormattedCharSequence;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -14,6 +8,14 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import com.chat.upgrade.client.InlineResourceType;
+import com.chat.upgrade.client.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.mixininterface.GuiMessageLineReadable;
+import com.chat.upgrade.client.mixininterface.ImageAttachable;
+
+import net.minecraft.client.multiplayer.chat.GuiMessage;
+import net.minecraft.util.FormattedCharSequence;
+
 @Mixin(GuiMessage.Line.class)
 public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessageLineReadable {
     @Shadow
@@ -21,6 +23,7 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
 
     @Shadow
     public abstract boolean endOfEntry();
+
     @Unique
     private @Nullable String chatupgrade$imageUrl;
     @Unique
@@ -33,16 +36,11 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
 
     @Inject(method = "<init>", at = @At("TAIL"))
     private void chatupgrade$captureImageData(CallbackInfo ci) {
-        this.chatupgrade$resourceType = UpgradePhantomCoordinator.nextPhantomTopType;
-        this.chatupgrade$resourceName = UpgradePhantomCoordinator.nextPhantomTopName;
-        if (UpgradePhantomCoordinator.nextPhantomTopUrl != null) {
-            this.chatupgrade$imageUrl = UpgradePhantomCoordinator.nextPhantomTopUrl;
-            UpgradePhantomCoordinator.nextPhantomTopUrl = null;
-            UpgradePhantomCoordinator.nextPhantomTopName = null;
-            UpgradePhantomCoordinator.nextPhantomTopType = InlineResourceType.IMAGE;
-        }
-        this.chatupgrade$imageIsContinuation = UpgradePhantomCoordinator.nextPhantomContinuation;
-        UpgradePhantomCoordinator.nextPhantomContinuation = false;
+        UpgradePhantomCoordinator.PhantomLineHints hints = UpgradePhantomCoordinator.consumePhantomLineHints();
+        this.chatupgrade$resourceType = hints.topType();
+        this.chatupgrade$resourceName = hints.topName();
+        this.chatupgrade$imageUrl = hints.topUrl();
+        this.chatupgrade$imageIsContinuation = hints.continuation();
     }
 
     @Override

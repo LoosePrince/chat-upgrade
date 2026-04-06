@@ -332,16 +332,19 @@ public final class UpgradeBracketCodec {
                     case LOADED -> "已加载";
                     case FAILED -> "加载失败";
                 }).append('\n');
-                sb.append("传输体积: ").append(formatBytes(e.getFetchedByteLength())).append('\n');
+                sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
                 if (e.isLoaded()) {
-                    sb.append("像素尺寸: ").append(e.getRawPixelWidth()).append('×').append(e.getRawPixelHeight()).append('\n');
+                    sb.append("像素尺寸: ").append(e.getRawPixelWidth()).append('×').append(e.getRawPixelHeight())
+                            .append('\n');
                     sb.append("预览绘制: ").append(e.getWidth()).append('×').append(e.getHeight()).append('\n');
-                    sb.append("纹理尺寸: ").append(e.getTextureWidth()).append('×').append(e.getTextureHeight()).append('\n');
+                    sb.append("纹理尺寸: ").append(e.getTextureWidth()).append('×').append(e.getTextureHeight())
+                            .append('\n');
                     if (e.isAnimated()) {
                         sb.append("动图: 是(").append(e.getAnimationFrameCount()).append("帧)\n");
                     }
-                    sb.append("像素格式: ").append(e.getDecodedFormatName() == null ? "—" : e.getDecodedFormatName()).append('\n');
+                    sb.append("像素格式: ").append(e.getDecodedFormatName() == null ? "—" : e.getDecodedFormatName())
+                            .append('\n');
                 }
                 sb.append("手动触发渲染=").append(ChatUpgradeConfig.get().manualImageReveal ? "开启" : "关闭").append('\n');
             }
@@ -356,9 +359,9 @@ public final class UpgradeBracketCodec {
                     case LOADED -> AudioPlayerService.isPlaying(url) ? "播放中" : "已加载(暂停)";
                     case FAILED -> "加载失败";
                 }).append('\n');
-                sb.append("传输体积: ").append(formatBytes(e.getFetchedByteLength())).append('\n');
+                sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
-                sb.append("时长: ").append(formatMs(e.getDurationMs())).append('\n');
+                sb.append("时长: ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
             }
             case VIDEO -> {
                 VideoEntry e = VideoLoader.getIfPresent(url);
@@ -371,37 +374,17 @@ public final class UpgradeBracketCodec {
                     case LOADED -> VideoPlayerService.isPlaying(url) ? "播放中" : "已加载(暂停)";
                     case FAILED -> "加载失败";
                 }).append('\n');
-                sb.append("传输体积: ").append(formatBytes(e.getFetchedByteLength())).append('\n');
+                sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
-                sb.append("时长: ").append(formatMs(e.getDurationMs())).append('\n');
+                sb.append("时长: ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
                 if (e.isLoaded()) {
                     sb.append("像素尺寸: ").append(e.getRawWidth()).append('×').append(e.getRawHeight()).append('\n');
-                    sb.append("预览绘制: ").append(e.getDisplayWidth()).append('×').append(e.getDisplayHeight()).append('\n');
+                    sb.append("预览绘制: ").append(e.getDisplayWidth()).append('×').append(e.getDisplayHeight())
+                            .append('\n');
                 }
             }
         }
     }
-
-    private static String formatBytes(int len) {
-        if (len < 0) {
-            return "—";
-        }
-        if (len < 1024) {
-            return len + " B";
-        }
-        if (len < 1024 * 1024) {
-            return String.format(Locale.ROOT, "%.1f KiB", len / 1024.0);
-        }
-        return String.format(Locale.ROOT, "%.2f MiB", len / (1024.0 * 1024.0));
-    }
-
-    private static String formatMs(long ms) {
-        long s = Math.max(0L, ms / 1000L);
-        long m = s / 60L;
-        long r = s % 60L;
-        return String.format(Locale.ROOT, "%d:%02d", m, r);
-    }
-
 
     /**
      * When an inline preview fails to load asynchronously, the HUD still shows
@@ -486,7 +469,8 @@ public final class UpgradeBracketCodec {
         String parsedName = parseNameFromVisiblePlaceholder(matched);
         String name = (nameHint != null && !nameHint.isBlank()) ? nameHint : parsedName;
         Style base = ps.styleAt(start);
-        Style refreshed = base.withHoverEvent(new HoverEvent.ShowText(Component.literal(buildLabelHoverText(type, name, url))));
+        Style refreshed = base
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal(buildLabelHoverText(type, name, url))));
         List<FormattedCharSequence> parts = new ArrayList<>(3);
         if (start > 0) {
             parts.add(span(ps, 0, start));

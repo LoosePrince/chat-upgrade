@@ -1,6 +1,7 @@
 package com.chat.upgrade.client;
 
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -10,9 +11,14 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Util;
 
-/** Draws URL preview tiles in the chat HUD using the scoped {@link GuiGraphicsExtractor} from {@link ChatUpgradeRenderScope}. */
+/**
+ * Draws URL preview tiles in the chat HUD using the scoped
+ * {@link GuiGraphicsExtractor} from {@link ChatUpgradeRenderScope}.
+ */
 public final class UpgradeHudInlinePaint {
-    private UpgradeHudInlinePaint() {}
+    private UpgradeHudInlinePaint() {
+    }
+
     public static final int AUDIO_HEIGHT = 27;
     public static final int AUDIO_WIDTH = 220;
     public static final int AUDIO_PAD_X = 6;
@@ -22,13 +28,16 @@ public final class UpgradeHudInlinePaint {
     public static final int AUDIO_PROGRESS_H = 4;
 
     public static void paintLinePreview(GuiMessage.Line line, int messageY, float opacity) {
-        if (!(((Object) line) instanceof ImageAttachable attachable)) return;
+        if (!(((Object) line) instanceof ImageAttachable attachable))
+            return;
 
         String resourceUrl = attachable.chatupgrade$getImageUrl();
-        if (resourceUrl == null) return;
+        if (resourceUrl == null)
+            return;
 
         GuiGraphicsExtractor gfx = ChatUpgradeRenderScope.current();
-        if (gfx == null) return;
+        if (gfx == null)
+            return;
 
         if (attachable.chatupgrade$getResourceType() == InlineResourceType.AUDIO) {
             AudioEntry entry = AudioLoader.getIfPresent(resourceUrl);
@@ -53,7 +62,8 @@ public final class UpgradeHudInlinePaint {
         }
 
         switch (imageEntry.getState()) {
-            case FAILED -> {}
+            case FAILED -> {
+            }
             case LOADING -> paintLoadingStrip(gfx, imageEntry, messageY, opacity);
             case LOADED -> paintDecodedBlit(gfx, imageEntry, messageY, opacity);
         }
@@ -65,8 +75,7 @@ public final class UpgradeHudInlinePaint {
             String resourceName,
             String url,
             int messageY,
-            float opacity
-    ) {
+            float opacity) {
         int h = AUDIO_HEIGHT;
         int w = AUDIO_WIDTH;
         int x0 = 0;
@@ -78,12 +87,14 @@ public final class UpgradeHudInlinePaint {
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == AudioEntry.State.LOADING) {
             String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE ? "音频处理中…" : "音频下载中…";
-            gfx.text(font, name + "  " + formatMs(0) + " / " + formatMs(0), x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 210, 210, 215), false);
+            gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
+                    x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 210, 210, 215), false);
             gfx.text(font, label, x0 + AUDIO_PAD_X, y0 + AUDIO_LINE2_Y, argb(opacity, 210, 210, 215), false);
             return;
         }
         if (entry.getState() == AudioEntry.State.FAILED) {
-            gfx.text(font, name + "  " + formatMs(0) + " / " + formatMs(0), x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 255, 120, 120), false);
+            gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
+                    x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 255, 120, 120), false);
             gfx.text(font, "音频加载失败", x0 + AUDIO_PAD_X, y0 + AUDIO_LINE2_Y, argb(opacity, 255, 120, 120), false);
             return;
         }
@@ -94,12 +105,16 @@ public final class UpgradeHudInlinePaint {
         if (total <= 0) {
             total = entry.getDurationMs();
         }
-        gfx.text(font, name + "  " + formatMs(pos) + " / " + formatMs(total), x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 215, 220, 230), false);
+        gfx.text(font,
+                name + "  " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
+                x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 215, 220, 230), false);
 
         boolean loop = AudioPlayerService.isLoopEnabled(url);
         AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
-        paintButton(gfx, font, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom(), playing ? "⏸" : "▶", opacity, true);
-        paintButton(gfx, font, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom(), loop ? "🔁" : "↺", opacity, loop);
+        paintButton(gfx, font, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom(), playing ? "⏸" : "▶",
+                opacity, true);
+        paintButton(gfx, font, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom(), loop ? "🔁" : "↺",
+                opacity, loop);
         paintButton(gfx, font, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom(), "↗", opacity, false);
 
         int barX0 = x0 + AUDIO_PAD_X;
@@ -118,8 +133,7 @@ public final class UpgradeHudInlinePaint {
             int x0, int y0, int x1, int y1,
             String label,
             float opacity,
-            boolean active
-    ) {
+            boolean active) {
         int bg = active ? argb(opacity, 76, 98, 132) : argb(opacity, 58, 62, 72);
         gfx.fill(x0, y0, x1, y1, bg);
         int tx = x0 + Math.max(1, (x1 - x0 - font.width(label)) / 2);
@@ -132,8 +146,7 @@ public final class UpgradeHudInlinePaint {
             String resourceName,
             String url,
             int messageY,
-            float opacity
-    ) {
+            float opacity) {
         int x0 = 0;
         int y0 = messageY;
         int drawW = VideoUiLayout.WIDTH;
@@ -173,8 +186,7 @@ public final class UpgradeHudInlinePaint {
                     entry.getRawHeight() > 0 ? entry.getRawHeight() : VideoUiLayout.VIDEO_BOTTOM,
                     entry.getRawWidth() > 0 ? entry.getRawWidth() : drawW,
                     entry.getRawHeight() > 0 ? entry.getRawHeight() : VideoUiLayout.VIDEO_BOTTOM,
-                    ARGB.white(opacity)
-            );
+                    ARGB.white(opacity));
         }
 
         long pos = VideoPlayerService.positionMs(url);
@@ -191,8 +203,8 @@ public final class UpgradeHudInlinePaint {
         int iconX = btnX0 + Math.max(1, (VideoUiLayout.BTN_W - font.width(icon)) / 2);
         gfx.text(font, icon, iconX, controlY, argb(opacity, 235, 236, 242), false);
 
-        String left = formatMs(pos);
-        String right = formatMs(total);
+        String left = ChatUpgradeFormatters.formatMs(pos);
+        String right = ChatUpgradeFormatters.formatMs(total);
         int leftX = btnX1 + 4;
         int rightX = x1 - VideoUiLayout.PAD_X - font.width(right);
         gfx.text(font, left, leftX, controlY, argb(opacity, 222, 224, 230), false);
@@ -210,27 +222,23 @@ public final class UpgradeHudInlinePaint {
         }
     }
 
-    private static String formatMs(long ms) {
-        long s = Math.max(0L, ms / 1000L);
-        long m = s / 60L;
-        long r = s % 60L;
-        return String.format("%d:%02d", m, r);
-    }
-
     private static void paintDecodedBlit(GuiGraphicsExtractor gfx, ImageEntry entry, int messageY, float opacity) {
         Identifier textureId = entry.isAnimated()
                 ? entry.textureIdAtMillis(Util.getMillis())
                 : entry.getTextureId();
-        if (textureId == null) return;
+        if (textureId == null)
+            return;
 
         int drawW = entry.getWidth();
         int drawH = entry.getHeight();
         int texW = entry.getTextureWidth();
         int texH = entry.getTextureHeight();
 
-        if (drawW <= 0 || drawH <= 0 || texW <= 0 || texH <= 0) return;
+        if (drawW <= 0 || drawH <= 0 || texW <= 0 || texH <= 0)
+            return;
 
-        if (drawH > ImageLoader.PREVIEW_HEIGHT) drawH = ImageLoader.PREVIEW_HEIGHT;
+        if (drawH > ImageLoader.PREVIEW_HEIGHT)
+            drawH = ImageLoader.PREVIEW_HEIGHT;
 
         int color = ARGB.white(opacity);
         gfx.blit(
@@ -241,8 +249,7 @@ public final class UpgradeHudInlinePaint {
                 drawW, drawH,
                 texW, texH,
                 texW, texH,
-                color
-        );
+                color);
     }
 
     private static int argb(float opacity, int r, int g, int b) {

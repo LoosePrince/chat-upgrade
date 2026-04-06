@@ -1,30 +1,19 @@
 package com.chat.upgrade.client;
 
-import javax.imageio.ImageIO;
-
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.security.MessageDigest;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import javax.imageio.ImageIO;
+
+import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
-
-import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -53,16 +42,8 @@ public final class ImageLoader {
 
     private static final ConcurrentHashMap<String, ImageEntry> CACHE = new ConcurrentHashMap<>();
     private static final AtomicInteger TEXTURE_COUNTER = new AtomicInteger(0);
-    private static final HttpClient HTTP = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
 
     private ImageLoader() {
-    }
-
-    private static final class ResponseBodyTooLarge extends RuntimeException {
-        private static final long serialVersionUID = 1L;
     }
 
     /**
@@ -122,51 +103,25 @@ public final class ImageLoader {
 
     private static void startLoad(String url, ImageEntry entry) {
         CompletableFuture.supplyAsync(() -> {
-            try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(15))
-                        .GET()
-                        .build();
-                return HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to fetch {}: {}", url, e.getMessage());
-                return null;
-            }
+            return MediaFetchSupport.sendGet(url, 15, "image");
         }).thenAccept(response -> {
             if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
                 markFailed(url, entry);
                 return;
             }
             int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
-            try (InputStream raw = response.body()) {
-                OptionalLong clOpt = response.headers().firstValueAsLong("Content-Length");
-                if (clOpt.isPresent() && clOpt.getAsLong() > maxReceive) {
-                    ChatUpgrade.LOGGER.warn(
-                            "chat-upgrade: image too large (Content-Length {} > limit {}) for {}",
-                            clOpt.getAsLong(),
-                            maxReceive,
-                            url);
-                    markFailedOversize(url, entry);
-                    return;
-                }
-                byte[] body = readBodyCapped(raw, maxReceive);
-                String contentType = response.headers().firstValue("Content-Type").orElse(null);
-                int declaredLen = -1;
-                try {
-                    var lenOpt = response.headers().firstValueAsLong("Content-Length");
-                    if (lenOpt.isPresent()) {
-                        declaredLen = (int) Math.min(lenOpt.getAsLong(), Integer.MAX_VALUE);
-                    }
-                } catch (Exception ignored) {
-                }
+            try {
+                MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, maxReceive);
+                byte[] body = payload.body();
+                String contentType = payload.contentType();
+                int declaredLen = payload.declaredLength();
                 int byteLen = body.length;
                 if (declaredLen >= 0 && declaredLen != byteLen) {
                     ChatUpgrade.LOGGER.debug(
                             "chat-upgrade: Content-Length {} differs from body {} for {}",
                             declaredLen, byteLen, url);
                 }
-                String md5Hex = md5Hex(body);
+                String md5Hex = payload.md5Hex();
                 entry.setTransferMetadata(byteLen, contentType, md5Hex);
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
                 Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
@@ -178,13 +133,14 @@ public final class ImageLoader {
                 }
                 if (animatedOpt.isPresent()) {
                     AnimatedDecodeResult r = animatedOpt.get();
-                    ChatUpgrade.LOGGER.info("chat-upgrade: animated decode ok for {} (frames={})", url, r.frames().length);
+                    ChatUpgrade.LOGGER.info("chat-upgrade: animated decode ok for {} (frames={})", url,
+                            r.frames().length);
                     scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
                     return;
                 }
                 NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
                 scheduleTextureRegistration(url, entry, img);
-            } catch (ResponseBodyTooLarge e) {
+            } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: image body exceeds limit ({}) for {}", maxReceive, url);
                 markFailedOversize(url, entry);
             } catch (Exception e) {
@@ -196,36 +152,6 @@ public final class ImageLoader {
             markFailed(url, entry);
             return null;
         });
-    }
-
-    private static byte[] readBodyCapped(InputStream is, int maxBytes) throws IOException {
-        if (maxBytes < 0) {
-            throw new IllegalArgumentException("maxBytes");
-        }
-        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(maxBytes, 65536));
-        byte[] buf = new byte[8192];
-        long total = 0;
-        while (true) {
-            int n = is.read(buf);
-            if (n < 0) {
-                break;
-            }
-            if ((long) total + n > maxBytes) {
-                throw new ResponseBodyTooLarge();
-            }
-            out.write(buf, 0, n);
-            total += n;
-        }
-        return out.toByteArray();
-    }
-
-    private static String md5Hex(byte[] data) {
-        try {
-            byte[] digest = MessageDigest.getInstance("MD5").digest(data);
-            return HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     private static void markFailed(String url, ImageEntry entry) {
@@ -249,7 +175,8 @@ public final class ImageLoader {
         });
     }
 
-    private record PreviewLayout(int displayW, int displayH, int texW, int texH) {}
+    private record PreviewLayout(int displayW, int displayH, int texW, int texH) {
+    }
 
     private static @Nullable PreviewLayout computePreviewLayout(Window window, int rawW, int rawH) {
         if (rawH == 0) {
@@ -297,8 +224,7 @@ public final class ImageLoader {
             String url,
             ImageEntry entry,
             NativeImage[] frames,
-            int[] delayMs
-    ) {
+            int[] delayMs) {
         Minecraft.getInstance().execute(() -> {
             ArrayList<Identifier> registered = new ArrayList<>();
             try {
@@ -344,7 +270,8 @@ public final class ImageLoader {
                 entry.setLoadedAnimated(ids, delayMs, displayW, displayH, texW, texH, rawW, rawH);
                 UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
             } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register animated texture for {}: {}", url, e.getMessage());
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register animated texture for {}: {}", url,
+                        e.getMessage());
                 Minecraft mc = Minecraft.getInstance();
                 for (Identifier id : registered) {
                     mc.getTextureManager().release(id);
