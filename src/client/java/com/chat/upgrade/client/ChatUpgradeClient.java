@@ -246,7 +246,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank())
                 .orElseGet(() -> displayNameFromPath(file));
-        source.sendFeedback(Component.literal("正在上传到 Catbox…").withStyle(ChatFormatting.GRAY));
+        source.sendFeedback(Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
         finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
         return 1;
     }
@@ -280,7 +280,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(Component.literal("正在上传到 Catbox…").withStyle(ChatFormatting.GRAY));
+                        source.sendFeedback(Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
                         finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
                     });
                 });
@@ -302,7 +302,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElse("粘贴");
-        source.sendFeedback(Component.literal("正在上传到 Catbox…").withStyle(ChatFormatting.GRAY));
+        source.sendFeedback(Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
         finishUploadAndSend(source, CatboxUploader.uploadBytes(png.get(), "paste.png"), displayName);
         return 1;
     }
@@ -316,7 +316,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(Component.literal("上传失败（网络、文件或 Catbox 返回错误）。")
+                source.sendError(Component.literal("上传失败（网络、文件或 Litterbox 返回错误）。")
                         .withStyle(ChatFormatting.RED));
                 return;
             }

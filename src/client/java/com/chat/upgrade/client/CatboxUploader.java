@@ -14,12 +14,16 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Anonymous file upload to Catbox ({@code https://catbox.moe/user/api.php}, {@code reqtype=fileupload}).
+ * Anonymous upload to Litterbox ({@code reqtype=fileupload}, {@code time=1h} retention).
  *
- * @see <a href="https://catbox.moe/tools.php">Catbox tools / API</a>
+ * @see <a href="https://litterbox.catbox.moe/tools.php">Litterbox tools / API</a>
  */
 public final class CatboxUploader {
-    public static final URI API_URI = URI.create("https://catbox.moe/user/api.php");
+    /** Official API endpoint (the {@code tools.php} page is documentation only). */
+    public static final URI API_URI = URI.create("https://litterbox.catbox.moe/resources/internals/api.php");
+
+    /** Allowed: {@code 1h}, {@code 12h}, {@code 24h}, {@code 72h}; we use 1 hour. */
+    public static final String RETENTION_TIME = "1h";
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
@@ -109,6 +113,9 @@ public final class CatboxUploader {
         String prefix = "--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"reqtype\"\r\n\r\n"
                 + "fileupload\r\n"
+                + "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"time\"\r\n\r\n"
+                + RETENTION_TIME + "\r\n"
                 + "--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"fileToUpload\"; filename=\""
                 + escapeQuotedFilename(filename)

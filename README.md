@@ -16,7 +16,7 @@
 ## 功能概要
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取图片 → 在对应消息下方预留行高并绘制预览。
-- **发送**：客户端命令（如 `/chatupgrade send`、`upload` 等）拼出载荷并发送；可选上传到 Catbox 再发链接。
+- **发送**：客户端命令（如 `/chatupgrade send`、`upload` 等）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
 - **配置**：`config/chat-upgrade.json` 中的 `ciCompatibility`、`manualImageReveal` 等；支持游戏内写入与重载。
 
 ## 特点
@@ -41,7 +41,7 @@
 | 命令 | 说明 |
 |------|------|
 | `/chatupgrade send <url> <name>` | 向聊天发送图片载荷；`name` 可省略（默认「图片」）。 |
-| `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Catbox 再发送。`<path>` 为**第一个参数**（Brigadier 可引用字符串：路径里有空格时用一对 `"` 包成一段即可）；`<name>` 为**第二个**可选参数（可含空格）。例：`/chatupgrade upload folder "D:\My Pictures\a.png"`、`/chatupgrade upload folder "D:\img\a.png" 截图`。无空格的路径也可不写引号。 |
+| `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Litterbox（约 1 小时有效）再发送。`<path>` 为**第一个参数**（Brigadier 可引用字符串：路径里有空格时用一对 `"` 包成一段即可）；`<name>` 为**第二个**可选参数（可含空格）。例：`/chatupgrade upload folder "D:\My Pictures\a.png"`、`/chatupgrade upload folder "D:\img\a.png" 截图`。无空格的路径也可不写引号。 |
 | `/chatupgrade upload pick <name>` | 打开文件选择器选图并上传发送；`name` 可省略。 |
 | `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送；`name` 可省略（默认「粘贴」）。 |
 | `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 兼容：`true` 为 `[[CICode,url=…]]`，`false` 为 `[[ChatUpgrade,url=…]]`；写入配置文件。 |
