@@ -12,7 +12,7 @@ import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
- * {@code config/chat-upgrade.json}
+ * {@code config/chat-upgrade/chat-upgrade.json}
  */
 public final class ChatUpgradeConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -24,7 +24,8 @@ public final class ChatUpgradeConfig {
     /**
      * Hard cap (10 MiB) for both {@link #maxReceiveBytes} and
      * {@link #maxUploadBytes}, including values read from a
-     * hand-edited {@code chat-upgrade.json}. Cannot be exceeded at runtime;
+     * hand-edited {@code chat-upgrade/chat-upgrade.json}. Cannot be exceeded at
+     * runtime;
      * normalized values are written back on load
      * when the file contained out-of-range numbers.
      */
@@ -116,7 +117,9 @@ public final class ChatUpgradeConfig {
     }
 
     public static Path configPath() {
-        return FabricLoader.getInstance().getConfigDir().resolve("chat-upgrade.json");
+        return FabricLoader.getInstance().getConfigDir()
+                .resolve("chat-upgrade")
+                .resolve("chat-upgrade.json");
     }
 
     public static void load() {

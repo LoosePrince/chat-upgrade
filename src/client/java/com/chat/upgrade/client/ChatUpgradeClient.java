@@ -226,7 +226,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         AudioPlayerService.setGlobalVolumePercent(cfg.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(cfg.videoVolumePercent);
         source.sendFeedback(Component.literal(
-                "已重载 config/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
+                "已重载 config/chat-upgrade/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
                         + "；手动渲染: " + (manual ? "开" : "关")
                         + "；音频手动渲染: " + (manualAudio ? "开" : "关")
                         + "；视频手动渲染: " + (manualVideo ? "开" : "关")

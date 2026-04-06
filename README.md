@@ -17,7 +17,7 @@
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取资源（图片/音频/视频）→ 在对应消息下方预留行高并绘制预览。
 - **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
-- **配置**：`config/chat-upgrade.json` 支持协议兼容、手动触发渲染、接收/上传上限、音频/视频音量；支持游戏内写入与重载。
+- **配置**：`config/chat-upgrade/chat-upgrade.json` 支持协议兼容、手动触发渲染、接收/上传上限、音频/视频音量；支持游戏内写入与重载。
 - **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片
 
 ## 特点
@@ -51,7 +51,7 @@
 | `/chatupgrade uploadaudio pick <name>` | 打开文件选择器选音频并上传发送。 |
 | `/chatupgrade uploadvideo folder <path> <name>` | 从本机路径上传视频到 Litterbox 并发送视频载荷。 |
 | `/chatupgrade uploadvideo pick <name>` | 打开文件选择器选视频并上传发送。 |
-| `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 兼容：`true` 为 `[[CICode,url=…]]`，`false` 为 `[[ChatUpgrade,url=…]]`；写入配置。 |
+| `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 图片兼容：`true` 时仅图片发送 `[[CICode,url=…]]`，音频/视频仍发送 `[[ChatUpgrade,url=…]]`；`false` 时全部发送 `[[ChatUpgrade,url=…]]`；写入配置。 |
 | `/chatupgrade config manual <true 或 false>` | 开关**图片手动触发渲染**：`true` 时需点击 `[图片: …]` 后才加载预览；写入配置。 |
 | `/chatupgrade config manualaudio <true 或 false>` | 开关**音频手动触发渲染**：`true` 时需点击 `[音频: …]` 后才加载预览；写入配置。 |
 | `/chatupgrade config manualvideo <true 或 false>` | 开关**视频手动触发渲染**：`true` 时需点击 `[视频: …]` 后才加载预览；写入配置。 |
@@ -59,16 +59,16 @@
 | `/chatupgrade config videovolume <1-100>` | 设置视频音量百分比（1~100）；写入配置。 |
 | `/chatupgrade config maxreceive <1-10>` | 设置接收体积上限（MiB）；写入配置。 |
 | `/chatupgrade config maxupload <1-10>` | 设置上传体积上限（MiB）；写入配置。 |
-| `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade.json`。 |
+| `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade/chat-upgrade.json`。 |
 
 
-配置文件位置：**`.minecraft/config/chat-upgrade.json`**
+配置文件位置：**`.minecraft/config/chat-upgrade/chat-upgrade.json`**
 
 配置项说明：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `ciCompatibility` | `boolean` | `true` 时发送/解析 `[[CICode,...]]`；否则使用 `[[ChatUpgrade,...]]`。 |
+| `ciCompatibility` | `boolean` | `true` 时仅图片发送优先使用 `[[CICode,...]]`（音频/视频发送仍为 `[[ChatUpgrade,...]]`）；解析阶段始终兼容 `CICode` 与 `ChatUpgrade`。 |
 | `manualImageReveal` | `boolean` | 图片改为点击占位符后才触发加载。 |
 | `manualAudioReveal` | `boolean` | 音频改为点击占位符后才触发加载。 |
 | `manualVideoReveal` | `boolean` | 视频改为点击占位符后才触发加载。 |

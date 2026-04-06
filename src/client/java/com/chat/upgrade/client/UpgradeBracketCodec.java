@@ -577,7 +577,8 @@ public final class UpgradeBracketCodec {
     }
 
     public static String buildSendPayload(String url, String name, InlineResourceType type) {
-        return ChatUpgradeConfig.get().ciCompatibility
+        boolean useLegacy = type == InlineResourceType.IMAGE && ChatUpgradeConfig.get().ciCompatibility;
+        return useLegacy
                 ? encodeLegacyTagBlock(url, name, type)
                 : encodeNativeTagBlock(url, name, type);
     }
