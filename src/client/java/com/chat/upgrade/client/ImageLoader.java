@@ -1,12 +1,14 @@
 package com.chat.upgrade.client;
 
-import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -112,7 +114,7 @@ public final class ImageLoader {
                         .timeout(Duration.ofSeconds(15))
                         .GET()
                         .build();
-                return HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                return HTTP.send(request, HttpResponse.BodyHandlers.ofByteArray());
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to fetch {}: {}", url, e.getMessage());
                 return null;
@@ -122,9 +124,27 @@ public final class ImageLoader {
                 markFailed(url, entry);
                 return;
             }
-            try (InputStream is = response.body()) {
+            try {
+                byte[] body = response.body();
+                String contentType = response.headers().firstValue("Content-Type").orElse(null);
+                int declaredLen = -1;
+                try {
+                    var lenOpt = response.headers().firstValueAsLong("Content-Length");
+                    if (lenOpt.isPresent()) {
+                        declaredLen = (int) Math.min(lenOpt.getAsLong(), Integer.MAX_VALUE);
+                    }
+                } catch (Exception ignored) {
+                }
+                int byteLen = body.length;
+                if (declaredLen >= 0 && declaredLen != byteLen) {
+                    ChatUpgrade.LOGGER.debug(
+                            "chat-upgrade: Content-Length {} differs from body {} for {}",
+                            declaredLen, byteLen, url);
+                }
+                String md5Hex = md5Hex(body);
+                entry.setTransferMetadata(byteLen, contentType, md5Hex);
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
-                NativeImage img = RasterImageDecoder.decode(is);
+                NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
                 scheduleTextureRegistration(url, entry, img);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {}: {}", url, e.getMessage());
@@ -135,6 +155,15 @@ public final class ImageLoader {
             markFailed(url, entry);
             return null;
         });
+    }
+
+    private static String md5Hex(byte[] data) {
+        try {
+            byte[] digest = MessageDigest.getInstance("MD5").digest(data);
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static void markFailed(String url, ImageEntry entry) {
@@ -195,6 +224,7 @@ public final class ImageLoader {
                 // displayW×displayH on screen.
                 NativeImage scaled = new NativeImage(img.format(), texW, texH, false);
                 img.resizeSubRectTo(0, 0, rawW, rawH, scaled);
+                entry.setDecodedFormatName(img.format().name());
                 img.close();
 
                 int id = TEXTURE_COUNTER.getAndIncrement();
@@ -206,7 +236,7 @@ public final class ImageLoader {
                 DynamicTexture texture = new DynamicTexture(() -> "upgrade_preview_" + finalId, texturePixels);
                 Minecraft.getInstance().getTextureManager().register(location, texture);
 
-                entry.setLoaded(location, displayW, displayH, texW, texH);
+                entry.setLoaded(location, displayW, displayH, texW, texH, rawW, rawH);
                 UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register texture for {}: {}", url, e.getMessage());

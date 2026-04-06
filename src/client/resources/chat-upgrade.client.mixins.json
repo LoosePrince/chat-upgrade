@@ -5,10 +5,15 @@
 	"client": [
 		"ChatDrawingGraphicsAccessor",
 		"ChatComponentGraphicsScopeMixin",
+		"ChatComponentInlineImageExtractMixin",
 		"ChatComponentMixin",
 		"ChatComponentInnerMixin",
+		"ChatUpgradeClickableTextOnlyGraphicsAccessor",
+		"ChatUpgradeDrawingBackgroundAccessor",
+		"ChatUpgradeDrawingFocusedAccessor",
 		"GuiMessageLineMixin",
-		"ChatScreenManualRevealMixin"
+		"ChatScreenManualRevealMixin",
+		"ChatScreenImageClickMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

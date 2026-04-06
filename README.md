@@ -49,7 +49,7 @@
 | `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade.json`。 |
 
 
-配置项与文件位置：`**.minecraft/config/chat-upgrade.json`**（开发环境多为 `run/config/chat-upgrade.json`）。字段说明：`ciCompatibility`（布尔）、`manualImageReveal`（布尔）。
+配置项与文件位置：**`.minecraft/config/chat-upgrade.json`**（开发环境多为 `run/config/chat-upgrade.json`）。字段说明：`ciCompatibility`（布尔）、`manualImageReveal`（布尔）。
 
 ## 运行环境
 
