@@ -12,7 +12,8 @@ import java.io.InputStream;
 
 /**
  * Decodes image bytes for chat preview: tries {@link NativeImage} (fast path for PNG), then {@link ImageIO}
- * (JPEG, GIF first frame, BMP, TIFF, WebP when SPI is present).
+ * (JPEG, GIF first frame, BMP, TIFF, WebP when SPI is present). Animated WebP / APNG are handled by
+ * {@link WebpAnimatedDecoder} / {@link ApngAnimatedDecoder} before this path.
  */
 public final class RasterImageDecoder {
     private RasterImageDecoder() {}

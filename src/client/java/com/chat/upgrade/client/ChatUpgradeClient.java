@@ -28,6 +28,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         System.setProperty("java.awt.headless", "false");
+        ExternalImageIoPluginLoader.loadAtStartup();
         ChatUpgradeConfig.load();
         registerCommands();
         registerHudTextureInvalidationOnResize();

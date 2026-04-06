@@ -11,13 +11,14 @@
 </div>
 
 
-基于 **Fabric** 的 Minecraft **客户端**模组：在聊天里识别形如 `[[ChatUpgrade,url=…]]`（可选 `[[CICode,url=…]]`）的括号载荷，把链接换成简短占位文案，并在聊天栏旁绘制 URL 预览图（下载中 / 失败提示 / 缩放后的贴图）。
+基于 **Fabric** 的 Minecraft **客户端**模组：在聊天里识别形如 `[[ChatUpgrade,url=…]]`的括号载荷，把链接换成简短占位文案，并在聊天栏旁绘制 URL 预览图（下载中 / 失败提示 / 缩放后的贴图）。
 
 ## 功能概要
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取图片 → 在对应消息下方预留行高并绘制预览。
 - **发送**：客户端命令（如 `/chatupgrade send`、`upload` 等）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
 - **配置**：`config/chat-upgrade.json` 中的 `ciCompatibility`、`manualImageReveal` 等；支持游戏内写入与重载。
+- **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片
 
 ## 特点
 
@@ -35,7 +36,7 @@
 
 ## 命令
 
-均为 **Fabric 客户端命令**（`/chatupgrade …`），在聊天框输入即可；**发送聊天 / 上传**类子命令需要**已进世界且在线**（否则提示无法发送）。
+均为 **Fabric 客户端命令**（`/chatupgrade …`），在聊天框输入即可。
 
 
 | 命令 | 说明 |
@@ -44,12 +45,22 @@
 | `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Litterbox（约 1 小时有效）再发送。`<path>` 为**第一个参数**（Brigadier 可引用字符串：路径里有空格时用一对 `"` 包成一段即可）；`<name>` 为**第二个**可选参数（可含空格）。例：`/chatupgrade upload folder "D:\My Pictures\a.png"`、`/chatupgrade upload folder "D:\img\a.png" 截图`。无空格的路径也可不写引号。 |
 | `/chatupgrade upload pick <name>` | 打开文件选择器选图并上传发送；`name` 可省略。 |
 | `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送；`name` 可省略（默认「粘贴」）。 |
-| `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 兼容：`true` 为 `[[CICode,url=…]]`，`false` 为 `[[ChatUpgrade,url=…]]`；写入配置文件。 |
+| `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 兼容：`true` 为 `[[CICode,url=…]]`，`false` 为 `[[ChatUpgrade,url=…]]`；写入配置。 |
 | `/chatupgrade config manual <true 或 false>` | 开关**手动渲染**：`true` 时需打开聊天后点击 `[图片: …]` 再加载预览；写入配置。 |
 | `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade.json`。 |
 
 
-配置项与文件位置：**`.minecraft/config/chat-upgrade.json`**（开发环境多为 `run/config/chat-upgrade.json`）。字段说明：`ciCompatibility`（布尔）、`manualImageReveal`（布尔）。
+配置项与文件位置：**`.minecraft/config/chat-upgrade.json`** 。字段说明：`ciCompatibility`（布尔）、`manualImageReveal`（布尔）。
+
+### 外置 ImageIO 插件
+
+- 这是**可选启用**能力：不放插件也能正常使用基础图片预览；仅在你需要 APNG 等扩展格式时再安装。
+- 启动时会扫描：**`.minecraft/config/chat-upgrade/libs/`** 。
+- 下载一个 **Java ImageIO 插件 jar**（示例：`com.tianscar.imageio:imageio-apng`，文件名类似 `imageio-apng-1.0.1.jar`），放到上述目录后，**重启游戏**生效。
+- 推荐下载来源：
+  - Maven Central（artifact 页面）：[com.tianscar.imageio:imageio-apng](https://central.sonatype.com/artifact/com.tianscar.imageio/imageio-apng)
+  - 直接下载链接示例（1.0.1）：[imageio-apng-1.0.1.jar](https://repo1.maven.org/maven2/com/tianscar/imageio/imageio-apng/1.0.1/imageio-apng-1.0.1.jar)
+- 若目录为空或插件加载失败，模组会自动降级为内置格式支持（不影响基础功能）。
 
 ## 运行环境
 

@@ -1,5 +1,7 @@
 package com.chat.upgrade.client;
 
+import javax.imageio.ImageIO;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -29,6 +31,10 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 
 public final class ImageLoader {
+    static {
+        ImageIO.scanForPlugins();
+    }
+
     // Preview region: PHANTOM_COUNT lines × 9px/line
     public static final int PHANTOM_COUNT = 6;
     public static final int PREVIEW_HEIGHT = PHANTOM_COUNT * 9;
@@ -163,9 +169,16 @@ public final class ImageLoader {
                 String md5Hex = md5Hex(body);
                 entry.setTransferMetadata(byteLen, contentType, md5Hex);
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
-                Optional<GifAnimatedDecoder.Result> gifOpt = GifAnimatedDecoder.tryDecode(body);
-                if (gifOpt.isPresent()) {
-                    GifAnimatedDecoder.Result r = gifOpt.get();
+                Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
+                if (animatedOpt.isEmpty()) {
+                    animatedOpt = WebpAnimatedDecoder.tryDecode(body);
+                }
+                if (animatedOpt.isEmpty()) {
+                    animatedOpt = ApngAnimatedDecoder.tryDecode(body);
+                }
+                if (animatedOpt.isPresent()) {
+                    AnimatedDecodeResult r = animatedOpt.get();
+                    ChatUpgrade.LOGGER.info("chat-upgrade: animated decode ok for {} (frames={})", url, r.frames().length);
                     scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
                     return;
                 }

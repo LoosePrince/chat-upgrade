@@ -32,7 +32,7 @@ import java.util.stream.Stream;
  */
 public final class LocalImageSources {
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
-            "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico");
+            "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico");
 
     private LocalImageSources() {}
 
@@ -100,7 +100,7 @@ public final class LocalImageSources {
                 chooser.setDialogTitle("选择要上传的图片");
                 chooser.setFileFilter(new FileNameExtensionFilter(
                         "图片",
-                        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico"));
+                            "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico"));
                 chooser.setMultiSelectionEnabled(false);
                 int result = chooser.showOpenDialog(null);
                 if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
