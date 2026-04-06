@@ -30,6 +30,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
         System.setProperty("java.awt.headless", "false");
         ExternalImageIoPluginLoader.loadAtStartup();
         ChatUpgradeConfig.load();
+        AudioPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().audioVolumePercent);
+        VideoPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().videoVolumePercent);
         registerCommands();
         registerHudTextureInvalidationOnResize();
     }
@@ -121,7 +123,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                         .executes(ctx -> uploadAudioFromFolderPath(
                                                                 ctx.getSource(),
                                                                 StringArgumentType.getString(ctx, "path"),
-                                                                Optional.of(StringArgumentType.getString(ctx, "name")))))))
+                                                                Optional.of(
+                                                                        StringArgumentType.getString(ctx, "name")))))))
                                 .then(ClientCommands.literal("pick")
                                         .executes(ctx -> uploadAudioViaFilePicker(ctx.getSource(), Optional.empty()))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
@@ -139,7 +142,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                         .executes(ctx -> uploadVideoFromFolderPath(
                                                                 ctx.getSource(),
                                                                 StringArgumentType.getString(ctx, "path"),
-                                                                Optional.of(StringArgumentType.getString(ctx, "name")))))))
+                                                                Optional.of(
+                                                                        StringArgumentType.getString(ctx, "name")))))))
                                 .then(ClientCommands.literal("pick")
                                         .executes(ctx -> uploadVideoViaFilePicker(ctx.getSource(), Optional.empty()))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
@@ -157,23 +161,43 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                 .executes(ctx -> setManualImageReveal(
                                                         ctx.getSource(),
                                                         BoolArgumentType.getBool(ctx, "enabled")))))
+                                .then(ClientCommands.literal("manualaudio")
+                                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
+                                                .executes(ctx -> setManualAudioReveal(
+                                                        ctx.getSource(),
+                                                        BoolArgumentType.getBool(ctx, "enabled")))))
+                                .then(ClientCommands.literal("manualvideo")
+                                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
+                                                .executes(ctx -> setManualVideoReveal(
+                                                        ctx.getSource(),
+                                                        BoolArgumentType.getBool(ctx, "enabled")))))
                                 .then(ClientCommands.literal("reload")
                                         .executes(ctx -> reloadConfig(ctx.getSource())))
+                                .then(ClientCommands.literal("audiovolume")
+                                        .then(ClientCommands.argument("percent", IntegerArgumentType.integer(1, 100))
+                                                .executes(ctx -> setAudioVolumePercent(
+                                                        ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "percent")))))
+                                .then(ClientCommands.literal("videovolume")
+                                        .then(ClientCommands.argument("percent", IntegerArgumentType.integer(1, 100))
+                                                .executes(ctx -> setVideoVolumePercent(
+                                                        ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "percent")))))
                                 .then(ClientCommands.literal("maxreceive")
                                         .then(ClientCommands.argument(
-                                                        "mebibytes",
-                                                        IntegerArgumentType.integer(
-                                                                1,
-                                                                ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
+                                                "mebibytes",
+                                                IntegerArgumentType.integer(
+                                                        1,
+                                                        ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
                                                 .executes(ctx -> setMaxReceiveMebibytes(
                                                         ctx.getSource(),
                                                         IntegerArgumentType.getInteger(ctx, "mebibytes")))))
                                 .then(ClientCommands.literal("maxupload")
                                         .then(ClientCommands.argument(
-                                                        "mebibytes",
-                                                        IntegerArgumentType.integer(
-                                                                1,
-                                                                ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
+                                                "mebibytes",
+                                                IntegerArgumentType.integer(
+                                                        1,
+                                                        ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
                                                 .executes(ctx -> setMaxUploadMebibytes(
                                                         ctx.getSource(),
                                                         IntegerArgumentType.getInteger(ctx, "mebibytes"))))))));
@@ -197,9 +221,17 @@ public class ChatUpgradeClient implements ClientModInitializer {
         ChatUpgradeConfig cfg = ChatUpgradeConfig.get();
         boolean ci = cfg.ciCompatibility;
         boolean manual = cfg.manualImageReveal;
+        boolean manualAudio = cfg.manualAudioReveal;
+        boolean manualVideo = cfg.manualVideoReveal;
+        AudioPlayerService.setGlobalVolumePercent(cfg.audioVolumePercent);
+        VideoPlayerService.setGlobalVolumePercent(cfg.videoVolumePercent);
         source.sendFeedback(Component.literal(
                 "已重载 config/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
                         + "；手动渲染: " + (manual ? "开" : "关")
+                        + "；音频手动渲染: " + (manualAudio ? "开" : "关")
+                        + "；视频手动渲染: " + (manualVideo ? "开" : "关")
+                        + "；音频音量: " + cfg.audioVolumePercent + "%"
+                        + "；视频音量: " + cfg.videoVolumePercent + "%"
                         + "；接收上限: " + ChatUpgradeConfig.formatBytesHuman(cfg.maxReceiveBytes)
                         + "；上传上限: " + ChatUpgradeConfig.formatBytesHuman(cfg.maxUploadBytes))
                 .withStyle(ChatFormatting.GREEN));
@@ -247,6 +279,59 @@ public class ChatUpgradeClient implements ClientModInitializer {
             ChatUpgradeConfig.setManualImageRevealAndSave(enabled);
             source.sendFeedback(Component.literal(
                     "手动渲染（点击 [图片: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setManualAudioReveal(FabricClientCommandSource source, boolean enabled) {
+        try {
+            ChatUpgradeConfig.setManualAudioRevealAndSave(enabled);
+            source.sendFeedback(Component.literal(
+                    "音频手动渲染（点击 [音频: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setManualVideoReveal(FabricClientCommandSource source, boolean enabled) {
+        try {
+            ChatUpgradeConfig.setManualVideoRevealAndSave(enabled);
+            source.sendFeedback(Component.literal(
+                    "视频手动渲染（点击 [视频: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setAudioVolumePercent(FabricClientCommandSource source, int percent) {
+        try {
+            ChatUpgradeConfig.setAudioVolumePercentAndSave(percent);
+            AudioPlayerService.setGlobalVolumePercent(percent);
+            source.sendFeedback(Component.literal("音频音量已设为 " + Math.clamp(percent, 1, 100) + "%。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setVideoVolumePercent(FabricClientCommandSource source, int percent) {
+        try {
+            ChatUpgradeConfig.setVideoVolumePercentAndSave(percent);
+            VideoPlayerService.setGlobalVolumePercent(percent);
+            source.sendFeedback(Component.literal(
+                    "视频音量已设为 " + Math.clamp(percent, 1, 100) + "%（当前视频预览不播放音轨，配置已保存）。")
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
@@ -356,14 +441,16 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
+                        source.sendFeedback(
+                                Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
                         finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
                     });
                 });
         return 1;
     }
 
-    private static int uploadAudioFromFolderPath(FabricClientCommandSource source, String path, Optional<String> displayNameArg) {
+    private static int uploadAudioFromFolderPath(FabricClientCommandSource source, String path,
+            Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
             source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
             return 0;
@@ -424,14 +511,16 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(Component.literal("正在上传音频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
+                        source.sendFeedback(
+                                Component.literal("正在上传音频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
                         finishUploadAndSendAudio(source, CatboxUploader.uploadFile(file), displayName);
                     });
                 });
         return 1;
     }
 
-    private static int uploadVideoFromFolderPath(FabricClientCommandSource source, String path, Optional<String> displayNameArg) {
+    private static int uploadVideoFromFolderPath(FabricClientCommandSource source, String path,
+            Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
             source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
             return 0;
@@ -492,7 +581,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(Component.literal("正在上传视频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
+                        source.sendFeedback(
+                                Component.literal("正在上传视频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
                         finishUploadAndSendVideo(source, CatboxUploader.uploadFile(file), displayName);
                     });
                 });

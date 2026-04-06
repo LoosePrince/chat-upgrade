@@ -22,8 +22,10 @@ public final class ChatUpgradeConfig {
     public static final int DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Hard cap (10 MiB) for both {@link #maxReceiveBytes} and {@link #maxUploadBytes}, including values read from a
-     * hand-edited {@code chat-upgrade.json}. Cannot be exceeded at runtime; normalized values are written back on load
+     * Hard cap (10 MiB) for both {@link #maxReceiveBytes} and
+     * {@link #maxUploadBytes}, including values read from a
+     * hand-edited {@code chat-upgrade.json}. Cannot be exceeded at runtime;
+     * normalized values are written back on load
      * when the file contained out-of-range numbers.
      */
     public static final int ABSOLUTE_MAX_TRANSFER_BYTES = 10 * 1024 * 1024;
@@ -49,6 +51,8 @@ public final class ChatUpgradeConfig {
      * {@link com.chat.upgrade.client.ManualRevealClickEvent}).
      */
     public boolean manualImageReveal;
+    public boolean manualAudioReveal;
+    public boolean manualVideoReveal;
 
     /**
      * Maximum HTTP response body size when downloading an image for chat preview.
@@ -63,13 +67,19 @@ public final class ChatUpgradeConfig {
      * Default 2 MiB; cannot exceed {@link #ABSOLUTE_MAX_TRANSFER_BYTES}.
      */
     public int maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
+    public int audioVolumePercent = 100;
+    public int videoVolumePercent = 100;
 
     private static ChatUpgradeConfig defaults() {
         ChatUpgradeConfig c = new ChatUpgradeConfig();
         c.ciCompatibility = false;
         c.manualImageReveal = false;
+        c.manualAudioReveal = false;
+        c.manualVideoReveal = false;
         c.maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         c.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
+        c.audioVolumePercent = 100;
+        c.videoVolumePercent = 100;
         c.normalizeLimits();
         return c;
     }
@@ -77,11 +87,14 @@ public final class ChatUpgradeConfig {
     /**
      * Clamp and fix invalid values after JSON load or before save.
      *
-     * @return {@code true} if any field was changed (e.g. manual edit exceeded {@link #ABSOLUTE_MAX_TRANSFER_BYTES})
+     * @return {@code true} if any field was changed (e.g. manual edit exceeded
+     *         {@link #ABSOLUTE_MAX_TRANSFER_BYTES})
      */
     public boolean normalizeLimits() {
         int beforeReceive = maxReceiveBytes;
         int beforeUpload = maxUploadBytes;
+        int beforeAudioVolume = audioVolumePercent;
+        int beforeVideoVolume = videoVolumePercent;
         if (maxReceiveBytes <= 0) {
             maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         }
@@ -90,7 +103,12 @@ public final class ChatUpgradeConfig {
         }
         maxUploadBytes = Math.min(maxUploadBytes, ABSOLUTE_MAX_TRANSFER_BYTES);
         maxReceiveBytes = Math.min(maxReceiveBytes, ABSOLUTE_MAX_TRANSFER_BYTES);
-        return beforeReceive != maxReceiveBytes || beforeUpload != maxUploadBytes;
+        audioVolumePercent = Math.clamp(audioVolumePercent, 1, 100);
+        videoVolumePercent = Math.clamp(videoVolumePercent, 1, 100);
+        return beforeReceive != maxReceiveBytes
+                || beforeUpload != maxUploadBytes
+                || beforeAudioVolume != audioVolumePercent
+                || beforeVideoVolume != videoVolumePercent;
     }
 
     public static ChatUpgradeConfig get() {
@@ -170,6 +188,20 @@ public final class ChatUpgradeConfig {
         }
     }
 
+    public static void setManualAudioRevealAndSave(boolean value) throws IOException {
+        synchronized (LOCK) {
+            instance.manualAudioReveal = value;
+            writeConfigFile();
+        }
+    }
+
+    public static void setManualVideoRevealAndSave(boolean value) throws IOException {
+        synchronized (LOCK) {
+            instance.manualVideoReveal = value;
+            writeConfigFile();
+        }
+    }
+
     public static void setMaxReceiveBytesAndSave(int bytes) throws IOException {
         synchronized (LOCK) {
             instance.maxReceiveBytes = bytes;
@@ -182,6 +214,20 @@ public final class ChatUpgradeConfig {
         synchronized (LOCK) {
             instance.maxUploadBytes = bytes;
             instance.normalizeLimits();
+            writeConfigFile();
+        }
+    }
+
+    public static void setAudioVolumePercentAndSave(int percent) throws IOException {
+        synchronized (LOCK) {
+            instance.audioVolumePercent = Math.clamp(percent, 1, 100);
+            writeConfigFile();
+        }
+    }
+
+    public static void setVideoVolumePercentAndSave(int percent) throws IOException {
+        synchronized (LOCK) {
+            instance.videoVolumePercent = Math.clamp(percent, 1, 100);
             writeConfigFile();
         }
     }

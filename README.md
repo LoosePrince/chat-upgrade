@@ -11,13 +11,13 @@
 </div>
 
 
-基于 **Fabric** 的 Minecraft **客户端**模组：在聊天里识别形如 `[[ChatUpgrade,url=…]]` 的括号载荷，把链接换成简短占位文案，并在聊天栏旁绘制 URL 预览（图片、音频播放器、视频播放器）。
+基于 **Fabric** 的 Minecraft **客户端**模组：在聊天中识别形如 `[[ChatUpgrade,url=…]]` 的载荷文本，将链接替换为占位符，并在聊天栏内联渲染资源预览（图片、音频播放器、视频播放器）。
 
 ## 功能概要
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取资源（图片/音频/视频）→ 在对应消息下方预留行高并绘制预览。
 - **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
-- **配置**：`config/chat-upgrade.json` 中的 `ciCompatibility`、`manualImageReveal` 等；支持游戏内写入与重载。
+- **配置**：`config/chat-upgrade.json` 支持协议兼容、手动触发渲染、接收/上传上限、音频/视频音量；支持游戏内写入与重载。
 - **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片
 
 ## 特点
@@ -41,10 +41,10 @@
 
 | 命令 | 说明 |
 |------|------|
-| `/chatupgrade send <url> <name>` | 向聊天发送图片载荷；`name` 可省略（默认「图片」）。 |
-| `/chatupgrade sendaudio <url> <name>` | 向聊天发送音频载荷；`name` 可省略（默认「音频」）。 |
-| `/chatupgrade sendvideo <url> <name>` | 向聊天发送视频载荷；`name` 可省略（默认「视频」）。 |
-| `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Litterbox（约 1 小时有效）再发送。`<path>` 为**第一个参数**（Brigadier 可引用字符串：路径里有空格时用一对 `"` 包成一段即可）；`<name>` 为**第二个**可选参数（可含空格）。例：`/chatupgrade upload folder "D:\My Pictures\a.png"`、`/chatupgrade upload folder "D:\img\a.png" 截图`。无空格的路径也可不写引号。 |
+| `/chatupgrade send <url> <name>` | 向聊天发送图片载荷；`url` 是图片链接；`name` 可省略（默认「图片」）。 |
+| `/chatupgrade sendaudio <url> <name>` | 向聊天发送音频载荷；`url` 是音频链接；`name` 可省略（默认「音频」）。 |
+| `/chatupgrade sendvideo <url> <name>` | 向聊天发送视频载荷；`url` 是视频链接；`name` 可省略（默认「视频」）。 |
+| `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Litterbox（约 1 小时有效）再发送。`<path>` 为路径；`<name>` 可省略（默认「音频」）。|
 | `/chatupgrade upload pick <name>` | 打开文件选择器选图并上传发送；`name` 可省略。 |
 | `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送；`name` 可省略（默认「粘贴」）。 |
 | `/chatupgrade uploadaudio folder <path> <name>` | 从本机路径上传音频到 Litterbox 并发送音频载荷。 |
@@ -52,17 +52,36 @@
 | `/chatupgrade uploadvideo folder <path> <name>` | 从本机路径上传视频到 Litterbox 并发送视频载荷。 |
 | `/chatupgrade uploadvideo pick <name>` | 打开文件选择器选视频并上传发送。 |
 | `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 兼容：`true` 为 `[[CICode,url=…]]`，`false` 为 `[[ChatUpgrade,url=…]]`；写入配置。 |
-| `/chatupgrade config manual <true 或 false>` | 开关**手动渲染**：`true` 时需打开聊天后点击 `[图片: …]` 再加载预览；写入配置。 |
+| `/chatupgrade config manual <true 或 false>` | 开关**图片手动触发渲染**：`true` 时需点击 `[图片: …]` 后才加载预览；写入配置。 |
+| `/chatupgrade config manualaudio <true 或 false>` | 开关**音频手动触发渲染**：`true` 时需点击 `[音频: …]` 后才加载预览；写入配置。 |
+| `/chatupgrade config manualvideo <true 或 false>` | 开关**视频手动触发渲染**：`true` 时需点击 `[视频: …]` 后才加载预览；写入配置。 |
+| `/chatupgrade config audiovolume <1-100>` | 设置音频播放音量百分比（1~100）；写入配置并立即作用于已加载音频会话。 |
+| `/chatupgrade config videovolume <1-100>` | 设置视频音量百分比（1~100）；写入配置。 |
+| `/chatupgrade config maxreceive <1-10>` | 设置接收体积上限（MiB）；写入配置。 |
+| `/chatupgrade config maxupload <1-10>` | 设置上传体积上限（MiB）；写入配置。 |
 | `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade.json`。 |
 
 
-配置项与文件位置：**`.minecraft/config/chat-upgrade.json`** 。字段说明：`ciCompatibility`（布尔）、`manualImageReveal`（布尔）。
+配置文件位置：**`.minecraft/config/chat-upgrade.json`**
+
+配置项说明：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `ciCompatibility` | `boolean` | `true` 时发送/解析 `[[CICode,...]]`；否则使用 `[[ChatUpgrade,...]]`。 |
+| `manualImageReveal` | `boolean` | 图片改为点击占位符后才触发加载。 |
+| `manualAudioReveal` | `boolean` | 音频改为点击占位符后才触发加载。 |
+| `manualVideoReveal` | `boolean` | 视频改为点击占位符后才触发加载。 |
+| `audioVolumePercent` | `int(1~100)` | 音频播放音量百分比。 |
+| `videoVolumePercent` | `int(1~100)` | 视频播放音量百分比。 |
+| `maxReceiveBytes` | `int` | 接收上限（字节），最大 10 MiB。 |
+| `maxUploadBytes` | `int` | 上传上限（字节），最大 10 MiB。 |
 
 图像上传扩展名支持：`png/apng/jpg/jpeg/gif/webp/bmp/tif/tiff/jfif/ico`
 音频上传扩展名支持：`ogg/wav/mp3/flac/m4a/aac/opus/webm`。  
 音频播放能力取决于客户端 Java Sound 可解码格式（不支持的格式会提示加载失败）。
 视频上传扩展名支持：`mp4/webm/mov/mkv/m4v/avi`。  
-视频首版采用纯 Java 解码链路，`mp4` 为必测路径；其他格式视解码能力尽可能支持。
+视频解码基于 **JavaCPP FFmpeg**，`mp4` 为必测路径；其他格式按解码器能力尽可能支持。
 
 ### 外置 ImageIO 插件
 

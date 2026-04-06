@@ -8,6 +8,7 @@ import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
+import javax.sound.sampled.FloatControl;
 
 import com.chat.upgrade.ChatUpgrade;
 
@@ -36,6 +37,7 @@ public final class AudioPlayerService {
             throw new IllegalStateException("No audio decoder available");
         }
         long durationMs = clip.getMicrosecondLength() / 1000L;
+        applyVolumePercent(clip, ChatUpgradeConfig.get().audioVolumePercent);
         SESSIONS.put(url, new AudioSession(clip));
         return durationMs;
     }
@@ -84,6 +86,15 @@ public final class AudioPlayerService {
         SESSIONS.clear();
         LOOP_ENABLED.clear();
         ACTIVE_PLAYBACK.clear();
+    }
+
+    public static void setGlobalVolumePercent(int percent) {
+        int clamped = Math.clamp(percent, 1, 100);
+        for (AudioSession session : SESSIONS.values()) {
+            synchronized (session) {
+                applyVolumePercent(session.clip, clamped);
+            }
+        }
     }
 
     public static boolean toggle(String url) {
@@ -197,5 +208,20 @@ public final class AudioPlayerService {
                 ChatUpgrade.LOGGER.debug("chat-upgrade: close clip: {}", e.getMessage());
             }
         }
+    }
+
+    private static void applyVolumePercent(Clip clip, int percent) {
+        if (clip == null) {
+            return;
+        }
+        if (!clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+            return;
+        }
+        FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+        float min = gain.getMinimum();
+        float max = gain.getMaximum();
+        double linear = Math.clamp(percent / 100.0, 0.01, 1.0);
+        float db = (float) (20.0 * Math.log10(linear));
+        gain.setValue(Math.max(min, Math.min(max, db)));
     }
 }

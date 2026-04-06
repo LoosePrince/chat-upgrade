@@ -251,14 +251,21 @@ public final class UpgradeBracketCodec {
     public static Component buildPlaceholderComponent(InlineResourceType type, String name, String imageUrl) {
         Style style = Style.EMPTY.withColor(ChatFormatting.AQUA).withItalic(true)
                 .withHoverEvent(new HoverEvent.ShowText(Component.literal(buildLabelHoverText(type, name, imageUrl))));
-        if (type == InlineResourceType.IMAGE
-                && ChatUpgradeConfig.get().manualImageReveal
-                && imageUrl != null
-                && !imageUrl.isBlank()) {
+        boolean manualRevealEnabled = switch (type) {
+            case IMAGE -> ChatUpgradeConfig.get().manualImageReveal;
+            case AUDIO -> ChatUpgradeConfig.get().manualAudioReveal;
+            case VIDEO -> ChatUpgradeConfig.get().manualVideoReveal;
+        };
+        if (manualRevealEnabled && imageUrl != null && !imageUrl.isBlank()) {
+            String actionText = switch (type) {
+                case IMAGE -> "点击加载图片预览";
+                case AUDIO -> "点击加载音频预览";
+                case VIDEO -> "点击加载视频预览";
+            };
             style = style.withUnderlined(true)
-                    .withClickEvent(ManualRevealClickEvent.forUrl(imageUrl))
+                    .withClickEvent(ManualRevealClickEvent.forResource(type, imageUrl))
                     .withHoverEvent(new HoverEvent.ShowText(
-                            Component.literal("点击加载图片预览\n" + buildLabelHoverText(type, name, imageUrl))));
+                            Component.literal(actionText + "\n" + buildLabelHoverText(type, name, imageUrl))));
         }
         String label = switch (type) {
             case IMAGE -> "图片";
@@ -362,6 +369,8 @@ public final class UpgradeBracketCodec {
                 sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
                 sb.append("时长: ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
+                sb.append("音量: ").append(ChatUpgradeConfig.get().audioVolumePercent).append("%\n");
+                sb.append("手动触发渲染=").append(ChatUpgradeConfig.get().manualAudioReveal ? "开启" : "关闭").append('\n');
             }
             case VIDEO -> {
                 VideoEntry e = VideoLoader.getIfPresent(url);
@@ -377,6 +386,8 @@ public final class UpgradeBracketCodec {
                 sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
                 sb.append("时长: ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
+                sb.append("音量: ").append(ChatUpgradeConfig.get().videoVolumePercent).append("%\n");
+                sb.append("手动触发渲染=").append(ChatUpgradeConfig.get().manualVideoReveal ? "开启" : "关闭").append('\n');
                 if (e.isLoaded()) {
                     sb.append("像素尺寸: ").append(e.getRawWidth()).append('×').append(e.getRawHeight()).append('\n');
                     sb.append("预览绘制: ").append(e.getDisplayWidth()).append('×').append(e.getDisplayHeight())

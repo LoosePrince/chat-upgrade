@@ -22,6 +22,10 @@ import static org.bytedeco.ffmpeg.global.avformat.avformat_open_input;
 import static org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_VIDEO;
 import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
 import static org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA;
+import static org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_FLT;
+import static org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_FLTP;
+import static org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16;
+import static org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16P;
 import static org.bytedeco.ffmpeg.global.avutil.av_frame_alloc;
 import static org.bytedeco.ffmpeg.global.avutil.av_frame_free;
 import static org.bytedeco.ffmpeg.global.avutil.av_free;
@@ -36,6 +40,8 @@ import static org.bytedeco.ffmpeg.global.swscale.sws_getContext;
 import static org.bytedeco.ffmpeg.global.swscale.sws_scale;
 
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -46,6 +52,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.SourceDataLine;
 
 import org.bytedeco.ffmpeg.avcodec.AVCodec;
 import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
@@ -60,6 +70,7 @@ import org.bytedeco.ffmpeg.swscale.SwsContext;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.PointerPointer;
+import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -80,6 +91,7 @@ public final class VideoPlayerService {
         return t;
     });
     private static final SingleActivePlaybackCoordinator ACTIVE_PLAYBACK = new SingleActivePlaybackCoordinator();
+    private static volatile int globalVolumePercent = 100;
 
     private VideoPlayerService() {
     }
@@ -99,7 +111,9 @@ public final class VideoPlayerService {
         Identifier firstFrameId = registerTextureOnRenderThread(meta.firstFrame());
         Identifier[] frameIds = new Identifier[plan.frames()];
         frameIds[0] = firstFrameId;
-        VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile);
+        VideoAudioTrack audioTrack = decodeAudioTrack(tempFile);
+        VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile,
+                audioTrack);
         SESSIONS.put(url, session);
         schedulePredecode(url, session, tempFile, meta.durationMs(), plan.intervalMs(), plan.frames());
         return new Prepared(meta.durationMs(), meta.rawWidth(), meta.rawHeight());
@@ -158,6 +172,7 @@ public final class VideoPlayerService {
             if (s.playing) {
                 s.pausedPositionMs = positionMsLocked(s, now);
                 s.playing = false;
+                stopAudioLocked(s);
                 ACTIVE_PLAYBACK.deactivateIfActive(url);
                 return false;
             }
@@ -170,6 +185,7 @@ public final class VideoPlayerService {
                     if (other.playing) {
                         other.pausedPositionMs = positionMsLocked(other, now);
                         other.playing = false;
+                        stopAudioLocked(other);
                     }
                 }
             });
@@ -178,6 +194,7 @@ public final class VideoPlayerService {
             }
             s.playStartedAtMs = now - s.pausedPositionMs;
             s.playing = true;
+            startAudioLocked(s, s.pausedPositionMs);
             return true;
         }
     }
@@ -193,6 +210,7 @@ public final class VideoPlayerService {
             s.pausedPositionMs = (long) (s.durationMs * r);
             if (s.playing) {
                 s.playStartedAtMs = now - s.pausedPositionMs;
+                restartAudioLocked(s, s.pausedPositionMs);
             }
         }
     }
@@ -217,6 +235,22 @@ public final class VideoPlayerService {
         return s == null ? 0L : s.durationMs;
     }
 
+    public static void setGlobalVolumePercent(int percent) {
+        int clamped = Math.clamp(percent, 1, 100);
+        globalVolumePercent = clamped;
+        for (VideoSession session : SESSIONS.values()) {
+            synchronized (session) {
+                if (session.audioPlayback != null) {
+                    session.audioPlayback.setVolumePercent(clamped);
+                }
+            }
+        }
+    }
+
+    public static int getGlobalVolumePercent() {
+        return globalVolumePercent;
+    }
+
     private static long positionMsLocked(VideoSession s, long nowMs) {
         if (!s.playing) {
             return clampDuration(s.pausedPositionMs, s.durationMs);
@@ -228,6 +262,7 @@ public final class VideoPlayerService {
         if (pos >= s.durationMs) {
             s.playing = false;
             s.pausedPositionMs = s.durationMs;
+            stopAudioLocked(s);
             ACTIVE_PLAYBACK.deactivateIfActive(s.url);
             return s.durationMs;
         }
@@ -348,25 +383,37 @@ public final class VideoPlayerService {
         final Identifier[] frameTextureIds;
         final long frameIntervalMs;
         final Path tempFile;
+        final VideoAudioTrack audioTrack;
         boolean playing;
         volatile boolean closed;
         long playStartedAtMs;
         long pausedPositionMs;
+        @Nullable
+        VideoAudioPlayback audioPlayback;
 
-        VideoSession(String url, long durationMs, Identifier[] frameTextureIds, long frameIntervalMs, Path tempFile) {
+        VideoSession(
+                String url,
+                long durationMs,
+                Identifier[] frameTextureIds,
+                long frameIntervalMs,
+                Path tempFile,
+                @Nullable VideoAudioTrack audioTrack) {
             this.url = url;
             this.durationMs = durationMs;
             this.frameTextureIds = frameTextureIds;
             this.frameIntervalMs = frameIntervalMs;
             this.tempFile = tempFile;
+            this.audioTrack = audioTrack;
             this.playing = false;
             this.closed = false;
             this.playStartedAtMs = 0L;
             this.pausedPositionMs = 0L;
+            this.audioPlayback = null;
         }
 
         void close() {
             this.closed = true;
+            stopAudioLocked(this);
             Set<Identifier> dedupe = new HashSet<>();
             for (Identifier id : frameTextureIds) {
                 if (id != null && dedupe.add(id)) {
@@ -504,6 +551,258 @@ public final class VideoPlayerService {
                 avcodec_free_context(codecCtx);
             }
             avformat_close_input(fmt);
+        }
+    }
+
+    private static @Nullable VideoAudioTrack decodeAudioTrack(Path path) {
+        AVFormatContext fmt = new AVFormatContext(null);
+        AVCodecContext codecCtx = null;
+        AVPacket pkt = null;
+        AVFrame frame = null;
+        try {
+            if (avformat_open_input(fmt, path.toString(), null, (AVDictionary) null) < 0) {
+                return null;
+            }
+            if (avformat_find_stream_info(fmt, (PointerPointer<?>) null) < 0) {
+                return null;
+            }
+            int audioIdx = av_find_best_stream(fmt, org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_AUDIO, -1, -1,
+                    (AVCodec) null, 0);
+            if (audioIdx < 0) {
+                return null;
+            }
+            AVStream stream = fmt.streams(audioIdx);
+            AVCodecParameters codecpar = stream.codecpar();
+            AVCodec codec = avcodec_find_decoder(codecpar.codec_id());
+            if (codec == null || codec.id() == AV_CODEC_ID_NONE) {
+                return null;
+            }
+            codecCtx = avcodec_alloc_context3(codec);
+            if (codecCtx == null || avcodec_parameters_to_context(codecCtx, codecpar) < 0
+                    || avcodec_open2(codecCtx, codec, (AVDictionary) null) < 0) {
+                return null;
+            }
+            pkt = av_packet_alloc();
+            frame = av_frame_alloc();
+            if (pkt == null || frame == null) {
+                return null;
+            }
+            int channels = Math.max(1, codecCtx.ch_layout().nb_channels());
+            int sampleRate = Math.max(8000, codecCtx.sample_rate());
+            ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+            while (av_read_frame(fmt, pkt) >= 0) {
+                try {
+                    if (pkt.stream_index() != audioIdx) {
+                        continue;
+                    }
+                    if (avcodec_send_packet(codecCtx, pkt) < 0) {
+                        continue;
+                    }
+                    while (avcodec_receive_frame(codecCtx, frame) >= 0) {
+                        appendFrameAsS16Le(pcm, frame, channels);
+                    }
+                } finally {
+                    av_packet_unref(pkt);
+                }
+            }
+            avcodec_send_packet(codecCtx, null);
+            while (avcodec_receive_frame(codecCtx, frame) >= 0) {
+                appendFrameAsS16Le(pcm, frame, channels);
+            }
+            byte[] audioBytes = pcm.toByteArray();
+            if (audioBytes.length == 0) {
+                return null;
+            }
+            return new VideoAudioTrack(audioBytes, sampleRate, channels);
+        } catch (Exception e) {
+            ChatUpgrade.LOGGER.debug("chat-upgrade: decode video audio failed: {}", e.getMessage());
+            return null;
+        } finally {
+            if (frame != null) {
+                av_frame_free(frame);
+            }
+            if (pkt != null) {
+                av_packet_free(pkt);
+            }
+            if (codecCtx != null) {
+                avcodec_free_context(codecCtx);
+            }
+            avformat_close_input(fmt);
+        }
+    }
+
+    private static void appendFrameAsS16Le(ByteArrayOutputStream out, AVFrame frame, int channels) {
+        int fmt = frame.format();
+        int samples = frame.nb_samples();
+        if (samples <= 0) {
+            return;
+        }
+        if (fmt == AV_SAMPLE_FMT_S16) {
+            BytePointer data = frame.data(0);
+            int bytes = samples * channels * 2;
+            byte[] buf = new byte[bytes];
+            data.position(0).get(buf, 0, bytes);
+            out.writeBytes(buf);
+            return;
+        }
+        if (fmt == AV_SAMPLE_FMT_S16P) {
+            for (int i = 0; i < samples; i++) {
+                for (int c = 0; c < channels; c++) {
+                    BytePointer plane = frame.data(c);
+                    short v = plane.getShort((long) i * 2L);
+                    writeS16Le(out, v);
+                }
+            }
+            return;
+        }
+        if (fmt == AV_SAMPLE_FMT_FLT) {
+            BytePointer data = frame.data(0);
+            for (int i = 0; i < samples * channels; i++) {
+                float f = data.getFloat((long) i * 4L);
+                writeS16Le(out, floatToS16(f));
+            }
+            return;
+        }
+        if (fmt == AV_SAMPLE_FMT_FLTP) {
+            for (int i = 0; i < samples; i++) {
+                for (int c = 0; c < channels; c++) {
+                    BytePointer plane = frame.data(c);
+                    float f = plane.getFloat((long) i * 4L);
+                    writeS16Le(out, floatToS16(f));
+                }
+            }
+        }
+    }
+
+    private static short floatToS16(float f) {
+        float clamped = Math.clamp(f, -1.0f, 1.0f);
+        return (short) Math.round(clamped * 32767.0f);
+    }
+
+    private static void writeS16Le(ByteArrayOutputStream out, short v) {
+        if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
+            out.write(v & 0xFF);
+            out.write((v >> 8) & 0xFF);
+            return;
+        }
+        out.write(v & 0xFF);
+        out.write((v >> 8) & 0xFF);
+    }
+
+    private static void startAudioLocked(VideoSession session, long startMs) {
+        if (session.audioTrack == null) {
+            return;
+        }
+        stopAudioLocked(session);
+        VideoAudioPlayback playback = new VideoAudioPlayback(session.audioTrack, startMs, globalVolumePercent);
+        session.audioPlayback = playback;
+        playback.start();
+    }
+
+    private static void restartAudioLocked(VideoSession session, long startMs) {
+        if (session.audioTrack == null) {
+            return;
+        }
+        startAudioLocked(session, startMs);
+    }
+
+    private static void stopAudioLocked(VideoSession session) {
+        VideoAudioPlayback playback = session.audioPlayback;
+        if (playback != null) {
+            playback.stop();
+            session.audioPlayback = null;
+        }
+    }
+
+    private record VideoAudioTrack(byte[] pcmS16Le, int sampleRate, int channels) {
+        int bytesPerFrame() {
+            return channels * 2;
+        }
+    }
+
+    private static final class VideoAudioPlayback {
+        private final VideoAudioTrack track;
+        private final long startMs;
+        private volatile int volumePercent;
+        private volatile boolean running = true;
+        private Thread worker;
+        private SourceDataLine line;
+
+        VideoAudioPlayback(VideoAudioTrack track, long startMs, int volumePercent) {
+            this.track = track;
+            this.startMs = Math.max(0L, startMs);
+            this.volumePercent = Math.clamp(volumePercent, 1, 100);
+        }
+
+        void start() {
+            worker = new Thread(this::run, "chat-upgrade-video-audio");
+            worker.setDaemon(true);
+            worker.start();
+        }
+
+        void setVolumePercent(int percent) {
+            this.volumePercent = Math.clamp(percent, 1, 100);
+        }
+
+        void stop() {
+            running = false;
+            try {
+                if (line != null) {
+                    line.stop();
+                    line.flush();
+                    line.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        private void run() {
+            try {
+                AudioFormat format = new AudioFormat(track.sampleRate(), 16, track.channels(), true, false);
+                SourceDataLine dataLine = AudioSystem.getSourceDataLine(format);
+                this.line = dataLine;
+                dataLine.open(format);
+                dataLine.start();
+                byte[] pcm = track.pcmS16Le();
+                int bytesPerFrame = Math.max(2, track.bytesPerFrame());
+                long startFrame = (startMs * track.sampleRate()) / 1000L;
+                int offset = (int) Math.min((long) pcm.length, startFrame * bytesPerFrame);
+                offset -= offset % bytesPerFrame;
+                byte[] chunk = new byte[4096];
+                while (running && offset < pcm.length) {
+                    int n = Math.min(chunk.length, pcm.length - offset);
+                    n -= n % 2;
+                    if (n <= 0) {
+                        break;
+                    }
+                    System.arraycopy(pcm, offset, chunk, 0, n);
+                    applyVolumeInPlace(chunk, n, volumePercent);
+                    dataLine.write(chunk, 0, n);
+                    offset += n;
+                }
+                dataLine.drain();
+                dataLine.stop();
+                dataLine.close();
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.debug("chat-upgrade: video audio playback failed: {}", e.getMessage());
+            }
+        }
+    }
+
+    private static void applyVolumeInPlace(byte[] pcmLeS16, int length, int volumePercent) {
+        double gain = Math.clamp(volumePercent / 100.0, 0.01, 1.0);
+        for (int i = 0; i + 1 < length; i += 2) {
+            int lo = pcmLeS16[i] & 0xFF;
+            int hi = pcmLeS16[i + 1];
+            short sample = (short) ((hi << 8) | lo);
+            int scaled = (int) Math.round(sample * gain);
+            if (scaled > Short.MAX_VALUE) {
+                scaled = Short.MAX_VALUE;
+            } else if (scaled < Short.MIN_VALUE) {
+                scaled = Short.MIN_VALUE;
+            }
+            pcmLeS16[i] = (byte) (scaled & 0xFF);
+            pcmLeS16[i + 1] = (byte) ((scaled >> 8) & 0xFF);
         }
     }
 

@@ -58,9 +58,13 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
                     ImageLoader.getOrLoad(decoded.url());
                 }
             } else if (decoded.resourceType() == InlineResourceType.AUDIO) {
-                AudioLoader.getOrLoad(decoded.url());
+                if (!ChatUpgradeConfig.get().manualAudioReveal) {
+                    AudioLoader.getOrLoad(decoded.url());
+                }
             } else {
-                VideoLoader.getOrLoad(decoded.url());
+                if (!ChatUpgradeConfig.get().manualVideoReveal) {
+                    VideoLoader.getOrLoad(decoded.url());
+                }
             }
             return decoded.modified();
         }
