@@ -50,6 +50,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 lastFramebufferWidth = fw;
                 lastFramebufferHeight = fh;
                 ImageLoader.invalidateTextureCache();
+                VideoLoader.invalidateVideoCache();
             }
         });
     }
@@ -73,6 +74,15 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                 "音频"))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                                 .executes(ctx -> sendAudioUrl(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "url"),
+                                                        StringArgumentType.getString(ctx, "name"))))))
+                        .then(ClientCommands.literal("sendvideo")
+                                .then(ClientCommands.argument("url", StringArgumentType.string())
+                                        .executes(ctx -> sendVideoUrl(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "url"),
+                                                "视频"))
+                                        .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                                .executes(ctx -> sendVideoUrl(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "url"),
                                                         StringArgumentType.getString(ctx, "name"))))))
                         .then(ClientCommands.literal("upload")
@@ -116,6 +126,24 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                         .executes(ctx -> uploadAudioViaFilePicker(ctx.getSource(), Optional.empty()))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                                 .executes(ctx -> uploadAudioViaFilePicker(
+                                                        ctx.getSource(),
+                                                        Optional.of(StringArgumentType.getString(ctx, "name")))))))
+                        .then(ClientCommands.literal("uploadvideo")
+                                .then(ClientCommands.literal("folder")
+                                        .then(ClientCommands.argument("path", StringArgumentType.string())
+                                                .executes(ctx -> uploadVideoFromFolderPath(
+                                                        ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "path"),
+                                                        Optional.empty()))
+                                                .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                                        .executes(ctx -> uploadVideoFromFolderPath(
+                                                                ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "path"),
+                                                                Optional.of(StringArgumentType.getString(ctx, "name")))))))
+                                .then(ClientCommands.literal("pick")
+                                        .executes(ctx -> uploadVideoViaFilePicker(ctx.getSource(), Optional.empty()))
+                                        .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                                .executes(ctx -> uploadVideoViaFilePicker(
                                                         ctx.getSource(),
                                                         Optional.of(StringArgumentType.getString(ctx, "name")))))))
                         .then(ClientCommands.literal("config")
@@ -243,6 +271,16 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         String payload = UpgradeBracketCodec.buildSendPayload(url, name, InlineResourceType.AUDIO);
+        source.getPlayer().connection.sendChat(payload);
+        return 1;
+    }
+
+    private static int sendVideoUrl(FabricClientCommandSource source, String url, String name) {
+        if (source.getPlayer() == null) {
+            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        String payload = UpgradeBracketCodec.buildSendPayload(url, name, InlineResourceType.VIDEO);
         source.getPlayer().connection.sendChat(payload);
         return 1;
     }
@@ -393,6 +431,74 @@ public class ChatUpgradeClient implements ClientModInitializer {
         return 1;
     }
 
+    private static int uploadVideoFromFolderPath(FabricClientCommandSource source, String path, Optional<String> displayNameArg) {
+        if (source.getPlayer() == null) {
+            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        String innerPath = path.trim();
+        if (innerPath.isEmpty()) {
+            source.sendError(Component.literal("路径不能为空。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        Path root = Path.of(innerPath);
+        Optional<Path> video = LocalImageSources.resolveVideoFolderOrFile(root);
+        if (video.isEmpty()) {
+            source.sendError(Component.literal("未找到可用视频文件（至少支持 mp4，其他尽可能支持）。")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        Path file = video.get();
+        try {
+            if (rejectIfUploadTooLarge(source, Files.size(file))) {
+                return 0;
+            }
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        String displayName = displayNameArg.filter(s -> !s.isBlank()).orElseGet(() -> displayNameFromPath(file));
+        source.sendFeedback(Component.literal("正在上传视频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
+        finishUploadAndSendVideo(source, CatboxUploader.uploadFile(file), displayName);
+        return 1;
+    }
+
+    private static int uploadVideoViaFilePicker(FabricClientCommandSource source, Optional<String> displayNameArg) {
+        if (source.getPlayer() == null) {
+            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        source.sendFeedback(Component.literal("正在打开视频文件选择器…").withStyle(ChatFormatting.GRAY));
+        CompletableFuture.supplyAsync(LocalImageSources::pickVideoWithFileChooser)
+                .thenAccept(picked -> {
+                    Minecraft mc = Minecraft.getInstance();
+                    mc.execute(() -> {
+                        if (source.getPlayer() == null) {
+                            return;
+                        }
+                        if (picked.isEmpty()) {
+                            source.sendFeedback(Component.literal("未选择文件或无法打开对话框。")
+                                    .withStyle(ChatFormatting.GRAY));
+                            return;
+                        }
+                        Path file = picked.get();
+                        try {
+                            if (rejectIfUploadTooLarge(source, Files.size(file))) {
+                                return;
+                            }
+                        } catch (IOException e) {
+                            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage())
+                                    .withStyle(ChatFormatting.RED));
+                            return;
+                        }
+                        String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
+                        source.sendFeedback(Component.literal("正在上传视频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
+                        finishUploadAndSendVideo(source, CatboxUploader.uploadFile(file), displayName);
+                    });
+                });
+        return 1;
+    }
+
     private static int uploadFromClipboard(FabricClientCommandSource source, Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
             source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
@@ -450,6 +556,26 @@ public class ChatUpgradeClient implements ClientModInitializer {
             String payload = UpgradeBracketCodec.buildSendPayload(url, displayName, InlineResourceType.AUDIO);
             source.getPlayer().connection.sendChat(payload);
             source.sendFeedback(Component.literal("已发送音频: " + url).withStyle(ChatFormatting.GREEN));
+        }));
+    }
+
+    private static void finishUploadAndSendVideo(
+            FabricClientCommandSource source,
+            CompletableFuture<Optional<String>> uploadFuture,
+            String displayName) {
+        uploadFuture.thenAccept(urlOpt -> Minecraft.getInstance().execute(() -> {
+            if (source.getPlayer() == null) {
+                return;
+            }
+            if (urlOpt.isEmpty()) {
+                source.sendError(Component.literal("视频上传失败（网络、文件或 Litterbox 返回错误）。")
+                        .withStyle(ChatFormatting.RED));
+                return;
+            }
+            String url = urlOpt.get();
+            String payload = UpgradeBracketCodec.buildSendPayload(url, displayName, InlineResourceType.VIDEO);
+            source.getPlayer().connection.sendChat(payload);
+            source.sendFeedback(Component.literal("已发送视频: " + url).withStyle(ChatFormatting.GREEN));
         }));
     }
 

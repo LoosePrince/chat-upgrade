@@ -31,10 +31,12 @@ public final class UpgradeBracketCodec {
      */
     public static final String LOAD_FAILED_VISIBLE = "[图片：加载失败]";
     public static final String AUDIO_LOAD_FAILED_VISIBLE = "[音频：加载失败]";
+    public static final String VIDEO_LOAD_FAILED_VISIBLE = "[视频：加载失败]";
 
     /** Shown when the remote image exceeds {@link ChatUpgradeConfig#maxReceiveBytes}. */
     public static final String IMAGE_OVERSIZE_VISIBLE = "[图片：图片过大]";
     public static final String AUDIO_OVERSIZE_VISIBLE = "[音频：文件过大]";
+    public static final String VIDEO_OVERSIZE_VISIBLE = "[视频：文件过大]";
 
     private static final Pattern BRACKET_PAYLOAD = Pattern.compile(
             "\\[\\[(ChatUpgrade|CICode),([^\\]]+)\\]\\]");
@@ -43,7 +45,7 @@ public final class UpgradeBracketCodec {
             "\\[\\[(?:ChatUpgrade|CICode),url=[^\\]]+(?:,[^\\]]+)?\\]\\]");
 
     /** Matches image/audio placeholders and fullwidth-colon variants after wrapping / font shaping. */
-    private static final Pattern VISIBLE_PLACEHOLDER = Pattern.compile("\\[(?:图片|音频)[:：]\\s*[^\\]]+\\]");
+    private static final Pattern VISIBLE_PLACEHOLDER = Pattern.compile("\\[(?:图片|音频|视频)[:：]\\s*[^\\]]+\\]");
 
     private UpgradeBracketCodec() {}
 
@@ -70,7 +72,11 @@ public final class UpgradeBracketCodec {
             return new DecodedBracket(original, null, null, InlineResourceType.IMAGE);
         }
         InlineResourceType type = InlineResourceType.fromWire(kv.get("type"));
-        String defaultName = type == InlineResourceType.AUDIO ? "音频" : "图片";
+        String defaultName = switch (type) {
+            case IMAGE -> "图片";
+            case AUDIO -> "音频";
+            case VIDEO -> "视频";
+        };
         String name = kv.getOrDefault("name", defaultName).trim();
         String matched = m.group(0);
 
@@ -236,12 +242,20 @@ public final class UpgradeBracketCodec {
                     .withClickEvent(ManualRevealClickEvent.forUrl(imageUrl))
                     .withHoverEvent(new HoverEvent.ShowText(Component.literal("点击加载图片预览")));
         }
-        String label = type == InlineResourceType.AUDIO ? "音频" : "图片";
+        String label = switch (type) {
+            case IMAGE -> "图片";
+            case AUDIO -> "音频";
+            case VIDEO -> "视频";
+        };
         return Component.literal("[" + label + ": " + name + "]").withStyle(style);
     }
 
     private static String buildPlaceholder(InlineResourceType type, String name) {
-        String label = type == InlineResourceType.AUDIO ? "音频" : "图片";
+        String label = switch (type) {
+            case IMAGE -> "图片";
+            case AUDIO -> "音频";
+            case VIDEO -> "视频";
+        };
         return "[" + label + ": " + name + "]";
     }
 
@@ -265,6 +279,12 @@ public final class UpgradeBracketCodec {
     }
     public static @Nullable FormattedCharSequence replaceVisibleAudioPlaceholderWithOversize(FormattedCharSequence seq) {
         return replaceVisiblePlaceholderWithVisibleText(seq, AUDIO_OVERSIZE_VISIBLE);
+    }
+    public static @Nullable FormattedCharSequence replaceVisibleVideoPlaceholderWithLoadFailed(FormattedCharSequence seq) {
+        return replaceVisiblePlaceholderWithVisibleText(seq, VIDEO_LOAD_FAILED_VISIBLE);
+    }
+    public static @Nullable FormattedCharSequence replaceVisibleVideoPlaceholderWithOversize(FormattedCharSequence seq) {
+        return replaceVisiblePlaceholderWithVisibleText(seq, VIDEO_OVERSIZE_VISIBLE);
     }
 
     /**
@@ -370,7 +390,11 @@ public final class UpgradeBracketCodec {
     }
 
     public static String encodeNativeTagBlock(String url, String name, InlineResourceType type) {
-        String typeField = type == InlineResourceType.AUDIO ? ",type=audio" : "";
+        String typeField = switch (type) {
+            case IMAGE -> "";
+            case AUDIO -> ",type=audio";
+            case VIDEO -> ",type=video";
+        };
         if (name != null && !name.isBlank()) {
             return "[[" + WIRE_TAG_NATIVE + ",url=" + url + ",name=" + name + typeField + "]]";
         }
@@ -382,7 +406,11 @@ public final class UpgradeBracketCodec {
     }
 
     public static String encodeLegacyTagBlock(String url, String name, InlineResourceType type) {
-        String typeField = type == InlineResourceType.AUDIO ? ",type=audio" : "";
+        String typeField = switch (type) {
+            case IMAGE -> "";
+            case AUDIO -> ",type=audio";
+            case VIDEO -> ",type=video";
+        };
         if (name != null && !name.isBlank()) {
             return "[[" + WIRE_TAG_LEGACY + ",url=" + url + ",name=" + name + typeField + "]]";
         }

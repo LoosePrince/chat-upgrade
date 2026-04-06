@@ -45,6 +45,10 @@ dependencies {
 	include(implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4"))
 	include(implementation("com.googlecode.soundlibs:jlayer:1.0.1.4"))
 	include(implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4"))
+
+	// Video decode support (pure Java, MP4 first)
+	include(implementation("org.jcodec:jcodec:0.2.5"))
+	include(implementation("org.jcodec:jcodec-javase:0.2.5"))
 }
 
 processResources {

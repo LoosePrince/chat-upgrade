@@ -35,6 +35,8 @@ public final class LocalImageSources {
             "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico");
     private static final Set<String> AUDIO_EXTENSIONS = Set.of(
             "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm");
+    private static final Set<String> VIDEO_EXTENSIONS = Set.of(
+            "mp4", "webm", "mov", "mkv", "m4v", "avi");
 
     private LocalImageSources() {}
 
@@ -44,6 +46,10 @@ public final class LocalImageSources {
 
     public static Optional<Path> resolveAudioFolderOrFile(Path path) {
         return resolveFolderOrFileWithExtensions(path, AUDIO_EXTENSIONS);
+    }
+
+    public static Optional<Path> resolveVideoFolderOrFile(Path path) {
+        return resolveFolderOrFileWithExtensions(path, VIDEO_EXTENSIONS);
     }
 
     private static Optional<Path> resolveFolderOrFileWithExtensions(Path path, Set<String> extensions) {
@@ -115,6 +121,20 @@ public final class LocalImageSources {
         return pickAudioWithJFileChooser();
     }
 
+    public static Optional<Path> pickVideoWithFileChooser() {
+        if (GraphicsEnvironment.isHeadless()) {
+            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT headless，无法打开文件选择器。");
+            return Optional.empty();
+        }
+        try {
+            Toolkit.getDefaultToolkit();
+        } catch (Throwable t) {
+            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT toolkit unavailable: {}", t.getMessage());
+            return Optional.empty();
+        }
+        return pickVideoWithJFileChooser();
+    }
+
     private static Optional<Path> pickWithJFileChooser() {
         final Path[] holder = new Path[1];
         CountDownLatch done = new CountDownLatch(1);
@@ -157,6 +177,31 @@ public final class LocalImageSources {
                 }
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser audio error: {}", e.getMessage());
+            } finally {
+                done.countDown();
+            }
+        });
+        awaitLatch(done);
+        return Optional.ofNullable(holder[0]);
+    }
+
+    private static Optional<Path> pickVideoWithJFileChooser() {
+        final Path[] holder = new Path[1];
+        CountDownLatch done = new CountDownLatch(1);
+        SwingUtilities.invokeLater(() -> {
+            try {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle("选择要上传的视频");
+                chooser.setFileFilter(new FileNameExtensionFilter(
+                        "视频",
+                        "mp4", "webm", "mov", "mkv", "m4v", "avi"));
+                chooser.setMultiSelectionEnabled(false);
+                int result = chooser.showOpenDialog(null);
+                if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
+                    holder[0] = chooser.getSelectedFile().toPath();
+                }
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser video error: {}", e.getMessage());
             } finally {
                 done.countDown();
             }

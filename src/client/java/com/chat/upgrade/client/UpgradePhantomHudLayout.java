@@ -14,14 +14,17 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Extra preview rows, failure substitution, and per-line paint dispatch for decoded URL payloads. */
 public final class UpgradePhantomHudLayout {
     private static final int AUDIO_PHANTOM_COUNT = 3;
+    private static final int VIDEO_PHANTOM_COUNT = 7;
     private static final ConcurrentHashMap<String, Set<GuiMessage>> URL_TO_MESSAGE_PARENTS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Set<GuiMessage>> AUDIO_URL_TO_MESSAGE_PARENTS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Set<GuiMessage>> VIDEO_URL_TO_MESSAGE_PARENTS = new ConcurrentHashMap<>();
 
     private UpgradePhantomHudLayout() {}
 
     public static void clearLayoutRegistrations() {
         URL_TO_MESSAGE_PARENTS.clear();
         AUDIO_URL_TO_MESSAGE_PARENTS.clear();
+        VIDEO_URL_TO_MESSAGE_PARENTS.clear();
     }
 
     public static void dispatchLinePaint(GuiMessage.Line line, int messageY, float opacity) {
@@ -37,12 +40,19 @@ public final class UpgradePhantomHudLayout {
         registerAudioParent(url, parent);
         syncLayoutForAudio(url, trimmedMessages);
     }
+    public static void onVideoMessageCommitted(String url, GuiMessage parent, List<GuiMessage.Line> trimmedMessages) {
+        registerVideoParent(url, parent);
+        syncLayoutForVideo(url, trimmedMessages);
+    }
 
     private static void registerUrlParent(String url, GuiMessage parent) {
         URL_TO_MESSAGE_PARENTS.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(parent);
     }
     private static void registerAudioParent(String url, GuiMessage parent) {
         AUDIO_URL_TO_MESSAGE_PARENTS.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(parent);
+    }
+    private static void registerVideoParent(String url, GuiMessage parent) {
+        VIDEO_URL_TO_MESSAGE_PARENTS.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(parent);
     }
 
     public static void notifyUrlEntryChanged(String url) {
@@ -61,6 +71,15 @@ public final class UpgradePhantomHudLayout {
         }
         if (mc.gui.getChat() instanceof UpgradeChatHudSync sync) {
             sync.refreshInlineLayoutForUrl("audio:" + url);
+        }
+    }
+    public static void notifyVideoEntryChanged(String url) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) {
+            return;
+        }
+        if (mc.gui.getChat() instanceof UpgradeChatHudSync sync) {
+            sync.refreshInlineLayoutForUrl("video:" + url);
         }
     }
 
@@ -82,6 +101,16 @@ public final class UpgradePhantomHudLayout {
         switch (entry.getState()) {
             case FAILED -> handleFailedAudio(url, trimmedMessages, entry.getFailureKind());
             case LOADING, LOADED -> ensureAudioPhantoms(url, trimmedMessages, entry.getState() == AudioEntry.State.LOADED);
+        }
+    }
+    public static void syncLayoutForVideo(String url, List<GuiMessage.Line> trimmedMessages) {
+        VideoEntry entry = VideoLoader.getIfPresent(url);
+        if (entry == null) {
+            return;
+        }
+        switch (entry.getState()) {
+            case FAILED -> handleFailedVideo(url, trimmedMessages, entry.getFailureKind());
+            case LOADING, LOADED -> ensureVideoPhantoms(url, trimmedMessages, entry.getState() == VideoEntry.State.LOADED);
         }
     }
 
@@ -111,6 +140,20 @@ public final class UpgradePhantomHudLayout {
         }
         if (loaded) {
             AUDIO_URL_TO_MESSAGE_PARENTS.remove(url);
+        }
+    }
+    private static void ensureVideoPhantoms(String url, List<GuiMessage.Line> trimmedMessages, boolean loaded) {
+        Set<GuiMessage> parents = VIDEO_URL_TO_MESSAGE_PARENTS.get(url);
+        if (parents == null || parents.isEmpty()) {
+            return;
+        }
+        for (GuiMessage parent : new HashSet<>(parents)) {
+            if (!hasPhantomTopForVideo(trimmedMessages, parent, url)) {
+                insertPhantomBlock(trimmedMessages, parent, url, InlineResourceType.VIDEO);
+            }
+        }
+        if (loaded) {
+            VIDEO_URL_TO_MESSAGE_PARENTS.remove(url);
         }
     }
 
@@ -150,6 +193,24 @@ public final class UpgradePhantomHudLayout {
             applyAudioFailureOnTextLines(trimmedMessages, parent, failureKind);
         }
     }
+    private static void handleFailedVideo(String url, List<GuiMessage.Line> trimmedMessages, VideoEntry.FailureKind failureKind) {
+        Set<GuiMessage> parents = new HashSet<>();
+        Set<GuiMessage> registered = VIDEO_URL_TO_MESSAGE_PARENTS.remove(url);
+        if (registered != null) {
+            parents.addAll(registered);
+        }
+        for (int i = 0; i < trimmedMessages.size(); i++) {
+            GuiMessage.Line line = trimmedMessages.get(i);
+            ImageAttachable a = (ImageAttachable) (Object) line;
+            if (a.chatupgrade$getResourceType() == InlineResourceType.VIDEO && url.equals(a.chatupgrade$getImageUrl())) {
+                parents.add(line.parent());
+            }
+        }
+        for (GuiMessage parent : parents) {
+            stripPhantomBlock(trimmedMessages, parent, url, InlineResourceType.VIDEO);
+            applyVideoFailureOnTextLines(trimmedMessages, parent, failureKind);
+        }
+    }
 
     public static boolean isPhantomLine(GuiMessage.Line line) {
         ImageAttachable a = (ImageAttachable) (Object) line;
@@ -180,6 +241,18 @@ public final class UpgradePhantomHudLayout {
         }
         return false;
     }
+    private static boolean hasPhantomTopForVideo(List<GuiMessage.Line> trim, GuiMessage parent, String url) {
+        for (GuiMessage.Line line : trim) {
+            if (!line.parent().equals(parent)) {
+                continue;
+            }
+            ImageAttachable a = (ImageAttachable) (Object) line;
+            if (a.chatupgrade$getResourceType() == InlineResourceType.VIDEO && url.equals(a.chatupgrade$getImageUrl())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static int lastTextLineIndex(List<GuiMessage.Line> trim, GuiMessage parent) {
         int last = -1;
@@ -201,7 +274,11 @@ public final class UpgradePhantomHudLayout {
             return;
         }
         int insertAt = lastText + 1;
-        int phantomCount = type == InlineResourceType.AUDIO ? AUDIO_PHANTOM_COUNT : ImageLoader.PHANTOM_COUNT;
+        int phantomCount = switch (type) {
+            case IMAGE -> ImageLoader.PHANTOM_COUNT;
+            case AUDIO -> AUDIO_PHANTOM_COUNT;
+            case VIDEO -> VIDEO_PHANTOM_COUNT;
+        };
         UpgradePhantomCoordinator.nextPhantomTopType = type;
         for (int i = 0; i < phantomCount - 1; i++) {
             UpgradePhantomCoordinator.nextPhantomContinuation = true;
@@ -257,6 +334,25 @@ public final class UpgradePhantomHudLayout {
             FormattedCharSequence updated = switch (failureKind) {
                 case RESPONSE_BODY_TOO_LARGE -> UpgradeBracketCodec.replaceVisibleAudioPlaceholderWithOversize(readable.chatupgrade$content());
                 case UNKNOWN, UNSUPPORTED_AUDIO_FORMAT -> UpgradeBracketCodec.replaceVisibleAudioPlaceholderWithLoadFailed(readable.chatupgrade$content());
+            };
+            if (updated != null) {
+                trim.set(j, new GuiMessage.Line(parent, updated, readable.chatupgrade$endOfEntry()));
+            }
+        }
+    }
+    private static void applyVideoFailureOnTextLines(List<GuiMessage.Line> trim, GuiMessage parent, VideoEntry.FailureKind failureKind) {
+        for (int j = 0; j < trim.size(); j++) {
+            GuiMessage.Line line = trim.get(j);
+            if (!line.parent().equals(parent)) {
+                continue;
+            }
+            if (isPhantomLine(line)) {
+                continue;
+            }
+            GuiMessageLineReadable readable = (GuiMessageLineReadable) (Object) line;
+            FormattedCharSequence updated = switch (failureKind) {
+                case RESPONSE_BODY_TOO_LARGE -> UpgradeBracketCodec.replaceVisibleVideoPlaceholderWithOversize(readable.chatupgrade$content());
+                case UNKNOWN, UNSUPPORTED_VIDEO_FORMAT -> UpgradeBracketCodec.replaceVisibleVideoPlaceholderWithLoadFailed(readable.chatupgrade$content());
             };
             if (updated != null) {
                 trim.set(j, new GuiMessage.Line(parent, updated, readable.chatupgrade$endOfEntry()));

@@ -4,6 +4,7 @@ import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.AudioLoader;
 import com.chat.upgrade.client.ImageLoader;
 import com.chat.upgrade.client.InlineResourceType;
+import com.chat.upgrade.client.VideoLoader;
 import com.chat.upgrade.client.UpgradeBracketCodec;
 import com.chat.upgrade.client.UpgradeChatHudSync;
 import com.chat.upgrade.client.UpgradePhantomCoordinator;
@@ -63,8 +64,10 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
                 if (!ChatUpgradeConfig.get().manualImageReveal) {
                     ImageLoader.getOrLoad(decoded.url());
                 }
-            } else {
+            } else if (decoded.resourceType() == InlineResourceType.AUDIO) {
                 AudioLoader.getOrLoad(decoded.url());
+            } else {
+                VideoLoader.getOrLoad(decoded.url());
             }
             return decoded.modified();
         }
@@ -114,10 +117,10 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         }
         UpgradePhantomCoordinator.nextPhantomTopName = name;
         GuiMessage parentMessage = trimmedMessages.get(0).parent();
-        if (type == InlineResourceType.AUDIO) {
-            UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);
-        } else {
-            UpgradePhantomHudLayout.onUrlMessageCommitted(url, parentMessage, trimmedMessages);
+        switch (type) {
+            case AUDIO -> UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);
+            case VIDEO -> UpgradePhantomHudLayout.onVideoMessageCommitted(url, parentMessage, trimmedMessages);
+            case IMAGE -> UpgradePhantomHudLayout.onUrlMessageCommitted(url, parentMessage, trimmedMessages);
         }
     }
 
@@ -125,6 +128,8 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     public void refreshInlineLayoutForUrl(String url) {
         if (url.startsWith("audio:")) {
             UpgradePhantomHudLayout.syncLayoutForAudio(url.substring("audio:".length()), trimmedMessages);
+        } else if (url.startsWith("video:")) {
+            UpgradePhantomHudLayout.syncLayoutForVideo(url.substring("video:".length()), trimmedMessages);
         } else {
             UpgradePhantomHudLayout.syncLayoutForUrl(url, trimmedMessages);
         }
@@ -132,6 +137,6 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @Override
     public void requestLayoutSyncForUrl(String url) {
-        UpgradePhantomHudLayout.syncLayoutForUrl(url, trimmedMessages);
+        refreshInlineLayoutForUrl(url);
     }
 }

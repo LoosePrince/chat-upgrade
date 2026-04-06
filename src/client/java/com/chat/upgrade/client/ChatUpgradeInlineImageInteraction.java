@@ -4,6 +4,7 @@ import com.chat.upgrade.client.mixin.ChatUpgradeClickableTextOnlyGraphicsAccesso
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingBackgroundAccessor;
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingFocusedAccessor;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -53,6 +54,14 @@ public final class ChatUpgradeInlineImageInteraction {
             drawW = UpgradeHudInlinePaint.AUDIO_WIDTH;
             drawH = UpgradeHudInlinePaint.AUDIO_HEIGHT;
             tryAudioTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
+        } else if (attachable.chatupgrade$getResourceType() == InlineResourceType.VIDEO) {
+            VideoEntry entry = VideoLoader.getIfPresent(url);
+            if (entry == null || entry.getState() == VideoEntry.State.FAILED) {
+                return;
+            }
+            drawW = VideoUiLayout.WIDTH;
+            drawH = VideoUiLayout.HEIGHT;
+            tryVideoTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
         } else {
             ImageEntry entry = ImageLoader.getIfPresent(url);
             if (entry == null || entry.getState() == ImageEntry.State.FAILED) {
@@ -146,6 +155,13 @@ public final class ChatUpgradeInlineImageInteraction {
                 }
                 continue;
             }
+            if (p.resourceType == InlineResourceType.VIDEO) {
+                Style actionStyle = styleForVideoClick(p, local.x, local.y);
+                if (actionStyle != null) {
+                    return actionStyle;
+                }
+                continue;
+            }
             URI uri;
             try {
                 uri = URI.create(p.url);
@@ -191,6 +207,44 @@ public final class ChatUpgradeInlineImageInteraction {
         return null;
     }
 
+    private static @Nullable Style styleForVideoClick(Plane p, float localX, float localY) {
+        int x0 = p.localLeft;
+        int y0 = p.localTop;
+        int x1 = p.localRight;
+        VideoEntry entry = VideoLoader.getIfPresent(p.url);
+        int rawW = entry != null ? entry.getRawWidth() : 0;
+        int rawH = entry != null ? entry.getRawHeight() : 0;
+        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(x0, y0, x1 - x0, rawW, rawH);
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(), rect.bottom())) {
+            return Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
+        }
+        int btnX0 = x0 + VideoUiLayout.PAD_X;
+        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
+        int btnY0 = y0 + VideoUiLayout.CONTROL_TOP;
+        int btnY1 = btnY0 + VideoUiLayout.BTN_H;
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, btnX0, btnY0, btnX1, btnY1)) {
+            return Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
+        }
+        long total = VideoPlayerService.durationMs(p.url);
+        if (entry != null && total <= 0) {
+            total = entry.getDurationMs();
+        }
+        long pos = VideoPlayerService.positionMs(p.url);
+        String left = formatMs(pos);
+        String right = formatMs(total);
+        int leftX = btnX1 + 4;
+        int rightX = x1 - VideoUiLayout.PAD_X - Minecraft.getInstance().font.width(right);
+        int barX0 = leftX + Minecraft.getInstance().font.width(left) + 4;
+        int barX1 = rightX - 4;
+        int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
+        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
+        if (barX1 > barX0 && ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
+            double ratio = (localX - barX0) / Math.max(1.0, barX1 - barX0);
+            return Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(p.url, ratio));
+        }
+        return null;
+    }
+
     private static void tryAudioTooltipOnFocused(
             ChatComponent.ChatGraphicsAccess graphics,
             int textTop,
@@ -219,6 +273,37 @@ public final class ChatUpgradeInlineImageInteraction {
             case FAILED -> "失败";
         };
         Component tip = Component.literal("音频\n状态: " + state + "\n时长: " + formatMs(entry.getDurationMs()) + "\n按钮: 播放/循环/打开链接\n进度条: 跳转");
+        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(), acc.chatupgrade$globalMouseY());
+    }
+
+    private static void tryVideoTooltipOnFocused(
+            ChatComponent.ChatGraphicsAccess graphics,
+            int textTop,
+            int drawW,
+            int drawH,
+            String url,
+            GuiMessage parent,
+            VideoEntry entry,
+            float textOpacity
+    ) {
+        if (!(graphics instanceof ChatUpgradeDrawingFocusedAccessor acc)) {
+            return;
+        }
+        if (textOpacity <= 1.0e-5F) {
+            return;
+        }
+        Vector2f local = acc.chatupgrade$localMousePos();
+        if (!ActiveTextCollector.isPointInRectangle(local.x, local.y, 0, textTop, drawW, textTop + drawH)) {
+            return;
+        }
+        Font font = acc.chatupgrade$font();
+        GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
+        String state = switch (entry.getState()) {
+            case LOADING -> "加载中";
+            case LOADED -> VideoPlayerService.isPlaying(url) ? "播放中" : "暂停";
+            case FAILED -> "失败";
+        };
+        Component tip = Component.literal("视频\n状态: " + state + "\n时长: " + formatMs(entry.getDurationMs()) + "\n点击画面: 播放/暂停\n进度条: 跳转");
         gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(), acc.chatupgrade$globalMouseY());
     }
 
