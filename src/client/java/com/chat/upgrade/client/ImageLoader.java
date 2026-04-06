@@ -14,12 +14,15 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
+
+import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -84,10 +87,7 @@ public final class ImageLoader {
         var textures = mc.getTextureManager();
         for (ImageEntry e : new ArrayList<>(CACHE.values())) {
             if (e.isLoaded()) {
-                Identifier id = e.getTextureId();
-                if (id != null) {
-                    textures.release(id);
-                }
+                e.forEachRegisteredTexture(textures::release);
             }
         }
         CACHE.clear();
@@ -163,6 +163,12 @@ public final class ImageLoader {
                 String md5Hex = md5Hex(body);
                 entry.setTransferMetadata(byteLen, contentType, md5Hex);
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
+                Optional<GifAnimatedDecoder.Result> gifOpt = GifAnimatedDecoder.tryDecode(body);
+                if (gifOpt.isPresent()) {
+                    GifAnimatedDecoder.Result r = gifOpt.get();
+                    scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
+                    return;
+                }
                 NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
                 scheduleTextureRegistration(url, entry, img);
             } catch (ResponseBodyTooLarge e) {
@@ -230,6 +236,112 @@ public final class ImageLoader {
         });
     }
 
+    private record PreviewLayout(int displayW, int displayH, int texW, int texH) {}
+
+    private static @Nullable PreviewLayout computePreviewLayout(Window window, int rawW, int rawH) {
+        if (rawH == 0) {
+            return null;
+        }
+        double scale = (double) PREVIEW_HEIGHT / rawH;
+        int displayW = (int) Math.min(rawW * scale, MAX_PREVIEW_WIDTH);
+        int displayH = PREVIEW_HEIGHT;
+
+        if (rawW > 0 && (double) rawW / rawH > (double) MAX_PREVIEW_WIDTH / PREVIEW_HEIGHT) {
+            scale = (double) MAX_PREVIEW_WIDTH / rawW;
+            displayW = MAX_PREVIEW_WIDTH;
+            displayH = (int) (rawH * scale);
+        }
+
+        double pxX = previewTexelsPerGuiPixelX(window);
+        double pxY = previewTexelsPerGuiPixelY(window);
+        int texW = (int) Math.ceil(displayW * pxX * PREVIEW_SUPER_SAMPLING);
+        int texH = (int) Math.ceil(displayH * pxY * PREVIEW_SUPER_SAMPLING);
+        if (texW > MAX_TEXTURE_DIMENSION || texH > MAX_TEXTURE_DIMENSION) {
+            double shrink = Math.min(
+                    (double) MAX_TEXTURE_DIMENSION / texW,
+                    (double) MAX_TEXTURE_DIMENSION / texH);
+            texW = Math.max(1, (int) (texW * shrink));
+            texH = Math.max(1, (int) (texH * shrink));
+        }
+        return new PreviewLayout(displayW, displayH, texW, texH);
+    }
+
+    private static void closeNativeImages(@Nullable NativeImage[] frames) {
+        if (frames == null) {
+            return;
+        }
+        for (NativeImage ni : frames) {
+            if (ni != null) {
+                try {
+                    ni.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private static void scheduleAnimatedTextureRegistration(
+            String url,
+            ImageEntry entry,
+            NativeImage[] frames,
+            int[] delayMs
+    ) {
+        Minecraft.getInstance().execute(() -> {
+            ArrayList<Identifier> registered = new ArrayList<>();
+            try {
+                Minecraft mc = Minecraft.getInstance();
+                Window window = mc.getWindow();
+                NativeImage first = frames[0];
+                int rawW = first.getWidth();
+                int rawH = first.getHeight();
+                String formatName = first.format().name();
+
+                PreviewLayout layout = computePreviewLayout(window, rawW, rawH);
+                if (layout == null) {
+                    markFailed(url, entry);
+                    closeNativeImages(frames);
+                    return;
+                }
+                int displayW = layout.displayW();
+                int displayH = layout.displayH();
+                int texW = layout.texW();
+                int texH = layout.texH();
+
+                Identifier[] ids = new Identifier[frames.length];
+                for (int i = 0; i < frames.length; i++) {
+                    NativeImage img = frames[i];
+                    int fw = img.getWidth();
+                    int fh = img.getHeight();
+                    NativeImage scaled = new NativeImage(img.format(), texW, texH, false);
+                    img.resizeSubRectTo(0, 0, fw, fh, scaled);
+                    img.close();
+                    frames[i] = null;
+
+                    int idNum = TEXTURE_COUNTER.getAndIncrement();
+                    Identifier location = Identifier.fromNamespaceAndPath(
+                            ChatUpgrade.MOD_ID, "upgrade_preview_" + idNum);
+                    int finalId = idNum;
+                    DynamicTexture texture = new DynamicTexture(() -> "upgrade_preview_" + finalId, scaled);
+                    mc.getTextureManager().register(location, texture);
+                    registered.add(location);
+                    ids[i] = location;
+                }
+
+                entry.setDecodedFormatName(formatName);
+                entry.setLoadedAnimated(ids, delayMs, displayW, displayH, texW, texH, rawW, rawH);
+                UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register animated texture for {}: {}", url, e.getMessage());
+                Minecraft mc = Minecraft.getInstance();
+                for (Identifier id : registered) {
+                    mc.getTextureManager().release(id);
+                }
+                closeNativeImages(frames);
+                markFailed(url, entry);
+            }
+        });
+    }
+
     private static void scheduleTextureRegistration(String url, ImageEntry entry, NativeImage img) {
         Minecraft.getInstance().execute(() -> {
             try {
@@ -239,37 +351,16 @@ public final class ImageLoader {
                 int rawW = img.getWidth();
                 int rawH = img.getHeight();
 
-                // Scale to fit within preview area
-                int displayW;
-                int displayH;
-                if (rawH == 0) {
+                PreviewLayout layout = computePreviewLayout(window, rawW, rawH);
+                if (layout == null) {
                     markFailed(url, entry);
                     img.close();
                     return;
                 }
-                double scale = (double) PREVIEW_HEIGHT / rawH;
-                displayW = (int) Math.min(rawW * scale, MAX_PREVIEW_WIDTH);
-                displayH = PREVIEW_HEIGHT;
-
-                // If image is wider than tall relative to our constraints, scale by width
-                // instead
-                if (rawW > 0 && (double) rawW / rawH > (double) MAX_PREVIEW_WIDTH / PREVIEW_HEIGHT) {
-                    scale = (double) MAX_PREVIEW_WIDTH / rawW;
-                    displayW = MAX_PREVIEW_WIDTH;
-                    displayH = (int) (rawH * scale);
-                }
-
-                double pxX = previewTexelsPerGuiPixelX(window);
-                double pxY = previewTexelsPerGuiPixelY(window);
-                int texW = (int) Math.ceil(displayW * pxX * PREVIEW_SUPER_SAMPLING);
-                int texH = (int) Math.ceil(displayH * pxY * PREVIEW_SUPER_SAMPLING);
-                if (texW > MAX_TEXTURE_DIMENSION || texH > MAX_TEXTURE_DIMENSION) {
-                    double shrink = Math.min(
-                            (double) MAX_TEXTURE_DIMENSION / texW,
-                            (double) MAX_TEXTURE_DIMENSION / texH);
-                    texW = Math.max(1, (int) (texW * shrink));
-                    texH = Math.max(1, (int) (texH * shrink));
-                }
+                int displayW = layout.displayW();
+                int displayH = layout.displayH();
+                int texW = layout.texW();
+                int texH = layout.texH();
 
                 // One resize from full source → supersampled texture; blit still uses
                 // displayW×displayH on screen.

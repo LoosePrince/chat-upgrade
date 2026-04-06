@@ -34,7 +34,10 @@ public final class RasterImageDecoder {
         return fromBufferedImage(bi);
     }
 
-    private static NativeImage fromBufferedImage(BufferedImage src) {
+    /**
+     * Converts an AWT {@link BufferedImage} to RGBA {@link NativeImage} (used for GIF frames and ImageIO paths).
+     */
+    public static NativeImage fromBufferedImage(BufferedImage src) {
         int w = src.getWidth();
         int h = src.getHeight();
         BufferedImage argb = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);

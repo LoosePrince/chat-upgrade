@@ -3,6 +3,8 @@ package com.chat.upgrade.client;
 import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Arrays;
+
 public final class ImageEntry {
     public enum State { LOADING, LOADED, FAILED }
 
@@ -24,7 +26,12 @@ public final class ImageEntry {
     private volatile State state;
     private volatile FailureKind failureKind = FailureKind.UNKNOWN;
     private volatile LoadPhase loadPhase = LoadPhase.FETCH;
+    /** Static preview; null when {@link #frameTextureIds} is used for animation. */
     private @Nullable Identifier textureId;
+    /** Multiple frames for animated GIF; when non-null and length &gt; 1, use {@link #textureIdAtMillis(long)}. */
+    private @Nullable Identifier[] frameTextureIds;
+    private @Nullable int[] frameDelayMs;
+    private long totalLoopDurationMs;
     /** Drawn width/height on screen (preview size). */
     private int width;
     private int height;
@@ -70,6 +77,9 @@ public final class ImageEntry {
             int rawPixelHeight
     ) {
         this.textureId = textureId;
+        this.frameTextureIds = null;
+        this.frameDelayMs = null;
+        this.totalLoopDurationMs = 0L;
         this.width = drawWidth;
         this.height = drawHeight;
         this.textureWidth = texWidth;
@@ -77,6 +87,94 @@ public final class ImageEntry {
         this.rawPixelWidth = rawPixelWidth;
         this.rawPixelHeight = rawPixelHeight;
         this.state = State.LOADED;
+    }
+
+    /**
+     * Registers animated preview: {@code frameTextureIds.length} must match {@code frameDelayMs.length}, ≥ 2.
+     */
+    public void setLoadedAnimated(
+            Identifier[] frameTextureIds,
+            int[] frameDelayMs,
+            int drawWidth,
+            int drawHeight,
+            int texWidth,
+            int texHeight,
+            int rawPixelWidth,
+            int rawPixelHeight
+    ) {
+        this.textureId = null;
+        this.frameTextureIds = Arrays.copyOf(frameTextureIds, frameTextureIds.length);
+        this.frameDelayMs = Arrays.copyOf(frameDelayMs, frameDelayMs.length);
+        long total = 0L;
+        for (int d : this.frameDelayMs) {
+            total += d;
+        }
+        this.totalLoopDurationMs = total;
+        this.width = drawWidth;
+        this.height = drawHeight;
+        this.textureWidth = texWidth;
+        this.textureHeight = texHeight;
+        this.rawPixelWidth = rawPixelWidth;
+        this.rawPixelHeight = rawPixelHeight;
+        this.state = State.LOADED;
+    }
+
+    /**
+     * Whether this entry uses multiple GPU textures cycled by delay (animated GIF).
+     */
+    public boolean isAnimated() {
+        return frameTextureIds != null && frameTextureIds.length > 1;
+    }
+
+    /**
+     * Chooses the frame texture for the given wall-clock time (looping).
+     */
+    public @Nullable Identifier textureIdAtMillis(long millis) {
+        if (frameTextureIds == null || frameTextureIds.length == 0) {
+            return textureId;
+        }
+        if (frameTextureIds.length == 1) {
+            return frameTextureIds[0];
+        }
+        long total = totalLoopDurationMs;
+        if (total <= 0L) {
+            return frameTextureIds[0];
+        }
+        long t = millis % total;
+        long acc = 0L;
+        int[] delays = frameDelayMs;
+        if (delays == null || delays.length != frameTextureIds.length) {
+            return frameTextureIds[0];
+        }
+        for (int i = 0; i < delays.length; i++) {
+            long d = delays[i];
+            if (t < acc + d) {
+                return frameTextureIds[i];
+            }
+            acc += d;
+        }
+        return frameTextureIds[frameTextureIds.length - 1];
+    }
+
+    /** Frame count for tooltips: 1 for static loaded image, N for animated GIF. */
+    public int getAnimationFrameCount() {
+        if (frameTextureIds != null) {
+            return frameTextureIds.length;
+        }
+        return isLoaded() ? 1 : 0;
+    }
+
+    /** For cache invalidation: every registered texture identifier. */
+    public void forEachRegisteredTexture(java.util.function.Consumer<Identifier> consumer) {
+        if (frameTextureIds != null) {
+            for (Identifier id : frameTextureIds) {
+                if (id != null) {
+                    consumer.accept(id);
+                }
+            }
+        } else if (textureId != null) {
+            consumer.accept(textureId);
+        }
     }
 
     public void setFailed() {

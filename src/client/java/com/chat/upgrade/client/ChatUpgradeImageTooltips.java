@@ -36,6 +36,9 @@ public final class ChatUpgradeImageTooltips {
                     lines.add("像素尺寸: " + entry.getRawPixelWidth() + "×" + entry.getRawPixelHeight());
                     lines.add("预览绘制: " + entry.getWidth() + "×" + entry.getHeight());
                     lines.add("纹理尺寸: " + entry.getTextureWidth() + "×" + entry.getTextureHeight());
+                    if (entry.isAnimated()) {
+                        lines.add("动图: 是（" + entry.getAnimationFrameCount() + " 帧）");
+                    }
                     String fmt = entry.getDecodedFormatName();
                     lines.add("像素格式: " + (fmt != null ? fmt : "—"));
                 }

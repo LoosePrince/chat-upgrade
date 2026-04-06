@@ -36,7 +36,9 @@ public final class UpgradeHudInlinePaint {
     }
 
     private static void paintDecodedBlit(GuiGraphicsExtractor gfx, ImageEntry entry, int messageY, float opacity) {
-        Identifier textureId = entry.getTextureId();
+        Identifier textureId = entry.isAnimated()
+                ? entry.textureIdAtMillis(Util.getMillis())
+                : entry.getTextureId();
         if (textureId == null) return;
 
         int drawW = entry.getWidth();
