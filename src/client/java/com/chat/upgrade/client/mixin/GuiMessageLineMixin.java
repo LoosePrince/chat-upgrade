@@ -1,6 +1,7 @@
 package com.chat.upgrade.client.mixin;
 
 import com.chat.upgrade.client.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.InlineResourceType;
 import com.chat.upgrade.client.mixininterface.GuiMessageLineReadable;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
@@ -25,12 +26,16 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
 
     @Unique
     private boolean chatupgrade$imageIsContinuation;
+    @Unique
+    private InlineResourceType chatupgrade$resourceType = InlineResourceType.IMAGE;
 
     @Inject(method = "<init>", at = @At("TAIL"))
     private void chatupgrade$captureImageData(CallbackInfo ci) {
+        this.chatupgrade$resourceType = UpgradePhantomCoordinator.nextPhantomTopType;
         if (UpgradePhantomCoordinator.nextPhantomTopUrl != null) {
             this.chatupgrade$imageUrl = UpgradePhantomCoordinator.nextPhantomTopUrl;
             UpgradePhantomCoordinator.nextPhantomTopUrl = null;
+            UpgradePhantomCoordinator.nextPhantomTopType = InlineResourceType.IMAGE;
         }
         this.chatupgrade$imageIsContinuation = UpgradePhantomCoordinator.nextPhantomContinuation;
         UpgradePhantomCoordinator.nextPhantomContinuation = false;
@@ -54,5 +59,10 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Override
     public boolean chatupgrade$isImageContinuation() {
         return chatupgrade$imageIsContinuation;
+    }
+
+    @Override
+    public InlineResourceType chatupgrade$getResourceType() {
+        return chatupgrade$resourceType;
     }
 }

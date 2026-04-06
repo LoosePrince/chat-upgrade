@@ -23,16 +23,77 @@ public final class UpgradeHudInlinePaint {
         GuiGraphicsExtractor gfx = ChatUpgradeRenderScope.current();
         if (gfx == null) return;
 
-        ImageEntry entry = ImageLoader.getIfPresent(resourceUrl);
-        if (entry == null) {
+        if (attachable.chatupgrade$getResourceType() == InlineResourceType.AUDIO) {
+            AudioEntry entry = AudioLoader.getIfPresent(resourceUrl);
+            if (entry == null) {
+                return;
+            }
+            paintAudio(gfx, entry, resourceUrl, messageY, opacity);
             return;
         }
 
-        switch (entry.getState()) {
-            case FAILED -> {}
-            case LOADING -> paintLoadingStrip(gfx, entry, messageY, opacity);
-            case LOADED -> paintDecodedBlit(gfx, entry, messageY, opacity);
+        ImageEntry imageEntry = ImageLoader.getIfPresent(resourceUrl);
+        if (imageEntry == null) {
+            return;
         }
+
+        switch (imageEntry.getState()) {
+            case FAILED -> {}
+            case LOADING -> paintLoadingStrip(gfx, imageEntry, messageY, opacity);
+            case LOADED -> paintDecodedBlit(gfx, imageEntry, messageY, opacity);
+        }
+    }
+
+    private static void paintAudio(GuiGraphicsExtractor gfx, AudioEntry entry, String url, int messageY, float opacity) {
+        int h = ImageLoader.PREVIEW_HEIGHT;
+        int w = 220;
+        int x0 = 0;
+        int y0 = messageY;
+        int x1 = x0 + w;
+        int y1 = y0 + h;
+        gfx.fill(x0, y0, x1, y1, argb(opacity * 0.9f, 24, 26, 31));
+        int btn = h - 12;
+        int bx0 = x0 + 6;
+        int by0 = y0 + 6;
+        gfx.fill(bx0, by0, bx0 + btn, by0 + btn, argb(opacity, 52, 120, 200));
+
+        Font font = Minecraft.getInstance().font;
+        if (entry.getState() == AudioEntry.State.LOADING) {
+            String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE ? "音频处理中…" : "音频下载中…";
+            gfx.text(font, label, bx0 + btn + 8, y0 + 9, argb(opacity, 210, 210, 215), false);
+            return;
+        }
+        if (entry.getState() == AudioEntry.State.FAILED) {
+            gfx.text(font, "音频加载失败", bx0 + btn + 8, y0 + 9, argb(opacity, 255, 120, 120), false);
+            return;
+        }
+
+        boolean playing = AudioPlayerService.isPlaying(url);
+        String icon = playing ? "||" : ">";
+        gfx.text(font, icon, bx0 + 7, by0 + 6, argb(opacity, 255, 255, 255), false);
+
+        long pos = AudioPlayerService.positionMs(url);
+        long total = AudioPlayerService.durationMs(url);
+        if (total <= 0) {
+            total = entry.getDurationMs();
+        }
+        int barX0 = bx0 + btn + 8;
+        int barX1 = x1 - 8;
+        int barY0 = y0 + h - 14;
+        int barY1 = barY0 + 6;
+        gfx.fill(barX0, barY0, barX1, barY1, argb(opacity, 68, 72, 82));
+        float ratio = total <= 0 ? 0f : Math.clamp((float) pos / total, 0f, 1f);
+        int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
+        gfx.fill(barX0, barY0, fillX, barY1, argb(opacity, 100, 200, 255));
+        String time = formatMs(pos) + " / " + formatMs(total);
+        gfx.text(font, time, barX0, y0 + 8, argb(opacity, 215, 220, 230), false);
+    }
+
+    private static String formatMs(long ms) {
+        long s = Math.max(0L, ms / 1000L);
+        long m = s / 60L;
+        long r = s % 60L;
+        return String.format("%d:%02d", m, r);
     }
 
     private static void paintDecodedBlit(GuiGraphicsExtractor gfx, ImageEntry entry, int messageY, float opacity) {

@@ -10,6 +10,8 @@ public final class UpgradePhantomCoordinator {
     private UpgradePhantomCoordinator() {}
 
     public static @Nullable String pendingDecodedUrl;
+    public static InlineResourceType pendingDecodedType = InlineResourceType.IMAGE;
     public static @Nullable String nextPhantomTopUrl;
+    public static InlineResourceType nextPhantomTopType = InlineResourceType.IMAGE;
     public static boolean nextPhantomContinuation;
 }

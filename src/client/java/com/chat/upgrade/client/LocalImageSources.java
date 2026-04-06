@@ -33,19 +33,29 @@ import java.util.stream.Stream;
 public final class LocalImageSources {
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
             "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico");
+    private static final Set<String> AUDIO_EXTENSIONS = Set.of(
+            "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm");
 
     private LocalImageSources() {}
 
     public static Optional<Path> resolveFolderOrFile(Path path) {
+        return resolveFolderOrFileWithExtensions(path, IMAGE_EXTENSIONS);
+    }
+
+    public static Optional<Path> resolveAudioFolderOrFile(Path path) {
+        return resolveFolderOrFileWithExtensions(path, AUDIO_EXTENSIONS);
+    }
+
+    private static Optional<Path> resolveFolderOrFileWithExtensions(Path path, Set<String> extensions) {
         try {
             if (Files.isRegularFile(path)) {
-                return isImageExtension(path) ? Optional.of(path) : Optional.empty();
+                return isExtension(path, extensions) ? Optional.of(path) : Optional.empty();
             }
             if (Files.isDirectory(path)) {
                 try (Stream<Path> stream = Files.list(path)) {
                     return stream
                             .filter(Files::isRegularFile)
-                            .filter(LocalImageSources::isImageExtension)
+                            .filter(p -> isExtension(p, extensions))
                             .max(Comparator.comparingLong(LocalImageSources::lastModifiedSafe));
                 }
             }
@@ -63,14 +73,14 @@ public final class LocalImageSources {
         }
     }
 
-    private static boolean isImageExtension(Path p) {
+    private static boolean isExtension(Path p, Set<String> extensions) {
         String name = p.getFileName().toString();
         int dot = name.lastIndexOf('.');
         if (dot < 0 || dot == name.length() - 1) {
             return false;
         }
         String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
-        return IMAGE_EXTENSIONS.contains(ext);
+        return extensions.contains(ext);
     }
 
     /**
@@ -91,6 +101,20 @@ public final class LocalImageSources {
         return pickWithJFileChooser();
     }
 
+    public static Optional<Path> pickAudioWithFileChooser() {
+        if (GraphicsEnvironment.isHeadless()) {
+            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT headless，无法打开文件选择器。");
+            return Optional.empty();
+        }
+        try {
+            Toolkit.getDefaultToolkit();
+        } catch (Throwable t) {
+            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT toolkit unavailable: {}", t.getMessage());
+            return Optional.empty();
+        }
+        return pickAudioWithJFileChooser();
+    }
+
     private static Optional<Path> pickWithJFileChooser() {
         final Path[] holder = new Path[1];
         CountDownLatch done = new CountDownLatch(1);
@@ -108,6 +132,31 @@ public final class LocalImageSources {
                 }
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser error: {}", e.getMessage());
+            } finally {
+                done.countDown();
+            }
+        });
+        awaitLatch(done);
+        return Optional.ofNullable(holder[0]);
+    }
+
+    private static Optional<Path> pickAudioWithJFileChooser() {
+        final Path[] holder = new Path[1];
+        CountDownLatch done = new CountDownLatch(1);
+        SwingUtilities.invokeLater(() -> {
+            try {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle("选择要上传的音频");
+                chooser.setFileFilter(new FileNameExtensionFilter(
+                        "音频",
+                        "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm"));
+                chooser.setMultiSelectionEnabled(false);
+                int result = chooser.showOpenDialog(null);
+                if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
+                    holder[0] = chooser.getSelectedFile().toPath();
+                }
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser audio error: {}", e.getMessage());
             } finally {
                 done.countDown();
             }

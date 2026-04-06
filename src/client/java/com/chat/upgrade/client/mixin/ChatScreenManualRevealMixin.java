@@ -1,6 +1,9 @@
 package com.chat.upgrade.client.mixin;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.AudioControlClickEvent;
+import com.chat.upgrade.client.AudioLoader;
+import com.chat.upgrade.client.AudioPlayerService;
 import com.chat.upgrade.client.ImageLoader;
 import com.chat.upgrade.client.ManualRevealClickEvent;
 import com.chat.upgrade.client.UpgradeChatHudSync;
@@ -31,9 +34,6 @@ public abstract class ChatScreenManualRevealMixin {
         if (insertionClick) {
             return;
         }
-        if (!ChatUpgradeConfig.get().manualImageReveal) {
-            return;
-        }
         if (style == null) {
             return;
         }
@@ -41,16 +41,33 @@ public abstract class ChatScreenManualRevealMixin {
         if (clickEvent == null) {
             return;
         }
-        Optional<String> urlOpt = ManualRevealClickEvent.parseUrl(clickEvent);
-        if (urlOpt.isEmpty()) {
+        Optional<AudioControlClickEvent.Parsed> audioOpt = AudioControlClickEvent.parse(clickEvent);
+        if (audioOpt.isPresent()) {
+            AudioControlClickEvent.Parsed p = audioOpt.get();
+            AudioLoader.getOrLoad(p.url());
+            if (p.action() == AudioControlClickEvent.Action.TOGGLE) {
+                AudioPlayerService.toggle(p.url());
+            } else {
+                AudioPlayerService.seek(p.url(), p.ratio());
+            }
+            if (Minecraft.getInstance().gui.getChat() instanceof UpgradeChatHudSync sync) {
+                sync.requestLayoutSyncForUrl("audio:" + p.url());
+            }
+            cir.setReturnValue(true);
             return;
         }
-        String url = urlOpt.get();
-        ImageLoader.getOrLoad(url);
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.gui.getChat() instanceof UpgradeChatHudSync sync) {
-            sync.requestLayoutSyncForUrl(url);
+        if (ChatUpgradeConfig.get().manualImageReveal) {
+            Optional<String> urlOpt = ManualRevealClickEvent.parseUrl(clickEvent);
+            if (urlOpt.isEmpty()) {
+                return;
+            }
+            String url = urlOpt.get();
+            ImageLoader.getOrLoad(url);
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.gui.getChat() instanceof UpgradeChatHudSync sync) {
+                sync.requestLayoutSyncForUrl(url);
+            }
+            cir.setReturnValue(true);
         }
-        cir.setReturnValue(true);
     }
 }

@@ -9,7 +9,10 @@ import net.minecraft.util.FormattedCharSequence;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -27,22 +30,29 @@ public final class UpgradeBracketCodec {
      * Used by {@link #replaceVisiblePlaceholderWithLoadFailed(FormattedCharSequence)} on HUD lines.
      */
     public static final String LOAD_FAILED_VISIBLE = "[图片：加载失败]";
+    public static final String AUDIO_LOAD_FAILED_VISIBLE = "[音频：加载失败]";
 
     /** Shown when the remote image exceeds {@link ChatUpgradeConfig#maxReceiveBytes}. */
     public static final String IMAGE_OVERSIZE_VISIBLE = "[图片：图片过大]";
+    public static final String AUDIO_OVERSIZE_VISIBLE = "[音频：文件过大]";
 
     private static final Pattern BRACKET_PAYLOAD = Pattern.compile(
-            "\\[\\[(ChatUpgrade|CICode),url=([^,\\]]+)(?:,name=([^\\]]+))?\\]\\]");
+            "\\[\\[(ChatUpgrade|CICode),([^\\]]+)\\]\\]");
 
     private static final Pattern BRACKET_PAYLOAD_LOOSE = Pattern.compile(
             "\\[\\[(?:ChatUpgrade|CICode),url=[^\\]]+(?:,[^\\]]+)?\\]\\]");
 
-    /** Matches {@link #buildPlaceholder(String)} and fullwidth-colon variants after wrapping / font shaping. */
-    private static final Pattern VISIBLE_PLACEHOLDER = Pattern.compile("\\[图片[:：]\\s*[^\\]]+\\]");
+    /** Matches image/audio placeholders and fullwidth-colon variants after wrapping / font shaping. */
+    private static final Pattern VISIBLE_PLACEHOLDER = Pattern.compile("\\[(?:图片|音频)[:：]\\s*[^\\]]+\\]");
 
     private UpgradeBracketCodec() {}
 
-    public record DecodedBracket(Component modified, @Nullable String url, @Nullable String name) {
+    public record DecodedBracket(
+            Component modified,
+            @Nullable String url,
+            @Nullable String name,
+            InlineResourceType resourceType
+    ) {
         public boolean hasUrl() {
             return url != null;
         }
@@ -51,17 +61,30 @@ public final class UpgradeBracketCodec {
     public static DecodedBracket decodeIncoming(Component original) {
         Matcher m = BRACKET_PAYLOAD.matcher(buildFullText(original));
         if (!m.find()) {
-            return new DecodedBracket(original, null, null);
+            return new DecodedBracket(original, null, null, InlineResourceType.IMAGE);
         }
-        String url = m.group(2).trim();
-        String name = m.group(3) != null ? m.group(3).trim() : "图片";
+        String attrs = m.group(2);
+        Map<String, String> kv = parsePayloadAttributes(attrs);
+        String url = kv.getOrDefault("url", "").trim();
+        if (url.isBlank()) {
+            return new DecodedBracket(original, null, null, InlineResourceType.IMAGE);
+        }
+        InlineResourceType type = InlineResourceType.fromWire(kv.get("type"));
+        String defaultName = type == InlineResourceType.AUDIO ? "音频" : "图片";
+        String name = kv.getOrDefault("name", defaultName).trim();
         String matched = m.group(0);
 
-        Component modified = replaceMatchedPayload(original, matched, name, url);
-        return new DecodedBracket(modified, url, name);
+        Component modified = replaceMatchedPayload(original, matched, name, url, type);
+        return new DecodedBracket(modified, url, name, type);
     }
 
-    private static Component replaceMatchedPayload(Component component, String exactPayload, String name, String url) {
+    private static Component replaceMatchedPayload(
+            Component component,
+            String exactPayload,
+            String name,
+            String url,
+            InlineResourceType type
+    ) {
         String probe = buildFullText(component);
         if (!probe.contains("[[" + WIRE_TAG_NATIVE) && !probe.contains("[[" + WIRE_TAG_LEGACY)) {
             return component;
@@ -69,7 +92,7 @@ public final class UpgradeBracketCodec {
 
         List<StyledRun> runs = collectStyledRuns(component, Style.EMPTY);
         if (runs.isEmpty()) {
-            return replaceMatchedPayloadFlatten(component, probe, exactPayload, name, url);
+            return replaceMatchedPayloadFlatten(component, probe, exactPayload, name, url, type);
         }
 
         StringBuilder joined = new StringBuilder();
@@ -111,7 +134,7 @@ public final class UpgradeBracketCodec {
                 appendStyledFragment(out, run.style, run.text.substring(0, replaceStart - rb));
             }
             if (!inserted) {
-                out.append(buildPlaceholderComponent(name, url));
+                out.append(buildPlaceholderComponent(type, name, url));
                 inserted = true;
             }
             if (re > replaceEnd) {
@@ -120,18 +143,42 @@ public final class UpgradeBracketCodec {
         }
 
         if (!inserted) {
-            return replaceMatchedPayloadFlatten(component, fullText, exactPayload, name, url);
+            return replaceMatchedPayloadFlatten(component, fullText, exactPayload, name, url, type);
         }
         return out;
     }
 
     /** Fallback when structured visit yields no runs (e.g. unusual {@link Component} types). */
-    private static Component replaceMatchedPayloadFlatten(Component component, String fullText, String exactPayload, String name, String url) {
-        String replaced = fullText.replace(exactPayload, buildPlaceholder(name));
+    private static Component replaceMatchedPayloadFlatten(
+            Component component,
+            String fullText,
+            String exactPayload,
+            String name,
+            String url,
+            InlineResourceType type
+    ) {
+        String replaced = fullText.replace(exactPayload, buildPlaceholder(type, name));
         if (replaced.equals(fullText)) {
-            replaced = BRACKET_PAYLOAD_LOOSE.matcher(fullText).replaceFirst(Matcher.quoteReplacement(buildPlaceholder(name)));
+            replaced = BRACKET_PAYLOAD_LOOSE.matcher(fullText)
+                    .replaceFirst(Matcher.quoteReplacement(buildPlaceholder(type, name)));
         }
         return Component.literal(replaced).withStyle(component.getStyle());
+    }
+
+    private static Map<String, String> parsePayloadAttributes(String attrs) {
+        Map<String, String> out = new HashMap<>();
+        for (String token : attrs.split(",")) {
+            int eq = token.indexOf('=');
+            if (eq <= 0 || eq >= token.length() - 1) {
+                continue;
+            }
+            String k = token.substring(0, eq).trim().toLowerCase(Locale.ROOT);
+            String v = token.substring(eq + 1).trim();
+            if (!k.isBlank() && !v.isBlank()) {
+                out.put(k, v);
+            }
+        }
+        return out;
     }
 
     private record StyledRun(Style style, String text) {}
@@ -179,18 +226,23 @@ public final class UpgradeBracketCodec {
         return sb.toString();
     }
 
-    public static Component buildPlaceholderComponent(String name, String imageUrl) {
+    public static Component buildPlaceholderComponent(InlineResourceType type, String name, String imageUrl) {
         Style style = Style.EMPTY.withColor(ChatFormatting.AQUA).withItalic(true);
-        if (ChatUpgradeConfig.get().manualImageReveal && imageUrl != null && !imageUrl.isBlank()) {
+        if (type == InlineResourceType.IMAGE
+                && ChatUpgradeConfig.get().manualImageReveal
+                && imageUrl != null
+                && !imageUrl.isBlank()) {
             style = style.withUnderlined(true)
                     .withClickEvent(ManualRevealClickEvent.forUrl(imageUrl))
                     .withHoverEvent(new HoverEvent.ShowText(Component.literal("点击加载图片预览")));
         }
-        return Component.literal("[图片: " + name + "]").withStyle(style);
+        String label = type == InlineResourceType.AUDIO ? "音频" : "图片";
+        return Component.literal("[" + label + ": " + name + "]").withStyle(style);
     }
 
-    private static String buildPlaceholder(String name) {
-        return "[图片: " + name + "]";
+    private static String buildPlaceholder(InlineResourceType type, String name) {
+        String label = type == InlineResourceType.AUDIO ? "音频" : "图片";
+        return "[" + label + ": " + name + "]";
     }
 
     /**
@@ -207,6 +259,12 @@ public final class UpgradeBracketCodec {
 
     public static @Nullable FormattedCharSequence replaceVisiblePlaceholderWithOversize(FormattedCharSequence seq) {
         return replaceVisiblePlaceholderWithVisibleText(seq, IMAGE_OVERSIZE_VISIBLE);
+    }
+    public static @Nullable FormattedCharSequence replaceVisibleAudioPlaceholderWithLoadFailed(FormattedCharSequence seq) {
+        return replaceVisiblePlaceholderWithVisibleText(seq, AUDIO_LOAD_FAILED_VISIBLE);
+    }
+    public static @Nullable FormattedCharSequence replaceVisibleAudioPlaceholderWithOversize(FormattedCharSequence seq) {
+        return replaceVisiblePlaceholderWithVisibleText(seq, AUDIO_OVERSIZE_VISIBLE);
     }
 
     /**
@@ -298,22 +356,36 @@ public final class UpgradeBracketCodec {
 
     /** Outgoing payload; tag depends on {@link ChatUpgradeConfig#ciCompatibility}. */
     public static String buildSendPayload(String url, String name) {
+        return buildSendPayload(url, name, InlineResourceType.IMAGE);
+    }
+
+    public static String buildSendPayload(String url, String name, InlineResourceType type) {
         return ChatUpgradeConfig.get().ciCompatibility
-                ? encodeLegacyTagBlock(url, name)
-                : encodeNativeTagBlock(url, name);
+                ? encodeLegacyTagBlock(url, name, type)
+                : encodeNativeTagBlock(url, name, type);
     }
 
     public static String encodeNativeTagBlock(String url, String name) {
+        return encodeNativeTagBlock(url, name, InlineResourceType.IMAGE);
+    }
+
+    public static String encodeNativeTagBlock(String url, String name, InlineResourceType type) {
+        String typeField = type == InlineResourceType.AUDIO ? ",type=audio" : "";
         if (name != null && !name.isBlank()) {
-            return "[[" + WIRE_TAG_NATIVE + ",url=" + url + ",name=" + name + "]]";
+            return "[[" + WIRE_TAG_NATIVE + ",url=" + url + ",name=" + name + typeField + "]]";
         }
-        return "[[" + WIRE_TAG_NATIVE + ",url=" + url + "]]";
+        return "[[" + WIRE_TAG_NATIVE + ",url=" + url + typeField + "]]";
     }
 
     public static String encodeLegacyTagBlock(String url, String name) {
+        return encodeLegacyTagBlock(url, name, InlineResourceType.IMAGE);
+    }
+
+    public static String encodeLegacyTagBlock(String url, String name, InlineResourceType type) {
+        String typeField = type == InlineResourceType.AUDIO ? ",type=audio" : "";
         if (name != null && !name.isBlank()) {
-            return "[[" + WIRE_TAG_LEGACY + ",url=" + url + ",name=" + name + "]]";
+            return "[[" + WIRE_TAG_LEGACY + ",url=" + url + ",name=" + name + typeField + "]]";
         }
-        return "[[" + WIRE_TAG_LEGACY + ",url=" + url + "]]";
+        return "[[" + WIRE_TAG_LEGACY + ",url=" + url + typeField + "]]";
     }
 }

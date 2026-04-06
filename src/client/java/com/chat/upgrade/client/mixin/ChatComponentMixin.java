@@ -1,7 +1,9 @@
 package com.chat.upgrade.client.mixin;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.AudioLoader;
 import com.chat.upgrade.client.ImageLoader;
+import com.chat.upgrade.client.InlineResourceType;
 import com.chat.upgrade.client.UpgradeBracketCodec;
 import com.chat.upgrade.client.UpgradeChatHudSync;
 import com.chat.upgrade.client.UpgradePhantomCoordinator;
@@ -55,8 +57,13 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
         if (decoded.hasUrl()) {
             UpgradePhantomCoordinator.pendingDecodedUrl = decoded.url();
-            if (!ChatUpgradeConfig.get().manualImageReveal) {
-                ImageLoader.getOrLoad(decoded.url());
+            UpgradePhantomCoordinator.pendingDecodedType = decoded.resourceType();
+            if (decoded.resourceType() == InlineResourceType.IMAGE) {
+                if (!ChatUpgradeConfig.get().manualImageReveal) {
+                    ImageLoader.getOrLoad(decoded.url());
+                }
+            } else {
+                AudioLoader.getOrLoad(decoded.url());
             }
             return decoded.modified();
         }
@@ -92,7 +99,9 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Unique
     private void chatupgrade$insertPhantoms() {
         String url = UpgradePhantomCoordinator.pendingDecodedUrl;
+        InlineResourceType type = UpgradePhantomCoordinator.pendingDecodedType;
         UpgradePhantomCoordinator.pendingDecodedUrl = null;
+        UpgradePhantomCoordinator.pendingDecodedType = InlineResourceType.IMAGE;
         if (url == null) {
             return;
         }
@@ -101,12 +110,20 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             return;
         }
         GuiMessage parentMessage = trimmedMessages.get(0).parent();
-        UpgradePhantomHudLayout.onUrlMessageCommitted(url, parentMessage, trimmedMessages);
+        if (type == InlineResourceType.AUDIO) {
+            UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);
+        } else {
+            UpgradePhantomHudLayout.onUrlMessageCommitted(url, parentMessage, trimmedMessages);
+        }
     }
 
     @Override
     public void refreshInlineLayoutForUrl(String url) {
-        UpgradePhantomHudLayout.syncLayoutForUrl(url, trimmedMessages);
+        if (url.startsWith("audio:")) {
+            UpgradePhantomHudLayout.syncLayoutForAudio(url.substring("audio:".length()), trimmedMessages);
+        } else {
+            UpgradePhantomHudLayout.syncLayoutForUrl(url, trimmedMessages);
+        }
     }
 
     @Override

@@ -40,6 +40,11 @@ dependencies {
 	// WebP via ImageIO SPI (nested in mod jar for release)
 	include(implementation("com.twelvemonkeys.imageio:imageio-core:3.12.0"))
 	include(implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0"))
+
+	// MP3 decode support for Java Sound (AudioSystem.getAudioInputStream)
+	include(implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4"))
+	include(implementation("com.googlecode.soundlibs:jlayer:1.0.1.4"))
+	include(implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4"))
 }
 
 processResources {

@@ -43,31 +43,38 @@ public final class ChatUpgradeInlineImageInteraction {
         if (url == null) {
             return;
         }
-        ImageEntry entry = ImageLoader.getIfPresent(url);
-        if (entry == null) {
-            return;
-        }
-        if (entry.getState() == ImageEntry.State.FAILED) {
-            return;
-        }
-
         int drawW;
         int drawH;
-        switch (entry.getState()) {
-            case LOADING -> {
-                drawW = ImageLoader.PREVIEW_HEIGHT;
-                drawH = ImageLoader.PREVIEW_HEIGHT;
-            }
-            case LOADED -> {
-                drawW = entry.getWidth();
-                drawH = entry.getHeight();
-                if (drawH > ImageLoader.PREVIEW_HEIGHT) {
-                    drawH = ImageLoader.PREVIEW_HEIGHT;
-                }
-            }
-            default -> {
+        if (attachable.chatupgrade$getResourceType() == InlineResourceType.AUDIO) {
+            AudioEntry entry = AudioLoader.getIfPresent(url);
+            if (entry == null || entry.getState() == AudioEntry.State.FAILED) {
                 return;
             }
+            drawW = 220;
+            drawH = ImageLoader.PREVIEW_HEIGHT;
+            tryAudioTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
+        } else {
+            ImageEntry entry = ImageLoader.getIfPresent(url);
+            if (entry == null || entry.getState() == ImageEntry.State.FAILED) {
+                return;
+            }
+            switch (entry.getState()) {
+                case LOADING -> {
+                    drawW = ImageLoader.PREVIEW_HEIGHT;
+                    drawH = ImageLoader.PREVIEW_HEIGHT;
+                }
+                case LOADED -> {
+                    drawW = entry.getWidth();
+                    drawH = entry.getHeight();
+                    if (drawH > ImageLoader.PREVIEW_HEIGHT) {
+                        drawH = ImageLoader.PREVIEW_HEIGHT;
+                    }
+                }
+                default -> {
+                    return;
+                }
+            }
+            tryTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
         }
 
         if (drawW <= 0 || drawH <= 0) {
@@ -80,9 +87,19 @@ public final class ChatUpgradeInlineImageInteraction {
         }
 
         GuiMessage parent = line.parent();
-        PLANES.add(new Plane(pose, 0, textTop, drawW, textTop + drawH, url, parent));
+        PLANES.add(new Plane(
+                pose,
+                0,
+                textTop,
+                drawW,
+                textTop + drawH,
+                url,
+                parent,
+                attachable.chatupgrade$getResourceType()));
+    }
 
-        tryTooltipOnFocused(graphics, textTop, drawW, drawH, url, parent, entry, textOpacity);
+    private static GuiMessage parentFrom(GuiMessage.Line line) {
+        return line.parent();
     }
 
     private static void tryTooltipOnFocused(
@@ -119,6 +136,15 @@ public final class ChatUpgradeInlineImageInteraction {
             if (!containsScreenPoint(p, screenX, screenY)) {
                 continue;
             }
+            Matrix3x2f inv = new Matrix3x2f(p.pose);
+            inv.invert();
+            Vector2f local = inv.transformPosition(new Vector2f(screenX, screenY));
+            if (p.resourceType == InlineResourceType.AUDIO) {
+                Style actionStyle = styleForAudioClick(p, local.x, local.y);
+                if (actionStyle != null) {
+                    return actionStyle;
+                }
+            }
             URI uri;
             try {
                 uri = URI.create(p.url);
@@ -132,6 +158,65 @@ public final class ChatUpgradeInlineImageInteraction {
                     .withHoverEvent(new HoverEvent.ShowText(hover));
         }
         return null;
+    }
+
+    private static @Nullable Style styleForAudioClick(Plane p, float localX, float localY) {
+        int x0 = p.localLeft;
+        int y0 = p.localTop;
+        int h = p.localBottom - p.localTop;
+        int btn = h - 12;
+        int bx0 = x0 + 6;
+        int by0 = y0 + 6;
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, bx0, by0, bx0 + btn, by0 + btn)) {
+            return Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggle(p.url));
+        }
+        int barX0 = bx0 + btn + 8;
+        int barX1 = p.localRight - 8;
+        int barY0 = y0 + h - 14;
+        int barY1 = barY0 + 6;
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
+            double ratio = (localX - barX0) / Math.max(1.0, barX1 - barX0);
+            return Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(p.url, ratio));
+        }
+        return null;
+    }
+
+    private static void tryAudioTooltipOnFocused(
+            ChatComponent.ChatGraphicsAccess graphics,
+            int textTop,
+            int drawW,
+            int drawH,
+            String url,
+            GuiMessage parent,
+            AudioEntry entry,
+            float textOpacity
+    ) {
+        if (!(graphics instanceof ChatUpgradeDrawingFocusedAccessor acc)) {
+            return;
+        }
+        if (textOpacity <= 1.0e-5F) {
+            return;
+        }
+        Vector2f local = acc.chatupgrade$localMousePos();
+        if (!ActiveTextCollector.isPointInRectangle(local.x, local.y, 0, textTop, drawW, textTop + drawH)) {
+            return;
+        }
+        Font font = acc.chatupgrade$font();
+        GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
+        String state = switch (entry.getState()) {
+            case LOADING -> "加载中";
+            case LOADED -> AudioPlayerService.isPlaying(url) ? "播放中" : "暂停";
+            case FAILED -> "失败";
+        };
+        Component tip = Component.literal("音频\n状态: " + state + "\n时长: " + formatMs(entry.getDurationMs()) + "\n左键按钮: 播放/暂停\n左键进度条: 跳转\n其它区域: 打开链接");
+        gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(), acc.chatupgrade$globalMouseY());
+    }
+
+    private static String formatMs(long ms) {
+        long s = Math.max(0L, ms / 1000L);
+        long m = s / 60L;
+        long r = s % 60L;
+        return String.format("%d:%02d", m, r);
     }
 
     private static boolean containsScreenPoint(Plane p, int screenX, int screenY) {
@@ -165,6 +250,7 @@ public final class ChatUpgradeInlineImageInteraction {
             int localRight,
             int localBottom,
             String url,
-            GuiMessage parent
+            GuiMessage parent,
+            InlineResourceType resourceType
     ) {}
 }

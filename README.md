@@ -11,12 +11,12 @@
 </div>
 
 
-基于 **Fabric** 的 Minecraft **客户端**模组：在聊天里识别形如 `[[ChatUpgrade,url=…]]`的括号载荷，把链接换成简短占位文案，并在聊天栏旁绘制 URL 预览图（下载中 / 失败提示 / 缩放后的贴图）。
+基于 **Fabric** 的 Minecraft **客户端**模组：在聊天里识别形如 `[[ChatUpgrade,url=…]]` 的括号载荷，把链接换成简短占位文案，并在聊天栏旁绘制 URL 预览（图片或音频播放器）。
 
 ## 功能概要
 
-- **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取图片 → 在对应消息下方预留行高并绘制预览。
-- **发送**：客户端命令（如 `/chatupgrade send`、`upload` 等）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
+- **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取资源（图片/音频）→ 在对应消息下方预留行高并绘制预览。
+- **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
 - **配置**：`config/chat-upgrade.json` 中的 `ciCompatibility`、`manualImageReveal` 等；支持游戏内写入与重载。
 - **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片
 
@@ -42,15 +42,22 @@
 | 命令 | 说明 |
 |------|------|
 | `/chatupgrade send <url> <name>` | 向聊天发送图片载荷；`name` 可省略（默认「图片」）。 |
+| `/chatupgrade sendaudio <url> <name>` | 向聊天发送音频载荷；`name` 可省略（默认「音频」）。 |
 | `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Litterbox（约 1 小时有效）再发送。`<path>` 为**第一个参数**（Brigadier 可引用字符串：路径里有空格时用一对 `"` 包成一段即可）；`<name>` 为**第二个**可选参数（可含空格）。例：`/chatupgrade upload folder "D:\My Pictures\a.png"`、`/chatupgrade upload folder "D:\img\a.png" 截图`。无空格的路径也可不写引号。 |
 | `/chatupgrade upload pick <name>` | 打开文件选择器选图并上传发送；`name` 可省略。 |
 | `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送；`name` 可省略（默认「粘贴」）。 |
+| `/chatupgrade uploadaudio folder <path> <name>` | 从本机路径上传音频到 Litterbox 并发送音频载荷。 |
+| `/chatupgrade uploadaudio pick <name>` | 打开文件选择器选音频并上传发送。 |
 | `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 兼容：`true` 为 `[[CICode,url=…]]`，`false` 为 `[[ChatUpgrade,url=…]]`；写入配置。 |
 | `/chatupgrade config manual <true 或 false>` | 开关**手动渲染**：`true` 时需打开聊天后点击 `[图片: …]` 再加载预览；写入配置。 |
 | `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade.json`。 |
 
 
 配置项与文件位置：**`.minecraft/config/chat-upgrade.json`** 。字段说明：`ciCompatibility`（布尔）、`manualImageReveal`（布尔）。
+
+图像上传扩展名支持：`png/apng/jpg/jpeg/gif/webp/bmp/tif/tiff/jfif/ico`
+音频上传扩展名支持：`ogg/wav/mp3/flac/m4a/aac/opus/webm`。  
+音频播放能力取决于客户端 Java Sound 可解码格式（不支持的格式会提示加载失败）。
 
 ### 外置 ImageIO 插件
 
