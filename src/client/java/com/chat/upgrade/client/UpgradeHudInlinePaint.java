@@ -117,6 +117,7 @@ public final class UpgradeHudInlinePaint {
         paintButton(gfx, font, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom(), loop ? "🔁" : "↺",
                 opacity, loop);
         paintButton(gfx, font, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom(), "↗", opacity, false);
+        paintButton(gfx, font, rects.popLeft(), rects.top(), rects.popRight(), rects.bottom(), "□", opacity, false);
 
         int barX0 = x0 + AUDIO_PAD_X;
         int barX1 = x1 - AUDIO_PAD_X;

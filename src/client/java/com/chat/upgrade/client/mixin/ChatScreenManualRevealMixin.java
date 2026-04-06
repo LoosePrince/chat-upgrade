@@ -8,6 +8,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.AudioControlClickEvent;
+import com.chat.upgrade.client.AudioFloatingWindow;
+import com.chat.upgrade.client.AudioFloatingWindowClickEvent;
 import com.chat.upgrade.client.AudioLoader;
 import com.chat.upgrade.client.AudioPlayerService;
 import com.chat.upgrade.client.ChatUpgradeConfig;
@@ -61,6 +63,12 @@ public abstract class ChatScreenManualRevealMixin {
             if (Minecraft.getInstance().gui.getChat() instanceof UpgradeChatHudSync sync) {
                 sync.requestLayoutSyncForUrl("audio:" + p.url());
             }
+            cir.setReturnValue(true);
+            return;
+        }
+        Optional<String> audioFloatingUrlOpt = AudioFloatingWindowClickEvent.parse(clickEvent);
+        if (audioFloatingUrlOpt.isPresent()) {
+            AudioFloatingWindow.toggleFor(audioFloatingUrlOpt.get());
             cir.setReturnValue(true);
             return;
         }

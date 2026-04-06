@@ -190,6 +190,7 @@ public final class ChatUpgradeInlineImageInteraction {
                     yield null;
                 }
             }
+            case TOGGLE_FLOATING -> Style.EMPTY.withClickEvent(AudioFloatingWindowClickEvent.forToggle(p.url));
             case SEEK -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(p.url, action.ratio()));
             case NONE -> null;
         };
@@ -265,6 +266,7 @@ public final class ChatUpgradeInlineImageInteraction {
             case TOGGLE -> AudioPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
             case TOGGLE_LOOP -> AudioPlayerService.isLoopEnabled(url) ? "按钮：关闭循环播放" : "按钮：开启循环播放";
             case OPEN_URL -> "按钮：打开链接";
+            case TOGGLE_FLOATING -> "按钮：创建/移除小窗";
             case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
             case NONE ->
                 "音频播放器区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total);
@@ -296,6 +298,10 @@ public final class ChatUpgradeInlineImageInteraction {
                 rects.bottom())) {
             return new AudioAction(AudioActionKind.OPEN_URL, 0.0);
         }
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.popLeft(), rects.top(), rects.popRight(),
+                rects.bottom())) {
+            return new AudioAction(AudioActionKind.TOGGLE_FLOATING, 0.0);
+        }
         int barX0 = x0 + UpgradeHudInlinePaint.AUDIO_PAD_X;
         int barX1 = x1 - UpgradeHudInlinePaint.AUDIO_PAD_X;
         int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
@@ -308,7 +314,7 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     private enum AudioActionKind {
-        TOGGLE, TOGGLE_LOOP, OPEN_URL, SEEK, NONE
+        TOGGLE, TOGGLE_LOOP, OPEN_URL, TOGGLE_FLOATING, SEEK, NONE
     }
 
     private record AudioAction(AudioActionKind kind, double ratio) {

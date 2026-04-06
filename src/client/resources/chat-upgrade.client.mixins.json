@@ -13,7 +13,9 @@
 		"ChatUpgradeDrawingFocusedAccessor",
 		"GuiMessageLineMixin",
 		"ChatScreenManualRevealMixin",
-		"ChatScreenImageClickMixin"
+		"ChatScreenImageClickMixin",
+		"ChatScreenAudioFloatingWindowMixin",
+		"ContainerEventHandlerAudioFloatingDragMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

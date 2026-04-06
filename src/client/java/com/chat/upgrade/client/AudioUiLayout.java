@@ -7,6 +7,7 @@ public final class AudioUiLayout {
     private static final int PLAY_W = 14;
     private static final int LOOP_W = 14;
     private static final int OPEN_W = 14;
+    private static final int POP_W = 14;
 
     private AudioUiLayout() {}
 
@@ -19,7 +20,9 @@ public final class AudioUiLayout {
         int loopRight = loopLeft + LOOP_W;
         int openLeft = loopRight + GAP;
         int openRight = openLeft + OPEN_W;
-        return new ButtonRects(playLeft, playRight, loopLeft, loopRight, openLeft, openRight, top, top + BUTTON_HEIGHT);
+        int popLeft = openRight + GAP;
+        int popRight = popLeft + POP_W;
+        return new ButtonRects(playLeft, playRight, loopLeft, loopRight, openLeft, openRight, popLeft, popRight, top, top + BUTTON_HEIGHT);
     }
 
     public static String shortName(String resourceName, String url) {
@@ -44,6 +47,8 @@ public final class AudioUiLayout {
             int loopRight,
             int openLeft,
             int openRight,
+            int popLeft,
+            int popRight,
             int top,
             int bottom
     ) {}
