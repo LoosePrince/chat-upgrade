@@ -11,6 +11,8 @@ import com.chat.upgrade.client.AudioControlClickEvent;
 import com.chat.upgrade.client.AudioLoader;
 import com.chat.upgrade.client.AudioPlayerService;
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.ImagePreviewClickEvent;
+import com.chat.upgrade.client.ImagePreviewScreen;
 import com.chat.upgrade.client.ImageLoader;
 import com.chat.upgrade.client.InlineResourceType;
 import com.chat.upgrade.client.ManualRevealClickEvent;
@@ -71,6 +73,12 @@ public abstract class ChatScreenManualRevealMixin {
             if (Minecraft.getInstance().gui.getChat() instanceof UpgradeChatHudSync sync) {
                 sync.requestLayoutSyncForUrl("video:" + p.url());
             }
+            cir.setReturnValue(true);
+            return;
+        }
+        Optional<String> imagePreviewUrlOpt = ImagePreviewClickEvent.parse(clickEvent);
+        if (imagePreviewUrlOpt.isPresent()) {
+            ImagePreviewScreen.open(imagePreviewUrlOpt.get());
             cir.setReturnValue(true);
             return;
         }

@@ -171,6 +171,9 @@ public final class ChatUpgradeInlineImageInteraction {
                 }
                 continue;
             }
+            if (p.resourceType == InlineResourceType.IMAGE) {
+                return Style.EMPTY.withClickEvent(ImagePreviewClickEvent.forUrl(p.url));
+            }
             continue;
         }
         return null;
