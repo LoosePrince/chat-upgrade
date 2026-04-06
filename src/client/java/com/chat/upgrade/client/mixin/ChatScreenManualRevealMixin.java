@@ -66,9 +66,10 @@ public abstract class ChatScreenManualRevealMixin {
             cir.setReturnValue(true);
             return;
         }
-        Optional<String> audioFloatingUrlOpt = AudioFloatingWindowClickEvent.parse(clickEvent);
-        if (audioFloatingUrlOpt.isPresent()) {
-            AudioFloatingWindow.toggleFor(audioFloatingUrlOpt.get());
+        Optional<AudioFloatingWindowClickEvent.Parsed> audioFloatingOpt = AudioFloatingWindowClickEvent.parse(clickEvent);
+        if (audioFloatingOpt.isPresent()) {
+            AudioFloatingWindowClickEvent.Parsed parsed = audioFloatingOpt.get();
+            AudioFloatingWindow.toggleFor(parsed.url(), parsed.name());
             cir.setReturnValue(true);
             return;
         }

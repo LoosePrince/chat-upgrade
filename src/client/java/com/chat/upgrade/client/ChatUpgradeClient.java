@@ -15,7 +15,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -46,6 +48,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         VideoPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().videoVolumePercent);
         registerCommands();
         registerHudTextureInvalidationOnResize();
+        registerMediaCleanupOnDisconnect();
     }
 
     private static void registerHudTextureInvalidationOnResize() {
@@ -67,6 +70,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 VideoLoader.invalidateVideoCache();
             }
         });
+    }
+
+    private static void registerMediaCleanupOnDisconnect() {
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clearAllMediaRuntimeState());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> clearAllMediaRuntimeState());
+    }
+
+    private static void clearAllMediaRuntimeState() {
+        AudioLoader.invalidateAudioCache();
+        VideoLoader.invalidateVideoCache();
+        ImageLoader.invalidateTextureCache();
+        AudioFloatingWindow.clear();
     }
 
     private static void registerCommands() {

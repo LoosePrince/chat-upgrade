@@ -106,6 +106,7 @@ public final class ChatUpgradeInlineImageInteraction {
                 drawW,
                 textTop + drawH,
                 url,
+                attachable.chatupgrade$getResourceName(),
                 parent,
                 attachable.chatupgrade$getResourceType()));
     }
@@ -190,7 +191,7 @@ public final class ChatUpgradeInlineImageInteraction {
                     yield null;
                 }
             }
-            case TOGGLE_FLOATING -> Style.EMPTY.withClickEvent(AudioFloatingWindowClickEvent.forToggle(p.url));
+            case TOGGLE_FLOATING -> Style.EMPTY.withClickEvent(AudioFloatingWindowClickEvent.forToggle(p.url, p.resourceName));
             case SEEK -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(p.url, action.ratio()));
             case NONE -> null;
         };
@@ -351,6 +352,7 @@ public final class ChatUpgradeInlineImageInteraction {
             int localRight,
             int localBottom,
             String url,
+            String resourceName,
             GuiMessage parent,
             InlineResourceType resourceType) {
     }

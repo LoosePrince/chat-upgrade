@@ -19,6 +19,7 @@ public final class AudioFloatingWindow {
 
     private static boolean visible = false;
     private static String url;
+    private static String displayName;
     private static int x = 0;
     private static int y = 0;
     private static boolean dragging = false;
@@ -28,7 +29,7 @@ public final class AudioFloatingWindow {
     private AudioFloatingWindow() {
     }
 
-    public static void toggleFor(String targetUrl) {
+    public static void toggleFor(String targetUrl, String targetName) {
         if (targetUrl == null || targetUrl.isBlank()) {
             return;
         }
@@ -38,6 +39,7 @@ public final class AudioFloatingWindow {
             return;
         }
         url = targetUrl;
+        displayName = targetName == null ? "" : targetName;
         visible = true;
         dragging = false;
         AudioLoader.getOrLoad(targetUrl);
@@ -56,6 +58,13 @@ public final class AudioFloatingWindow {
         return visible && url != null && !url.isBlank();
     }
 
+    public static void clear() {
+        visible = false;
+        dragging = false;
+        url = null;
+        displayName = null;
+    }
+
     public static void render(GuiGraphicsExtractor gfx, Font font, int screenWidth, int screenHeight) {
         if (!isVisible()) {
             return;
@@ -71,7 +80,7 @@ public final class AudioFloatingWindow {
         gfx.fill(x0, y0, x1, y1, 0xF01A212C);
         gfx.outline(x0, y0, WIDTH, HEIGHT, 0xFF3A4456);
 
-        String name = AudioUiLayout.shortName(null, url);
+        String name = AudioUiLayout.shortName(displayName, url);
         long total = AudioPlayerService.durationMs(url);
         if (total <= 0L) {
             total = entry.getDurationMs();

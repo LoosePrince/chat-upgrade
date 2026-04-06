@@ -13,15 +13,20 @@ import net.minecraft.resources.Identifier;
  */
 public final class AudioFloatingWindowClickEvent {
     public static final Identifier ID = Identifier.fromNamespaceAndPath(ChatUpgrade.MOD_ID, "audio_floating_window");
+    private static final char SEP = '\u001f';
 
     private AudioFloatingWindowClickEvent() {
     }
 
-    public static ClickEvent forToggle(String url) {
-        return new ClickEvent.Custom(ID, Optional.of(StringTag.valueOf(url)));
+    public static ClickEvent forToggle(String url, String name) {
+        String safeName = name == null ? "" : name;
+        return new ClickEvent.Custom(ID, Optional.of(StringTag.valueOf(safeName + SEP + url)));
     }
 
-    public static Optional<String> parse(ClickEvent event) {
+    public record Parsed(String url, String name) {
+    }
+
+    public static Optional<Parsed> parse(ClickEvent event) {
         if (!(event instanceof ClickEvent.Custom custom)) {
             return Optional.empty();
         }
@@ -32,6 +37,15 @@ public final class AudioFloatingWindowClickEvent {
         if (raw.isBlank()) {
             return Optional.empty();
         }
-        return Optional.of(raw);
+        int sep = raw.indexOf(SEP);
+        if (sep < 0) {
+            return Optional.of(new Parsed(raw, ""));
+        }
+        String name = raw.substring(0, sep);
+        String url = raw.substring(sep + 1);
+        if (url.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(new Parsed(url, name));
     }
 }
