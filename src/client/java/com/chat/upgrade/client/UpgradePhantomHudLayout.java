@@ -120,6 +120,7 @@ public final class UpgradePhantomHudLayout {
             return;
         }
         for (GuiMessage parent : new HashSet<>(parents)) {
+            applyHoverRefreshOnTextLines(trimmedMessages, parent, InlineResourceType.IMAGE, url);
             if (!hasPhantomTopForUrl(trimmedMessages, parent, url)) {
                 insertPhantomBlock(trimmedMessages, parent, url, InlineResourceType.IMAGE);
             }
@@ -134,6 +135,7 @@ public final class UpgradePhantomHudLayout {
             return;
         }
         for (GuiMessage parent : new HashSet<>(parents)) {
+            applyHoverRefreshOnTextLines(trimmedMessages, parent, InlineResourceType.AUDIO, url);
             if (!hasPhantomTopForAudio(trimmedMessages, parent, url)) {
                 insertPhantomBlock(trimmedMessages, parent, url, InlineResourceType.AUDIO);
             }
@@ -148,6 +150,7 @@ public final class UpgradePhantomHudLayout {
             return;
         }
         for (GuiMessage parent : new HashSet<>(parents)) {
+            applyHoverRefreshOnTextLines(trimmedMessages, parent, InlineResourceType.VIDEO, url);
             if (!hasPhantomTopForVideo(trimmedMessages, parent, url)) {
                 insertPhantomBlock(trimmedMessages, parent, url, InlineResourceType.VIDEO);
             }
@@ -356,6 +359,28 @@ public final class UpgradePhantomHudLayout {
             };
             if (updated != null) {
                 trim.set(j, new GuiMessage.Line(parent, updated, readable.chatupgrade$endOfEntry()));
+            }
+        }
+    }
+
+    private static void applyHoverRefreshOnTextLines(
+            List<GuiMessage.Line> trim,
+            GuiMessage parent,
+            InlineResourceType type,
+            String url) {
+        for (int j = 0; j < trim.size(); j++) {
+            GuiMessage.Line line = trim.get(j);
+            if (!line.parent().equals(parent) || isPhantomLine(line)) {
+                continue;
+            }
+            ImageAttachable attachable = (ImageAttachable) (Object) line;
+            FormattedCharSequence updated = UpgradeBracketCodec.refreshVisiblePlaceholderHover(
+                    ((GuiMessageLineReadable) (Object) line).chatupgrade$content(),
+                    type,
+                    url,
+                    attachable.chatupgrade$getResourceName());
+            if (updated != null) {
+                trim.set(j, new GuiMessage.Line(parent, updated, ((GuiMessageLineReadable) (Object) line).chatupgrade$endOfEntry()));
             }
         }
     }
