@@ -1,21 +1,11 @@
 package com.chat.upgrade.client;
 
-import com.chat.upgrade.ChatUpgrade;
-import net.fabricmc.loader.api.FabricLoader;
-
-import javax.imageio.ImageIO;
-import javax.imageio.spi.IIORegistry;
-import javax.imageio.spi.ImageInputStreamSpi;
-import javax.imageio.spi.ImageOutputStreamSpi;
-import javax.imageio.spi.ImageReaderSpi;
-import javax.imageio.spi.ImageTranscoderSpi;
-import javax.imageio.spi.ImageWriterSpi;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -28,8 +18,21 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.ServiceLoader;
 
+import javax.imageio.ImageIO;
+import javax.imageio.spi.IIORegistry;
+import javax.imageio.spi.ImageInputStreamSpi;
+import javax.imageio.spi.ImageOutputStreamSpi;
+import javax.imageio.spi.ImageReaderSpi;
+import javax.imageio.spi.ImageTranscoderSpi;
+import javax.imageio.spi.ImageWriterSpi;
+
+import com.chat.upgrade.ChatUpgrade;
+
+import net.fabricmc.loader.api.FabricLoader;
+
 /**
- * Loads external ImageIO SPI jars from {@code config/chat-upgrade/libs} at startup (no hot reload).
+ * Loads external ImageIO SPI jars from {@code config/chat-upgrade/libs} at
+ * startup (no hot reload).
  */
 public final class ExternalImageIoPluginLoader {
     private static final String APNG_VERSION = "1.0.1";
@@ -46,13 +49,41 @@ public final class ExternalImageIoPluginLoader {
     private ExternalImageIoPluginLoader() {
     }
 
+    public static Path libsDir() {
+        return FabricLoader.getInstance().getConfigDir().resolve("chat-upgrade").resolve("libs");
+    }
+
+    public static Path apngJarPath() {
+        return libsDir().resolve(APNG_JAR_NAME);
+    }
+
+    public static boolean hasApngJar() {
+        return Files.isRegularFile(apngJarPath());
+    }
+
+    public static boolean isLoaded() {
+        return loaded;
+    }
+
+    public static synchronized void reload(boolean forceDownload) {
+        if (forceDownload) {
+            try {
+                Files.deleteIfExists(apngJarPath());
+            } catch (IOException e) {
+                ChatUpgrade.LOGGER.debug("chat-upgrade: delete old APNG plugin failed: {}", e.getMessage());
+            }
+        }
+        loaded = false;
+        loadAtStartup();
+    }
+
     public static synchronized void loadAtStartup() {
         if (loaded) {
             return;
         }
         loaded = true;
 
-        Path libsDir = FabricLoader.getInstance().getConfigDir().resolve("chat-upgrade").resolve("libs");
+        Path libsDir = libsDir();
         try {
             Files.createDirectories(libsDir);
         } catch (IOException e) {

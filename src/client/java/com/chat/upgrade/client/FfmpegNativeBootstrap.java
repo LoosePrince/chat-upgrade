@@ -32,9 +32,9 @@ import net.fabricmc.loader.api.FabricLoader;
  * Strategy:
  * 1) Try direct probe first (already bundled or previously loaded).
  * 2) If missing, download current-platform classifier jars into
- *    config/chat-upgrade/libs.
+ * config/chat-upgrade/libs.
  * 3) Extract native binaries directly into java.library.path writable directory
- *    (typically Minecraft's <version>-natives folder).
+ * (typically Minecraft's <version>-natives folder).
  * 4) System.load non-jni libs first, then jni* libs.
  */
 public final class FfmpegNativeBootstrap {
@@ -53,8 +53,48 @@ public final class FfmpegNativeBootstrap {
     private FfmpegNativeBootstrap() {
     }
 
+    public record Status(
+            boolean ready,
+            boolean attempted,
+            String platform,
+            Path libsDir,
+            Path javacppJar,
+            boolean javacppPresent,
+            Path ffmpegJar,
+            boolean ffmpegPresent) {
+    }
+
     public static void warmupAsync() {
         CompletableFuture.runAsync(FfmpegNativeBootstrap::ensureReady);
+    }
+
+    public static Status status() {
+        Platform platform = detectPlatform();
+        Path libsDir = FabricLoader.getInstance().getConfigDir().resolve("chat-upgrade").resolve("libs");
+        Path javacppJar = platform == null ? null
+                : libsDir.resolve("javacpp-" + JAVACPP_VERSION + "-" + platform.classifier + ".jar");
+        Path ffmpegJar = platform == null ? null
+                : libsDir.resolve("ffmpeg-" + FFMPEG_VERSION + "-" + platform.classifier + ".jar");
+        return new Status(
+                ready,
+                attempted,
+                platform == null ? "unsupported" : platform.classifier,
+                libsDir,
+                javacppJar,
+                javacppJar != null && Files.isRegularFile(javacppJar),
+                ffmpegJar,
+                ffmpegJar != null && Files.isRegularFile(ffmpegJar));
+    }
+
+    public static boolean reload(boolean forceDownload) {
+        synchronized (LOCK) {
+            ready = false;
+            attempted = false;
+            if (forceDownload) {
+                deleteDownloadedRuntimeJars();
+            }
+        }
+        return ensureReady();
     }
 
     public static boolean ensureReady() {
@@ -269,6 +309,26 @@ public final class FfmpegNativeBootstrap {
                 + "/ffmpeg-" + FFMPEG_VERSION + "-" + classifier + ".jar";
     }
 
+    private static void deleteDownloadedRuntimeJars() {
+        Platform platform = detectPlatform();
+        if (platform == null) {
+            return;
+        }
+        Path libsDir = FabricLoader.getInstance().getConfigDir().resolve("chat-upgrade").resolve("libs");
+        Path javacppJar = libsDir.resolve("javacpp-" + JAVACPP_VERSION + "-" + platform.classifier + ".jar");
+        Path ffmpegJar = libsDir.resolve("ffmpeg-" + FFMPEG_VERSION + "-" + platform.classifier + ".jar");
+        try {
+            Files.deleteIfExists(javacppJar);
+        } catch (Exception e) {
+            ChatUpgrade.LOGGER.debug("chat-upgrade: failed to delete {}", javacppJar);
+        }
+        try {
+            Files.deleteIfExists(ffmpegJar);
+        } catch (Exception e) {
+            ChatUpgrade.LOGGER.debug("chat-upgrade: failed to delete {}", ffmpegJar);
+        }
+    }
+
     private static Platform detectPlatform() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
@@ -291,4 +351,3 @@ public final class FfmpegNativeBootstrap {
     private record Platform(String classifier, String extension) {
     }
 }
-

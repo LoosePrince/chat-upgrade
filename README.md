@@ -60,6 +60,13 @@
 | `/chatupgrade config maxreceive <1-10>` | 设置接收体积上限（MiB）；写入配置。 |
 | `/chatupgrade config maxupload <1-10>` | 设置上传体积上限（MiB）；写入配置。 |
 | `/chatupgrade config reload` | 从磁盘重新读取 `config/chat-upgrade/chat-upgrade.json`。 |
+| `/chatupgrade plugin status` | 查看 FFmpeg / APNG 插件状态（是否就绪、是否已尝试、jar 是否存在）。 |
+| `/chatupgrade plugin load ffmpeg` | 手动触发 FFmpeg 加载（不强制重新下载）。 |
+| `/chatupgrade plugin load apng` | 手动触发 APNG 插件加载（不强制重新下载）。 |
+| `/chatupgrade plugin load all` | 手动触发 FFmpeg + APNG 加载（不强制重新下载）。 |
+| `/chatupgrade plugin download ffmpeg` | 强制重新下载并加载 FFmpeg（会删除本地对应 jar 后重下）。 |
+| `/chatupgrade plugin download apng` | 强制重新下载并加载 APNG 插件（会删除本地 jar 后重下）。 |
+| `/chatupgrade plugin download all` | 强制重新下载并加载 FFmpeg + APNG。 |
 
 
 配置文件位置：**`.minecraft/config/chat-upgrade/chat-upgrade.json`**
@@ -83,7 +90,7 @@
 视频上传扩展名支持：`mp4/webm/mov/mkv/m4v/avi`。  
 视频解码基于 **JavaCPP FFmpeg**，`mp4` 为必测路径；其他格式按解码器能力尽可能支持。
 默认发布包不内置 FFmpeg native：首次启动会自动下载当前平台整包到 `config/chat-upgrade/libs/`，并将 native 按 `java.library.path` 规则释放到 Minecraft 的 `...-natives` 目录后启用（下载失败会记录日志并导致视频不可用）。
-发布包不内置 imageio-apng 插件：首次启动会自动下载到 `config/chat-upgrade/libs/`，并按 `java.class.path` 规则加载（下载失败会记录日志并导致 APNG 不可用）。
+发布包不内置 imageio-apng 插件：首次启动会自动下载到 `config/chat-upgrade/libs/`，并由模组在启动阶段通过外置插件加载器注册到 ImageIO SPI（下载失败会记录日志并导致 APNG 不可用）。
 
 ## 运行环境
 

@@ -81,11 +81,11 @@ public final class UpgradeHudInlinePaint {
         int x0 = 0;
         int y0 = messageY;
         int x1 = x0 + w;
-        gfx.fill(x0, y0, x1, y0 + h, argb(opacity * 0.5f, 24, 26, 31));
 
         Font font = Minecraft.getInstance().font;
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == AudioEntry.State.LOADING) {
+            gfx.fill(x0, y0, x1, y0 + h, argb(opacity * 0.5f, 24, 26, 31));
             String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE ? "音频处理中…" : "音频下载中…";
             gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
                     x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 210, 210, 215), false);
@@ -93,6 +93,7 @@ public final class UpgradeHudInlinePaint {
             return;
         }
         if (entry.getState() == AudioEntry.State.FAILED) {
+            gfx.fill(x0, y0, x1, y0 + h, argb(opacity * 0.5f, 24, 26, 31));
             gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
                     x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 255, 120, 120), false);
             gfx.text(font, "音频加载失败", x0 + AUDIO_PAD_X, y0 + AUDIO_LINE2_Y, argb(opacity, 255, 120, 120), false);
@@ -152,17 +153,18 @@ public final class UpgradeHudInlinePaint {
         int drawW = VideoUiLayout.WIDTH;
         int drawH = VideoUiLayout.HEIGHT;
         int x1 = x0 + drawW;
-        gfx.fill(x0, y0, x1, y0 + drawH, argb(opacity * 0.55f, 20, 22, 26));
 
         Font font = Minecraft.getInstance().font;
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == VideoEntry.State.LOADING) {
+            gfx.fill(x0, y0, x1, y0 + drawH, argb(opacity * 0.55f, 20, 22, 26));
             String label = entry.getLoadPhase() == VideoEntry.LoadPhase.DECODE ? "视频处理中…" : "视频下载中…";
             gfx.text(font, name, x0 + VideoUiLayout.PAD_X, y0 + 2, argb(opacity, 220, 220, 225), false);
             gfx.text(font, label, x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 210, 210, 215), false);
             return;
         }
         if (entry.getState() == VideoEntry.State.FAILED) {
+            gfx.fill(x0, y0, x1, y0 + drawH, argb(opacity * 0.55f, 20, 22, 26));
             gfx.text(font, name, x0 + VideoUiLayout.PAD_X, y0 + 2, argb(opacity, 255, 120, 120), false);
             gfx.text(font, "视频加载失败", x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 255, 120, 120), false);
             return;

@@ -212,7 +212,108 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                         ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
                                                 .executes(ctx -> setMaxUploadMebibytes(
                                                         ctx.getSource(),
-                                                        IntegerArgumentType.getInteger(ctx, "mebibytes"))))))));
+                                                        IntegerArgumentType.getInteger(ctx, "mebibytes")))))
+                                .then(ClientCommands.literal("plugin")
+                                        .then(ClientCommands.literal("status")
+                                                .executes(ctx -> pluginStatus(ctx.getSource())))
+                                        .then(ClientCommands.literal("load")
+                                                .then(ClientCommands.literal("ffmpeg")
+                                                        .executes(ctx -> pluginLoadFfmpeg(ctx.getSource(), false)))
+                                                .then(ClientCommands.literal("apng")
+                                                        .executes(ctx -> pluginLoadApng(ctx.getSource(), false)))
+                                                .then(ClientCommands.literal("all")
+                                                        .executes(ctx -> pluginLoadAll(ctx.getSource(), false))))
+                                        .then(ClientCommands.literal("download")
+                                                .then(ClientCommands.literal("ffmpeg")
+                                                        .executes(ctx -> pluginLoadFfmpeg(ctx.getSource(), true)))
+                                                .then(ClientCommands.literal("apng")
+                                                        .executes(ctx -> pluginLoadApng(ctx.getSource(), true)))
+                                                .then(ClientCommands.literal("all")
+                                                        .executes(ctx -> pluginLoadAll(ctx.getSource(), true))))))));
+    }
+
+    private static int pluginStatus(FabricClientCommandSource source) {
+        FfmpegNativeBootstrap.Status ff = FfmpegNativeBootstrap.status();
+        String ffState = ff.ready() ? "就绪" : (ff.attempted() ? "已尝试但未就绪" : "未尝试");
+        String ffJars = "javacpp=" + (ff.javacppPresent() ? "存在" : "缺失")
+                + "，ffmpeg=" + (ff.ffmpegPresent() ? "存在" : "缺失");
+        boolean apngLoaded = ExternalImageIoPluginLoader.isLoaded();
+        boolean apngJar = ExternalImageIoPluginLoader.hasApngJar();
+        source.sendFeedback(Component.literal(
+                "FFmpeg: " + ffState
+                        + "（平台: " + ff.platform()
+                        + "；" + ffJars + "）")
+                .withStyle(ChatFormatting.AQUA));
+        source.sendFeedback(Component.literal(
+                "APNG: " + (apngLoaded ? "已加载" : "未加载")
+                        + "（jar: " + (apngJar ? "存在" : "缺失") + "）")
+                .withStyle(ChatFormatting.AQUA));
+        return 1;
+    }
+
+    private static int pluginLoadFfmpeg(FabricClientCommandSource source, boolean forceDownload) {
+        source.sendFeedback(Component.literal(
+                forceDownload ? "正在强制下载并加载 FFmpeg..." : "正在加载 FFmpeg...")
+                .withStyle(ChatFormatting.GRAY));
+        CompletableFuture.runAsync(() -> {
+            boolean ok = FfmpegNativeBootstrap.reload(forceDownload);
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null) {
+                mc.execute(() -> {
+                    if (ok) {
+                        source.sendFeedback(Component.literal("FFmpeg 已就绪。").withStyle(ChatFormatting.GREEN));
+                    } else {
+                        source.sendError(Component.literal("FFmpeg 仍未就绪，请查看 latest.log。")
+                                .withStyle(ChatFormatting.RED));
+                    }
+                });
+            }
+        });
+        return 1;
+    }
+
+    private static int pluginLoadApng(FabricClientCommandSource source, boolean forceDownload) {
+        source.sendFeedback(Component.literal(
+                forceDownload ? "正在强制下载并加载 APNG 插件..." : "正在加载 APNG 插件...")
+                .withStyle(ChatFormatting.GRAY));
+        CompletableFuture.runAsync(() -> {
+            ExternalImageIoPluginLoader.reload(forceDownload);
+            boolean ok = ExternalImageIoPluginLoader.hasApngJar();
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null) {
+                mc.execute(() -> {
+                    if (ok) {
+                        source.sendFeedback(Component.literal("APNG 插件已处理完成（已写入 libs 并尝试加载）。")
+                                .withStyle(ChatFormatting.GREEN));
+                    } else {
+                        source.sendError(Component.literal("APNG 插件下载/加载失败，请查看 latest.log。")
+                                .withStyle(ChatFormatting.RED));
+                    }
+                });
+            }
+        });
+        return 1;
+    }
+
+    private static int pluginLoadAll(FabricClientCommandSource source, boolean forceDownload) {
+        source.sendFeedback(Component.literal(
+                forceDownload ? "正在强制下载并加载 FFmpeg + APNG..." : "正在加载 FFmpeg + APNG...")
+                .withStyle(ChatFormatting.GRAY));
+        CompletableFuture.runAsync(() -> {
+            boolean ffOk = FfmpegNativeBootstrap.reload(forceDownload);
+            ExternalImageIoPluginLoader.reload(forceDownload);
+            boolean apngOk = ExternalImageIoPluginLoader.hasApngJar();
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null) {
+                mc.execute(() -> {
+                    source.sendFeedback(Component.literal(
+                            "结果：FFmpeg=" + (ffOk ? "就绪" : "未就绪")
+                                    + "，APNG=" + (apngOk ? "已处理" : "失败"))
+                            .withStyle((ffOk && apngOk) ? ChatFormatting.GREEN : ChatFormatting.YELLOW));
+                });
+            }
+        });
+        return 1;
     }
 
     private static int setCiCompatibility(FabricClientCommandSource source, boolean enabled) {
