@@ -6,6 +6,13 @@ import org.jetbrains.annotations.Nullable;
 public final class ImageEntry {
     public enum State { LOADING, LOADED, FAILED }
 
+    /** Why {@link State#FAILED} was set (for chat line replacement text). */
+    public enum FailureKind {
+        UNKNOWN,
+        /** HTTP body exceeded {@link ChatUpgradeConfig#maxReceiveBytes}. */
+        RESPONSE_BODY_TOO_LARGE
+    }
+
     /** Sub-state while {@link State#LOADING}; only for UI hints. */
     public enum LoadPhase {
         /** HTTP 请求进行中 */
@@ -15,6 +22,7 @@ public final class ImageEntry {
     }
 
     private volatile State state;
+    private volatile FailureKind failureKind = FailureKind.UNKNOWN;
     private volatile LoadPhase loadPhase = LoadPhase.FETCH;
     private @Nullable Identifier textureId;
     /** Drawn width/height on screen (preview size). */
@@ -72,7 +80,16 @@ public final class ImageEntry {
     }
 
     public void setFailed() {
+        setFailed(FailureKind.UNKNOWN);
+    }
+
+    public void setFailed(FailureKind kind) {
+        this.failureKind = kind != null ? kind : FailureKind.UNKNOWN;
         this.state = State.FAILED;
+    }
+
+    public FailureKind getFailureKind() {
+        return failureKind;
     }
 
     public void setLoadPhase(LoadPhase loadPhase) {

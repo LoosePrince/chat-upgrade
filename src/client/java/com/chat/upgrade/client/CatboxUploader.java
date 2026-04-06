@@ -21,7 +21,6 @@ import java.util.concurrent.CompletableFuture;
 public final class CatboxUploader {
     public static final URI API_URI = URI.create("https://catbox.moe/user/api.php");
 
-    private static final long MAX_UPLOAD_BYTES = 50L * 1024 * 1024;
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
@@ -36,8 +35,12 @@ public final class CatboxUploader {
                     return Optional.<String>empty();
                 }
                 long size = Files.size(file);
-                if (size > MAX_UPLOAD_BYTES) {
-                    ChatUpgrade.LOGGER.warn("ChatUpgrade upload: file too large ({} bytes)", size);
+                int maxUpload = ChatUpgradeConfig.get().maxUploadBytes;
+                if (size > maxUpload) {
+                    ChatUpgrade.LOGGER.warn(
+                            "ChatUpgrade upload: file too large ({} bytes; limit {})",
+                            size,
+                            maxUpload);
                     return Optional.empty();
                 }
                 if (size == 0) {
@@ -59,8 +62,12 @@ public final class CatboxUploader {
                 if (data == null || data.length == 0) {
                     return Optional.<String>empty();
                 }
-                if (data.length > MAX_UPLOAD_BYTES) {
-                    ChatUpgrade.LOGGER.warn("ChatUpgrade upload: payload too large");
+                int maxUpload = ChatUpgradeConfig.get().maxUploadBytes;
+                if (data.length > maxUpload) {
+                    ChatUpgrade.LOGGER.warn(
+                            "ChatUpgrade upload: payload too large ({} bytes; limit {})",
+                            data.length,
+                            maxUpload);
                     return Optional.empty();
                 }
                 return uploadBytesSync(data, sanitizeFilename(filename));

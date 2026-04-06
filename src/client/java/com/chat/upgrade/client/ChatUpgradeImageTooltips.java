@@ -18,6 +18,7 @@ public final class ChatUpgradeImageTooltips {
         List<String> lines = new ArrayList<>();
         lines.add("链接: " + url);
         lines.add("解析格式: " + describeBracketWireFormat());
+        lines.add("接收上限: " + ChatUpgradeConfig.formatBytesHuman(ChatUpgradeConfig.get().maxReceiveBytes));
         lines.add("发送来源: " + describeSource(parent));
         lines.add("聊天刻: " + parent.addedTime() + describeTickAge(parent.addedTime()));
         lines.add("消息文本: " + truncate(parent.content().getString(), 120));

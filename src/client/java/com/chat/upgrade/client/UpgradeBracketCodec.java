@@ -28,6 +28,9 @@ public final class UpgradeBracketCodec {
      */
     public static final String LOAD_FAILED_VISIBLE = "[图片：加载失败]";
 
+    /** Shown when the remote image exceeds {@link ChatUpgradeConfig#maxReceiveBytes}. */
+    public static final String IMAGE_OVERSIZE_VISIBLE = "[图片：图片过大]";
+
     private static final Pattern BRACKET_PAYLOAD = Pattern.compile(
             "\\[\\[(ChatUpgrade|CICode),url=([^,\\]]+)(?:,name=([^\\]]+))?\\]\\]");
 
@@ -199,6 +202,22 @@ public final class UpgradeBracketCodec {
      * @return a new sequence if a placeholder was replaced; {@code null} if none matched
      */
     public static @Nullable FormattedCharSequence replaceVisiblePlaceholderWithLoadFailed(FormattedCharSequence seq) {
+        return replaceVisiblePlaceholderWithVisibleText(seq, LOAD_FAILED_VISIBLE);
+    }
+
+    public static @Nullable FormattedCharSequence replaceVisiblePlaceholderWithOversize(FormattedCharSequence seq) {
+        return replaceVisiblePlaceholderWithVisibleText(seq, IMAGE_OVERSIZE_VISIBLE);
+    }
+
+    /**
+     * Replaces the first {@link #VISIBLE_PLACEHOLDER} match with {@code visibleReplacement} (plain text, one style).
+     *
+     * @return a new sequence if matched; {@code null} if none
+     */
+    public static @Nullable FormattedCharSequence replaceVisiblePlaceholderWithVisibleText(
+            FormattedCharSequence seq,
+            String visibleReplacement
+    ) {
         PlainAndStyles ps = extractPlainAndStyles(seq);
         Matcher m = VISIBLE_PLACEHOLDER.matcher(ps.plain);
         if (!m.find()) {
@@ -210,7 +229,7 @@ public final class UpgradeBracketCodec {
         if (start > 0) {
             parts.add(span(ps, 0, start));
         }
-        parts.add(FormattedCharSequence.forward(LOAD_FAILED_VISIBLE, ps.styleAt(start)));
+        parts.add(FormattedCharSequence.forward(visibleReplacement, ps.styleAt(start)));
         if (end < ps.plain.length()) {
             parts.add(span(ps, end, ps.plain.length()));
         }

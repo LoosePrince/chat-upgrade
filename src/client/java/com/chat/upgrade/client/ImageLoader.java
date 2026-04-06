@@ -1,6 +1,9 @@
 package com.chat.upgrade.client;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -11,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.chat.upgrade.ChatUpgrade;
@@ -46,6 +50,10 @@ public final class ImageLoader {
             .build();
 
     private ImageLoader() {
+    }
+
+    private static final class ResponseBodyTooLarge extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
     /**
@@ -114,7 +122,7 @@ public final class ImageLoader {
                         .timeout(Duration.ofSeconds(15))
                         .GET()
                         .build();
-                return HTTP.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                return HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to fetch {}: {}", url, e.getMessage());
                 return null;
@@ -124,8 +132,19 @@ public final class ImageLoader {
                 markFailed(url, entry);
                 return;
             }
-            try {
-                byte[] body = response.body();
+            int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
+            try (InputStream raw = response.body()) {
+                OptionalLong clOpt = response.headers().firstValueAsLong("Content-Length");
+                if (clOpt.isPresent() && clOpt.getAsLong() > maxReceive) {
+                    ChatUpgrade.LOGGER.warn(
+                            "chat-upgrade: image too large (Content-Length {} > limit {}) for {}",
+                            clOpt.getAsLong(),
+                            maxReceive,
+                            url);
+                    markFailedOversize(url, entry);
+                    return;
+                }
+                byte[] body = readBodyCapped(raw, maxReceive);
                 String contentType = response.headers().firstValue("Content-Type").orElse(null);
                 int declaredLen = -1;
                 try {
@@ -146,6 +165,9 @@ public final class ImageLoader {
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
                 NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
                 scheduleTextureRegistration(url, entry, img);
+            } catch (ResponseBodyTooLarge e) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: image body exceeds limit ({}) for {}", maxReceive, url);
+                markFailedOversize(url, entry);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {}: {}", url, e.getMessage());
                 markFailed(url, entry);
@@ -155,6 +177,27 @@ public final class ImageLoader {
             markFailed(url, entry);
             return null;
         });
+    }
+
+    private static byte[] readBodyCapped(InputStream is, int maxBytes) throws IOException {
+        if (maxBytes < 0) {
+            throw new IllegalArgumentException("maxBytes");
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(maxBytes, 65536));
+        byte[] buf = new byte[8192];
+        long total = 0;
+        while (true) {
+            int n = is.read(buf);
+            if (n < 0) {
+                break;
+            }
+            if ((long) total + n > maxBytes) {
+                throw new ResponseBodyTooLarge();
+            }
+            out.write(buf, 0, n);
+            total += n;
+        }
+        return out.toByteArray();
     }
 
     private static String md5Hex(byte[] data) {
@@ -167,7 +210,15 @@ public final class ImageLoader {
     }
 
     private static void markFailed(String url, ImageEntry entry) {
-        entry.setFailed();
+        markFailed(url, entry, ImageEntry.FailureKind.UNKNOWN);
+    }
+
+    private static void markFailedOversize(String url, ImageEntry entry) {
+        markFailed(url, entry, ImageEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+    }
+
+    private static void markFailed(String url, ImageEntry entry, ImageEntry.FailureKind kind) {
+        entry.setFailed(kind);
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
             CACHE.remove(url, entry);

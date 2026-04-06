@@ -50,7 +50,7 @@ public final class UpgradePhantomHudLayout {
             return;
         }
         switch (entry.getState()) {
-            case FAILED -> handleFailed(url, trimmedMessages);
+            case FAILED -> handleFailed(url, trimmedMessages, entry.getFailureKind());
             case LOADING, LOADED -> ensurePreviewPhantoms(url, trimmedMessages, entry.getState() == ImageEntry.State.LOADED);
         }
     }
@@ -70,7 +70,7 @@ public final class UpgradePhantomHudLayout {
         }
     }
 
-    private static void handleFailed(String url, List<GuiMessage.Line> trimmedMessages) {
+    private static void handleFailed(String url, List<GuiMessage.Line> trimmedMessages, ImageEntry.FailureKind failureKind) {
         Set<GuiMessage> parents = new HashSet<>();
         Set<GuiMessage> registered = URL_TO_MESSAGE_PARENTS.remove(url);
         if (registered != null) {
@@ -85,7 +85,7 @@ public final class UpgradePhantomHudLayout {
         }
         for (GuiMessage parent : parents) {
             stripPhantomBlock(trimmedMessages, parent, url);
-            applyFailureOnTextLines(trimmedMessages, parent);
+            applyFailureOnTextLines(trimmedMessages, parent, failureKind);
         }
     }
 
@@ -148,7 +148,7 @@ public final class UpgradePhantomHudLayout {
         }
     }
 
-    private static void applyFailureOnTextLines(List<GuiMessage.Line> trim, GuiMessage parent) {
+    private static void applyFailureOnTextLines(List<GuiMessage.Line> trim, GuiMessage parent, ImageEntry.FailureKind failureKind) {
         for (int j = 0; j < trim.size(); j++) {
             GuiMessage.Line line = trim.get(j);
             if (!line.parent().equals(parent)) {
@@ -158,7 +158,10 @@ public final class UpgradePhantomHudLayout {
                 continue;
             }
             GuiMessageLineReadable readable = (GuiMessageLineReadable) (Object) line;
-            FormattedCharSequence updated = UpgradeBracketCodec.replaceVisiblePlaceholderWithLoadFailed(readable.chatupgrade$content());
+            FormattedCharSequence updated = switch (failureKind) {
+                case RESPONSE_BODY_TOO_LARGE -> UpgradeBracketCodec.replaceVisiblePlaceholderWithOversize(readable.chatupgrade$content());
+                case UNKNOWN -> UpgradeBracketCodec.replaceVisiblePlaceholderWithLoadFailed(readable.chatupgrade$content());
+            };
             if (updated != null) {
                 trim.set(j, new GuiMessage.Line(parent, updated, readable.chatupgrade$endOfEntry()));
             }

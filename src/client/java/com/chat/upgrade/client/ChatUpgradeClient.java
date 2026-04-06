@@ -1,11 +1,13 @@
 package com.chat.upgrade.client;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -100,7 +102,25 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                         ctx.getSource(),
                                                         BoolArgumentType.getBool(ctx, "enabled")))))
                                 .then(ClientCommands.literal("reload")
-                                        .executes(ctx -> reloadConfig(ctx.getSource()))))));
+                                        .executes(ctx -> reloadConfig(ctx.getSource())))
+                                .then(ClientCommands.literal("maxreceive")
+                                        .then(ClientCommands.argument(
+                                                        "mebibytes",
+                                                        IntegerArgumentType.integer(
+                                                                1,
+                                                                ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
+                                                .executes(ctx -> setMaxReceiveMebibytes(
+                                                        ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "mebibytes")))))
+                                .then(ClientCommands.literal("maxupload")
+                                        .then(ClientCommands.argument(
+                                                        "mebibytes",
+                                                        IntegerArgumentType.integer(
+                                                                1,
+                                                                ChatUpgradeConfig.ABSOLUTE_MAX_UPLOAD_BYTES / (1024 * 1024)))
+                                                .executes(ctx -> setMaxUploadMebibytes(
+                                                        ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "mebibytes"))))))));
     }
 
     private static int setCiCompatibility(FabricClientCommandSource source, boolean enabled) {
@@ -118,13 +138,52 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int reloadConfig(FabricClientCommandSource source) {
         ChatUpgradeConfig.load();
-        boolean ci = ChatUpgradeConfig.get().ciCompatibility;
-        boolean manual = ChatUpgradeConfig.get().manualImageReveal;
+        ChatUpgradeConfig cfg = ChatUpgradeConfig.get();
+        boolean ci = cfg.ciCompatibility;
+        boolean manual = cfg.manualImageReveal;
         source.sendFeedback(Component.literal(
                 "已重载 config/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
-                        + "；手动渲染: " + (manual ? "开" : "关"))
+                        + "；手动渲染: " + (manual ? "开" : "关")
+                        + "；接收上限: " + ChatUpgradeConfig.formatBytesHuman(cfg.maxReceiveBytes)
+                        + "；上传上限: " + ChatUpgradeConfig.formatBytesHuman(cfg.maxUploadBytes))
                 .withStyle(ChatFormatting.GREEN));
         return 1;
+    }
+
+    private static int setMaxReceiveMebibytes(FabricClientCommandSource source, int mebibytes) {
+        try {
+            int bytes = Math.multiplyExact(mebibytes, 1024 * 1024);
+            ChatUpgradeConfig.setMaxReceiveBytesAndSave(bytes);
+            source.sendFeedback(Component.literal(
+                    "接收体积上限已设为 " + mebibytes + " MiB（" + ChatUpgradeConfig.formatBytesHuman(bytes)
+                            + "）；配置项最高不超过 10 MiB。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (ArithmeticException e) {
+            source.sendError(Component.literal("数值过大。").withStyle(ChatFormatting.RED));
+            return 0;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setMaxUploadMebibytes(FabricClientCommandSource source, int mebibytes) {
+        try {
+            int bytes = Math.multiplyExact(mebibytes, 1024 * 1024);
+            ChatUpgradeConfig.setMaxUploadBytesAndSave(bytes);
+            source.sendFeedback(Component.literal(
+                    "上传体积上限已设为 " + mebibytes + " MiB（" + ChatUpgradeConfig.formatBytesHuman(bytes)
+                            + "）；配置项最高不超过 10 MiB。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (ArithmeticException e) {
+            source.sendError(Component.literal("数值过大。").withStyle(ChatFormatting.RED));
+            return 0;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
     }
 
     private static int setManualImageReveal(FabricClientCommandSource source, boolean enabled) {
@@ -177,6 +236,14 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         Path file = image.get();
+        try {
+            if (rejectIfUploadTooLarge(source, Files.size(file))) {
+                return 0;
+            }
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
         String displayName = displayNameArg.filter(s -> !s.isBlank())
                 .orElseGet(() -> displayNameFromPath(file));
         source.sendFeedback(Component.literal("正在上传到 Catbox…").withStyle(ChatFormatting.GRAY));
@@ -203,6 +270,15 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         Path file = picked.get();
+                        try {
+                            if (rejectIfUploadTooLarge(source, Files.size(file))) {
+                                return;
+                            }
+                        } catch (IOException e) {
+                            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage())
+                                    .withStyle(ChatFormatting.RED));
+                            return;
+                        }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
                         source.sendFeedback(Component.literal("正在上传到 Catbox…").withStyle(ChatFormatting.GRAY));
                         finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
@@ -220,6 +296,9 @@ public class ChatUpgradeClient implements ClientModInitializer {
         if (png.isEmpty()) {
             source.sendError(Component.literal("剪贴板里没有可用的图片（可尝试在画图/浏览器中复制后再试）。")
                     .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        if (rejectIfUploadTooLarge(source, png.get().length)) {
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElse("粘贴");
@@ -252,5 +331,20 @@ public class ChatUpgradeClient implements ClientModInitializer {
         String fn = file.getFileName().toString();
         int dot = fn.lastIndexOf('.');
         return dot > 0 ? fn.substring(0, dot) : fn;
+    }
+
+    private static boolean rejectIfUploadTooLarge(FabricClientCommandSource source, long sizeBytes) {
+        int max = ChatUpgradeConfig.get().maxUploadBytes;
+        if (sizeBytes <= max) {
+            return false;
+        }
+        source.sendError(Component.literal(
+                "文件超过上传体积限制（上限 "
+                        + ChatUpgradeConfig.formatBytesHuman(max)
+                        + "，当前 "
+                        + ChatUpgradeConfig.formatBytesHuman(sizeBytes)
+                        + "）。可用 /chatupgrade config maxupload <1-10> 调整。")
+                .withStyle(ChatFormatting.RED));
+        return true;
     }
 }
