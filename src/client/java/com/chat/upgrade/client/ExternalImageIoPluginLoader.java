@@ -11,10 +11,18 @@ import javax.imageio.spi.ImageReaderSpi;
 import javax.imageio.spi.ImageTranscoderSpi;
 import javax.imageio.spi.ImageWriterSpi;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -24,6 +32,14 @@ import java.util.ServiceLoader;
  * Loads external ImageIO SPI jars from {@code config/chat-upgrade/libs} at startup (no hot reload).
  */
 public final class ExternalImageIoPluginLoader {
+    private static final String APNG_VERSION = "1.0.1";
+    private static final String APNG_JAR_NAME = "imageio-apng-" + APNG_VERSION + ".jar";
+    private static final String APNG_URL = "https://repo1.maven.org/maven2/com/tianscar/imageio/imageio-apng/"
+            + APNG_VERSION + "/" + APNG_JAR_NAME;
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
     private static volatile boolean loaded = false;
     private static URLClassLoader externalPluginClassLoader;
 
@@ -43,6 +59,7 @@ public final class ExternalImageIoPluginLoader {
             ChatUpgrade.LOGGER.warn("chat-upgrade: cannot create external plugin dir {}: {}", libsDir, e.getMessage());
             return;
         }
+        ensureApngPluginDownloaded(libsDir);
 
         List<Path> jars = new ArrayList<>();
         try (var stream = Files.list(libsDir)) {
@@ -82,6 +99,37 @@ public final class ExternalImageIoPluginLoader {
                     registered);
         } catch (Exception e) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to load external ImageIO plugins: {}", e.getMessage());
+        }
+    }
+
+    private static void ensureApngPluginDownloaded(Path libsDir) {
+        Path target = libsDir.resolve(APNG_JAR_NAME);
+        if (Files.isRegularFile(target)) {
+            return;
+        }
+        ChatUpgrade.LOGGER.info("chat-upgrade: downloading optional APNG plugin {}", APNG_URL);
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(APNG_URL))
+                    .timeout(Duration.ofSeconds(45))
+                    .GET()
+                    .build();
+            HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                ChatUpgrade.LOGGER.warn(
+                        "chat-upgrade: APNG plugin download skipped, status={} url={}",
+                        response.statusCode(),
+                        APNG_URL);
+                return;
+            }
+            Path temp = target.resolveSibling(target.getFileName() + ".tmp");
+            try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
+                in.transferTo(out);
+            }
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            ChatUpgrade.LOGGER.info("chat-upgrade: APNG plugin downloaded to {}", target);
+        } catch (Exception e) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to download APNG plugin: {}", e.getMessage());
         }
     }
 

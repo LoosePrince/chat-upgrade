@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import com.chat.upgrade.ChatUpgrade;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -30,6 +31,17 @@ public class ChatUpgradeClient implements ClientModInitializer {
         System.setProperty("java.awt.headless", "false");
         ExternalImageIoPluginLoader.loadAtStartup();
         ChatUpgradeConfig.load();
+        ChatUpgrade.LOGGER.info(
+                "chat-upgrade: loaded config from {} | maxReceive={} maxUpload={} manual(image/audio/video)={}/{}/{} volume(audio/video)={}/{}",
+                ChatUpgradeConfig.configPath(),
+                ChatUpgradeConfig.get().maxReceiveBytes,
+                ChatUpgradeConfig.get().maxUploadBytes,
+                ChatUpgradeConfig.get().manualImageReveal,
+                ChatUpgradeConfig.get().manualAudioReveal,
+                ChatUpgradeConfig.get().manualVideoReveal,
+                ChatUpgradeConfig.get().audioVolumePercent,
+                ChatUpgradeConfig.get().videoVolumePercent);
+        FfmpegNativeBootstrap.warmupAsync();
         AudioPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().videoVolumePercent);
         registerCommands();

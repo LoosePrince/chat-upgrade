@@ -1,6 +1,7 @@
 package com.chat.upgrade.client;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,6 +12,13 @@ import javax.sound.sampled.Clip;
 import javax.sound.sampled.FloatControl;
 
 import com.chat.upgrade.ChatUpgrade;
+
+import javazoom.jl.decoder.Bitstream;
+import javazoom.jl.decoder.BitstreamException;
+import javazoom.jl.decoder.Decoder;
+import javazoom.jl.decoder.Header;
+import javazoom.jl.decoder.JavaLayerException;
+import javazoom.jl.decoder.SampleBuffer;
 
 public final class AudioPlayerService {
     private static final ConcurrentHashMap<String, AudioSession> SESSIONS = new ConcurrentHashMap<>();
@@ -31,7 +39,14 @@ public final class AudioPlayerService {
         } catch (Exception primary) {
             ChatUpgrade.LOGGER.debug("chat-upgrade: AudioSystem decode failed, trying mp3spi fallback: {}",
                     primary.getMessage());
-            clip = openClipWithMp3SpiFallback(audioBytes);
+            try {
+                clip = openClipWithMp3SpiFallback(audioBytes);
+            } catch (Exception mp3spiEx) {
+                ChatUpgrade.LOGGER.debug(
+                        "chat-upgrade: mp3spi fallback decode failed, trying jlayer direct fallback: {}",
+                        mp3spiEx.getMessage());
+                clip = openClipWithJLayerDecode(audioBytes);
+            }
         }
         if (clip == null) {
             throw new IllegalStateException("No audio decoder available");
@@ -60,6 +75,68 @@ public final class AudioPlayerService {
             Clip clip = AudioSystem.getClip();
             clip.open(pcm);
             return clip;
+        }
+    }
+
+    private static Clip openClipWithJLayerDecode(byte[] audioBytes) throws Exception {
+        DecodedPcm pcm = decodeMp3ToPcmWithJLayer(audioBytes);
+        AudioFormat format = new AudioFormat(
+                AudioFormat.Encoding.PCM_SIGNED,
+                pcm.sampleRate(),
+                16,
+                pcm.channels(),
+                pcm.channels() * 2,
+                pcm.sampleRate(),
+                false);
+        try (AudioInputStream ais = new AudioInputStream(
+                new ByteArrayInputStream(pcm.bytes()),
+                format,
+                pcm.bytes().length / Math.max(1, format.getFrameSize()))) {
+            Clip clip = AudioSystem.getClip();
+            clip.open(ais);
+            return clip;
+        }
+    }
+
+    private static DecodedPcm decodeMp3ToPcmWithJLayer(byte[] audioBytes) throws Exception {
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(audioBytes)) {
+            Bitstream bitstream = new Bitstream(bais);
+            Decoder decoder = new Decoder();
+            ByteArrayOutputStream pcmOut = new ByteArrayOutputStream();
+            int sampleRate = -1;
+            int channels = -1;
+            try {
+                Header header;
+                while ((header = bitstream.readFrame()) != null) {
+                    SampleBuffer sb = (SampleBuffer) decoder.decodeFrame(header, bitstream);
+                    if (sampleRate <= 0) {
+                        sampleRate = sb.getSampleFrequency();
+                    }
+                    if (channels <= 0) {
+                        channels = sb.getChannelCount();
+                    }
+                    short[] buf = sb.getBuffer();
+                    int len = sb.getBufferLength();
+                    for (int i = 0; i < len; i++) {
+                        short v = buf[i];
+                        pcmOut.write(v & 0xFF);
+                        pcmOut.write((v >>> 8) & 0xFF);
+                    }
+                    bitstream.closeFrame();
+                }
+            } catch (JavaLayerException e) {
+                throw new IllegalStateException("jlayer decode failed: " + e.getMessage(), e);
+            } finally {
+                try {
+                    bitstream.close();
+                } catch (BitstreamException ignored) {
+                }
+            }
+            byte[] pcmBytes = pcmOut.toByteArray();
+            if (pcmBytes.length == 0 || sampleRate <= 0 || channels <= 0) {
+                throw new IllegalStateException("jlayer produced empty pcm");
+            }
+            return new DecodedPcm(pcmBytes, sampleRate, channels);
         }
     }
 
@@ -208,6 +285,9 @@ public final class AudioPlayerService {
                 ChatUpgrade.LOGGER.debug("chat-upgrade: close clip: {}", e.getMessage());
             }
         }
+    }
+
+    private record DecodedPcm(byte[] bytes, int sampleRate, int channels) {
     }
 
     private static void applyVolumePercent(Clip clip, int percent) {

@@ -82,16 +82,8 @@
 音频播放能力取决于客户端 Java Sound 可解码格式（不支持的格式会提示加载失败）。
 视频上传扩展名支持：`mp4/webm/mov/mkv/m4v/avi`。  
 视频解码基于 **JavaCPP FFmpeg**，`mp4` 为必测路径；其他格式按解码器能力尽可能支持。
-
-### 外置 ImageIO 插件
-
-- 这是**可选启用**能力：不放插件也能正常使用基础图片预览；仅在你需要 APNG 等扩展格式时再安装。
-- 启动时会扫描：**`.minecraft/config/chat-upgrade/libs/`** 。
-- 下载一个 **Java ImageIO 插件 jar**（示例：`com.tianscar.imageio:imageio-apng`，文件名类似 `imageio-apng-1.0.1.jar`），放到上述目录后，**重启游戏**生效。
-- 推荐下载来源：
-  - Maven Central（artifact 页面）：[com.tianscar.imageio:imageio-apng](https://central.sonatype.com/artifact/com.tianscar.imageio/imageio-apng)
-  - 直接下载链接示例（1.0.1）：[imageio-apng-1.0.1.jar](https://repo1.maven.org/maven2/com/tianscar/imageio/imageio-apng/1.0.1/imageio-apng-1.0.1.jar)
-- 若目录为空或插件加载失败，模组会自动降级为内置格式支持（不影响基础功能）。
+默认发布包不内置 FFmpeg native：首次启动会自动下载当前平台整包到 `config/chat-upgrade/libs/`，并将 native 按 `java.library.path` 规则释放到 Minecraft 的 `...-natives` 目录后启用（下载失败会记录日志并导致视频不可用）。
+发布包不内置 imageio-apng 插件：首次启动会自动下载到 `config/chat-upgrade/libs/`，并按 `java.class.path` 规则加载（下载失败会记录日志并导致 APNG 不可用）。
 
 ## 运行环境
 

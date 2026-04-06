@@ -36,7 +36,7 @@ jobs:
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
       - name: build
-        run: ./gradlew build
+        run: ./gradlew build -PembedFfmpegNatives=false
       - name: capture build artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -35,10 +35,21 @@ public final class AudioLoader {
             return MediaFetchSupport.sendGet(url, 20, "audio");
         }).thenAccept(response -> {
             if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
+                int status = response == null ? -1 : response.statusCode();
+                ChatUpgrade.LOGGER.warn("chat-upgrade: audio fetch failed url={} status={}", url, status);
                 markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
                 return;
             }
             int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
+            long declaredLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+            String contentType = response.headers().firstValue("Content-Type").orElse("unknown");
+            ChatUpgrade.LOGGER.info(
+                    "chat-upgrade: audio fetch start url={} status={} contentType={} contentLength={} maxReceive={}",
+                    url,
+                    response.statusCode(),
+                    contentType,
+                    declaredLength,
+                    maxReceive);
             try {
                 MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, maxReceive);
                 byte[] body = payload.body();
@@ -55,12 +66,18 @@ public final class AudioLoader {
                 entry.setLoaded(durationMs);
                 notifyChanged(url);
             } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
+                ChatUpgrade.LOGGER.warn(
+                        "chat-upgrade: audio body too large url={} contentLength={} maxReceive={}",
+                        url,
+                        declaredLength,
+                        maxReceive);
                 markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode audio {}: {}", url, e.getMessage());
                 markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
             }
         }).exceptionally(e -> {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: audio load pipeline failed {}: {}", url, e.toString());
             markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
             return null;
         });

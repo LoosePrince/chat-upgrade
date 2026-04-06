@@ -10,6 +10,8 @@ repositories {
 	mavenCentral()
 }
 
+def embedFfmpegNatives = (findProperty("embedFfmpegNatives") ?: "true").toString().toBoolean()
+
 loom {
 	splitEnvironmentSourceSets()
 
@@ -51,12 +53,22 @@ dependencies {
 	include(implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4"))
 
 	// Video decode support (JavaCPP FFmpeg)
-	// NOTE:
-	// Explicitly include core JavaCPP/FFmpeg jars so production jar-in-jar runtime
-	// can always resolve org.bytedeco.javacpp.* classes (e.g. Pointer).
+	// Always include Java wrappers; natives can be embedded or downloaded on demand.
 	include(implementation("org.bytedeco:javacpp:1.5.11"))
 	include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11"))
-	include(implementation("org.bytedeco:ffmpeg-platform:7.1-1.5.11"))
+	if (embedFfmpegNatives) {
+		// Full-platform embedded natives build.
+		include(implementation("org.bytedeco:javacpp:1.5.11:windows-x86_64"))
+		include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11:windows-x86_64"))
+		include(implementation("org.bytedeco:javacpp:1.5.11:linux-x86_64"))
+		include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11:linux-x86_64"))
+		include(implementation("org.bytedeco:javacpp:1.5.11:linux-arm64"))
+		include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11:linux-arm64"))
+		include(implementation("org.bytedeco:javacpp:1.5.11:macosx-x86_64"))
+		include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11:macosx-x86_64"))
+		include(implementation("org.bytedeco:javacpp:1.5.11:macosx-arm64"))
+		include(implementation("org.bytedeco:ffmpeg:7.1-1.5.11:macosx-arm64"))
+	}
 }
 
 processResources {
