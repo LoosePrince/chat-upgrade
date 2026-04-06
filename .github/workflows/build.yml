@@ -6,7 +6,15 @@
 name: build
 on:
   pull_request:
+    paths:
+      - build.gradle
+      - gradle.properties
+      - .github/workflows/build.yml
   push:
+    paths:
+      - build.gradle
+      - gradle.properties
+      - .github/workflows/build.yml
   workflow_dispatch:
 
 permissions:
