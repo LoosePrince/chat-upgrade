@@ -32,7 +32,7 @@ jobs:
       - name: capture build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Artifacts
+          name: release-jars
           path: build/libs/
 
   release:
@@ -49,10 +49,11 @@ jobs:
         with:
           java-version: '25'
           distribution: 'microsoft'
-      - name: make gradle wrapper executable
-        run: chmod +x ./gradlew
-      - name: build release artifact
-        run: ./gradlew build
+      - name: download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-jars
+          path: build/libs
       - name: check version changed
         id: version_changed
         shell: bash
@@ -89,10 +90,30 @@ jobs:
           title="${minecraft_version}_fabric-${mod_version}"
           prev_tag="$(git tag --list 'v*_fabric-*' --sort=-v:refname | awk -v t="$tag" '$0 != t { print; exit }')"
           body_file="$RUNNER_TEMP/release_body.md"
+          range=""
           if [[ -n "$prev_tag" ]]; then
-            git log --pretty='- %s (%H)' "${prev_tag}..HEAD" > "$body_file"
+            range="${prev_tag}..HEAD"
           else
-            git log --pretty='- %s (%H)' > "$body_file"
+            range="HEAD"
+          fi
+
+          : > "$body_file"
+          while IFS= read -r commit_hash; do
+            commit_first_line="$(git show -s --format=%B "$commit_hash" | head -n 1)"
+            commit_first_line="${commit_first_line%$'\r'}"
+            commit_first_line="${commit_first_line%% - *}"
+            commit_first_line="$(echo "$commit_first_line" | sed 's/[[:space:]]\+$//')"
+            if [[ -n "$commit_first_line" ]]; then
+              echo "- ${commit_first_line} (${commit_hash})" >> "$body_file"
+            fi
+          done < <(git rev-list --no-merges "$range")
+
+          if [[ ! -s "$body_file" ]]; then
+            if [[ -n "$prev_tag" ]]; then
+              echo "- chore: release update (${GITHUB_SHA})" > "$body_file"
+            else
+              echo "- chore: initial release (${GITHUB_SHA})" > "$body_file"
+            fi
           fi
 
           asset_file=""
