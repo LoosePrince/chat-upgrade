@@ -19,6 +19,8 @@ import com.chat.upgrade.client.ManualRevealClickEvent;
 import com.chat.upgrade.client.UpgradeChatHudSync;
 import com.chat.upgrade.client.VideoControlClickEvent;
 import com.chat.upgrade.client.VideoLoader;
+import com.chat.upgrade.client.VideoPreviewClickEvent;
+import com.chat.upgrade.client.VideoPreviewScreen;
 import com.chat.upgrade.client.VideoPlayerService;
 
 import net.minecraft.client.Minecraft;
@@ -73,6 +75,12 @@ public abstract class ChatScreenManualRevealMixin {
             if (Minecraft.getInstance().gui.getChat() instanceof UpgradeChatHudSync sync) {
                 sync.requestLayoutSyncForUrl("video:" + p.url());
             }
+            cir.setReturnValue(true);
+            return;
+        }
+        Optional<String> videoPreviewUrlOpt = VideoPreviewClickEvent.parse(clickEvent);
+        if (videoPreviewUrlOpt.isPresent()) {
+            VideoPreviewScreen.open(videoPreviewUrlOpt.get());
             cir.setReturnValue(true);
             return;
         }

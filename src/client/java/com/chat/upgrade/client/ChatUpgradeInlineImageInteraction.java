@@ -14,7 +14,6 @@ import com.chat.upgrade.client.mixin.ChatUpgradeDrawingBackgroundAccessor;
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingFocusedAccessor;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -197,16 +196,7 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     private static @Nullable Style styleForVideoClick(Plane p, float localX, float localY) {
-        VideoEntry entry = VideoLoader.getIfPresent(p.url);
-        if (entry == null) {
-            return null;
-        }
-        VideoAction action = resolveVideoAction(localX, localY, p.localLeft, p.localTop, p.localRight, p.url, entry);
-        return switch (action.kind()) {
-            case TOGGLE -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
-            case SEEK -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(p.url, action.ratio()));
-            case NONE -> null;
-        };
+        return Style.EMPTY.withClickEvent(VideoPreviewClickEvent.forUrl(p.url));
     }
 
     private static void tryAudioTooltipOnFocused(
@@ -283,18 +273,13 @@ public final class ChatUpgradeInlineImageInteraction {
 
     private static String describeVideoHoverAction(float localX, float localY, int textTop, int drawW, String url,
             VideoEntry entry) {
-        VideoAction action = resolveVideoAction(localX, localY, 0, textTop, drawW, url, entry);
         long total = VideoPlayerService.durationMs(url);
         if (total <= 0L) {
             total = entry.getDurationMs();
         }
         long pos = VideoPlayerService.positionMs(url);
-        return switch (action.kind()) {
-            case TOGGLE -> VideoPlayerService.isPlaying(url) ? "视频画面：点击暂停" : "视频画面：点击播放";
-            case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
-            case NONE ->
-                "视频播放器区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total);
-        };
+        return "视频预览区域：点击打开预览窗口\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / "
+                + ChatUpgradeFormatters.formatMs(total);
     }
 
     private static AudioAction resolveAudioAction(float localX, float localY, int x0, int y0, int x1) {
@@ -322,59 +307,11 @@ public final class ChatUpgradeInlineImageInteraction {
         return new AudioAction(AudioActionKind.NONE, 0.0);
     }
 
-    private static VideoAction resolveVideoAction(
-            float localX,
-            float localY,
-            int x0,
-            int y0,
-            int x1,
-            String url,
-            VideoEntry entry) {
-        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(x0, y0, x1 - x0, entry.getRawWidth(),
-                entry.getRawHeight());
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(),
-                rect.bottom())) {
-            return new VideoAction(VideoActionKind.TOGGLE, 0.0);
-        }
-        int btnX0 = x0 + VideoUiLayout.PAD_X;
-        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
-        int btnY0 = y0 + VideoUiLayout.CONTROL_TOP;
-        int btnY1 = btnY0 + VideoUiLayout.BTN_H;
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, btnX0, btnY0, btnX1, btnY1)) {
-            return new VideoAction(VideoActionKind.TOGGLE, 0.0);
-        }
-        long total = VideoPlayerService.durationMs(url);
-        if (total <= 0L) {
-            total = entry.getDurationMs();
-        }
-        long pos = VideoPlayerService.positionMs(url);
-        String left = ChatUpgradeFormatters.formatMs(pos);
-        String right = ChatUpgradeFormatters.formatMs(total);
-        int leftX = btnX1 + 4;
-        int rightX = x1 - VideoUiLayout.PAD_X - Minecraft.getInstance().font.width(right);
-        int barX0 = leftX + Minecraft.getInstance().font.width(left) + 4;
-        int barX1 = rightX - 4;
-        int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
-        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
-        if (barX1 > barX0 && ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
-            return new VideoAction(VideoActionKind.SEEK, ratio);
-        }
-        return new VideoAction(VideoActionKind.NONE, 0.0);
-    }
-
     private enum AudioActionKind {
         TOGGLE, TOGGLE_LOOP, OPEN_URL, SEEK, NONE
     }
 
     private record AudioAction(AudioActionKind kind, double ratio) {
-    }
-
-    private enum VideoActionKind {
-        TOGGLE, SEEK, NONE
-    }
-
-    private record VideoAction(VideoActionKind kind, double ratio) {
     }
 
     private static boolean containsScreenPoint(Plane p, int screenX, int screenY) {
