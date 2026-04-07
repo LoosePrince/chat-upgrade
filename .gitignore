@@ -42,4 +42,3 @@ replay_*.log
 # local reference checkouts (do not commit)
 
 temp/
-net/
