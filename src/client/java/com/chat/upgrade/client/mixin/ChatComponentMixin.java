@@ -10,9 +10,11 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.chat.upgrade.client.AudioLoader;
+import com.chat.upgrade.client.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ImageLoader;
 import com.chat.upgrade.client.InlineResourceType;
@@ -27,6 +29,7 @@ import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.client.multiplayer.chat.GuiMessageTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MessageSignature;
+import net.minecraft.util.Mth;
 
 @Mixin(ChatComponent.class)
 public abstract class ChatComponentMixin implements UpgradeChatHudSync {
@@ -34,9 +37,28 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Shadow
     @Final
     private List<GuiMessage.Line> trimmedMessages;
+    @Shadow
+    private int chatScrollbarPos;
+
+    @Shadow
+    protected abstract int getWidth();
+
+    @Shadow
+    protected abstract int getHeight();
+
+    @Shadow
+    protected abstract double getScale();
+
+    @Shadow
+    protected abstract int getLineHeight();
+
+    @Shadow
+    public abstract int getLinesPerPage();
 
     @Unique
     private int chatupgrade$sizeBeforeAdd;
+    @Unique
+    private int chatupgrade$scrollPosBeforeStep;
 
     @ModifyVariable(method = "addPlayerMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component chatupgrade$parsePlayerMessage(Component original) {
@@ -93,6 +115,71 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Inject(method = "addServerSystemMessage", at = @At("TAIL"))
     private void chatupgrade$insertPhantomLinesSystem(Component message, CallbackInfo ci) {
         chatupgrade$insertPhantoms();
+    }
+
+    @Inject(method = "scrollChat", at = @At("HEAD"))
+    private void chatupgrade$captureScrollBefore(int dir, CallbackInfo ci) {
+        chatupgrade$scrollPosBeforeStep = chatScrollbarPos;
+    }
+
+    @Inject(method = "scrollChat", at = @At("TAIL"))
+    private void chatupgrade$animateScroll(int dir, CallbackInfo ci) {
+        int delta = chatScrollbarPos - chatupgrade$scrollPosBeforeStep;
+        ChatUpgradeChatRenderState.onScrollDelta(delta, getLineHeight());
+    }
+
+    @Inject(method = "resetChatScroll", at = @At("TAIL"))
+    private void chatupgrade$resetSmoothScroll(CallbackInfo ci) {
+        ChatUpgradeChatRenderState.resetScrollAnimation();
+    }
+
+    @Inject(
+            method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/gui/Font;IIILnet/minecraft/client/gui/components/ChatComponent$DisplayMode;Z)V",
+            at = @At("HEAD")
+    )
+    private void chatupgrade$beginSmoothScrollAndClip(
+            net.minecraft.client.gui.GuiGraphicsExtractor graphics,
+            net.minecraft.client.gui.Font font,
+            int ticks,
+            int mouseX,
+            int mouseY,
+            ChatComponent.DisplayMode displayMode,
+            boolean changeCursorOnInsertions,
+            CallbackInfo ci) {
+        int maxWidth = Mth.ceil(getWidth() / getScale());
+        int visibleHeight = getLinesPerPage() * getLineHeight();
+        ChatUpgradeChatRenderState.beginRenderPass(graphics, graphics.guiHeight(), getScale(), visibleHeight, maxWidth);
+    }
+
+    @Inject(
+            method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/gui/Font;IIILnet/minecraft/client/gui/components/ChatComponent$DisplayMode;Z)V",
+            at = @At("RETURN")
+    )
+    private void chatupgrade$endSmoothScrollAndClip(
+            net.minecraft.client.gui.GuiGraphicsExtractor graphics,
+            net.minecraft.client.gui.Font font,
+            int ticks,
+            int mouseX,
+            int mouseY,
+            ChatComponent.DisplayMode displayMode,
+            boolean changeCursorOnInsertions,
+            CallbackInfo ci) {
+        ChatUpgradeChatRenderState.endRenderPass(graphics);
+    }
+
+    @Redirect(
+            method = "forEachLine",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/components/ChatComponent;getLinesPerPage()I"
+            )
+    )
+    private int chatupgrade$expandPerPageWhenSubLineVisible(ChatComponent instance) {
+        int perPage = getLinesPerPage();
+        if (Math.abs(ChatUpgradeChatRenderState.smoothOffsetPx()) > 1.0e-3F) {
+            return perPage + 1;
+        }
+        return perPage;
     }
 
     @Unique

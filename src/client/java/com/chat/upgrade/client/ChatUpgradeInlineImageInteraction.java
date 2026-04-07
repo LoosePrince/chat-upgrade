@@ -164,6 +164,9 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     public static @Nullable Style styleForScreenClick(int screenX, int screenY) {
+        if (!ChatUpgradeChatRenderState.isInClipBounds(screenX, screenY)) {
+            return null;
+        }
         for (int i = PLANES.size() - 1; i >= 0; i--) {
             Plane p = PLANES.get(i);
             if (!containsScreenPoint(p, screenX, screenY)) {

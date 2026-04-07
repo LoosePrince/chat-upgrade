@@ -6,6 +6,8 @@
 		"ChatDrawingGraphicsAccessor",
 		"ChatComponentGraphicsScopeMixin",
 		"ChatComponentInlineImageExtractMixin",
+		"ChatComponentScrollAccessors",
+		"ChatComponentLineHeightAccessor",
 		"ChatComponentMixin",
 		"ChatComponentInnerMixin",
 		"ChatUpgradeClickableTextOnlyGraphicsAccessor",
@@ -13,9 +15,12 @@
 		"ChatUpgradeDrawingFocusedAccessor",
 		"GuiMessageLineMixin",
 		"ChatScreenManualRevealMixin",
+		"ChatScreenSmoothScrollMixin",
+		"ChatScreenScrollbarDragMixin",
 		"ChatScreenImageClickMixin",
 		"ChatScreenAudioFloatingWindowMixin",
-		"ContainerEventHandlerAudioFloatingDragMixin"
+		"ContainerEventHandlerAudioFloatingDragMixin",
+		"MouseHandlerActiveButtonAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

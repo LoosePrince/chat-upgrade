@@ -3,6 +3,7 @@ package com.chat.upgrade.client.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import com.chat.upgrade.client.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ChatUpgradeInlineImageInteraction;
 import com.chat.upgrade.client.UpgradePhantomHudLayout;
 import net.minecraft.client.gui.components.ChatComponent;
@@ -30,8 +31,14 @@ public abstract class ChatComponentInnerMixin {
             Operation<Boolean> original,
             @Local(argsOnly = true, ordinal = 0) GuiMessage.Line line
     ) {
-        UpgradePhantomHudLayout.dispatchLinePaint(line, y, opacity);
-        ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity);
-        return original.call(graphics, y, opacity, text);
+        float smoothOffset = ChatUpgradeChatRenderState.smoothOffsetPx();
+        graphics.updatePose(pose -> pose.translate(0.0F, smoothOffset));
+        try {
+            UpgradePhantomHudLayout.dispatchLinePaint(line, y, opacity);
+            ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity);
+            return original.call(graphics, y, opacity, text);
+        } finally {
+            graphics.updatePose(pose -> pose.translate(0.0F, -smoothOffset));
+        }
     }
 }
