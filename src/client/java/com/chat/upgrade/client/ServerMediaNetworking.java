@@ -13,11 +13,14 @@ import com.chat.upgrade.net.ServerMediaPayloads;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 
 public final class ServerMediaNetworking {
     private static final ConcurrentHashMap<String, IncomingMediaAssembly> INCOMING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Long, CompletableFuture<Optional<String>>> UPLOADS = new ConcurrentHashMap<>();
     private static final SecureRandom RNG = new SecureRandom();
+    private static volatile boolean capabilityAnnounced = false;
 
     private ServerMediaNetworking() {
     }
@@ -26,15 +29,26 @@ public final class ServerMediaNetworking {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             INCOMING.clear();
             ServerMediaClient.clearRuntimeState();
+            capabilityAnnounced = false;
         });
 
         ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CCapability.TYPE, (payload, context) -> {
             ServerMediaCapability.StorageMode mode = payload.storageMode() == 1
                     ? ServerMediaCapability.StorageMode.DISK
                     : ServerMediaCapability.StorageMode.MEMORY;
-            context.client().execute(() -> ServerMediaClient.setCapability(
-                    new ServerMediaCapability(payload.enabled(), payload.maxSingleBytes(), payload.maxChunkBytes(), mode,
-                            payload.ttlSeconds())));
+            context.client().execute(() -> {
+                ServerMediaClient.setCapability(
+                        new ServerMediaCapability(payload.enabled(), payload.maxSingleBytes(), payload.maxChunkBytes(), mode,
+                                payload.ttlSeconds()));
+                boolean uploadReady = payload.enabled() && payload.maxSingleBytes() > 0 && payload.maxChunkBytes() > 0;
+                if (uploadReady && !capabilityAnnounced) {
+                    capabilityAnnounced = true;
+                    if (context.client().player != null) {
+                        context.client().player.sendSystemMessage(
+                                Component.literal("[Chat Upgrade] 服务端上传可用").withStyle(ChatFormatting.GREEN));
+                    }
+                }
+            });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) -> {

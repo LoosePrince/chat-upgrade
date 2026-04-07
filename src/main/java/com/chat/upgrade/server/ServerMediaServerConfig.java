@@ -19,7 +19,7 @@ public final class ServerMediaServerConfig {
     private static final Object LOCK = new Object();
     private static volatile ServerMediaServerConfig instance = defaults();
 
-    public boolean enabled = false;
+    public boolean enabled = true;
     public StorageMode storageMode = StorageMode.MEMORY;
     public int maxSingleBytes = 2 * 1024 * 1024;
     public int maxChunkBytes = 32 * 1024;
@@ -67,7 +67,7 @@ public final class ServerMediaServerConfig {
 
     private static ServerMediaServerConfig defaults() {
         ServerMediaServerConfig c = new ServerMediaServerConfig();
-        c.enabled = false;
+        c.enabled = true;
         c.storageMode = StorageMode.MEMORY;
         c.maxSingleBytes = 2 * 1024 * 1024;
         c.maxChunkBytes = 32 * 1024;

@@ -6,13 +6,13 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.chat.upgrade.ChatUpgrade;
+import com.chat.upgrade.client.upload.UploadRouter;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.chat.upgrade.client.upload.UploadRouter;
-
-import org.jetbrains.annotations.Nullable;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -23,7 +23,11 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 
 public class ChatUpgradeClient implements ClientModInitializer {
     private static int lastGuiScaledWidth = -1;
@@ -380,7 +384,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
         return switch (v) {
             case "auto" -> ChatUpgradeConfig.UploadMode.AUTO;
             case "server" -> ChatUpgradeConfig.UploadMode.SERVER;
-            case "third", "third_party", "thirdparty", "litterbox", "catbox" -> ChatUpgradeConfig.UploadMode.THIRD_PARTY;
+            case "third", "third_party", "thirdparty", "litterbox", "catbox" ->
+                ChatUpgradeConfig.UploadMode.THIRD_PARTY;
             default -> null;
         };
     }
@@ -845,8 +850,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(Component.literal("上传失败（网络、文件或 Litterbox 返回错误）。")
-                        .withStyle(ChatFormatting.RED));
+                source.sendError(uploadFailedMessage("上传"));
                 return;
             }
             String url = urlOpt.get();
@@ -865,8 +869,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(Component.literal("音频上传失败（网络、文件或 Litterbox 返回错误）。")
-                        .withStyle(ChatFormatting.RED));
+                source.sendError(uploadFailedMessage("音频上传"));
                 return;
             }
             String url = urlOpt.get();
@@ -885,8 +888,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(Component.literal("视频上传失败（网络、文件或 Litterbox 返回错误）。")
-                        .withStyle(ChatFormatting.RED));
+                source.sendError(uploadFailedMessage("视频上传"));
                 return;
             }
             String url = urlOpt.get();
@@ -923,8 +925,33 @@ public class ChatUpgradeClient implements ClientModInitializer {
         return switch (mode) {
             case THIRD_PARTY -> "正在上传到 Litterbox（1 小时有效）…";
             case SERVER -> "正在上传到服务器…";
-            case AUTO -> serverCap ? "正在上传（优先服务器，失败则回退第三方）…" : "正在上传到 Litterbox（1 小时有效）…";
+            case AUTO -> serverCap ? "正在上传到服务器…" : "正在上传到 Litterbox（1 小时有效）…";
         };
+    }
+
+    private static Component uploadFailedMessage(String actionLabel) {
+        ChatUpgradeConfig.UploadMode mode = ChatUpgradeConfig.get().uploadMode;
+        boolean serverAttempted = switch (mode) {
+            case SERVER -> true;
+            case AUTO -> ServerMediaClient.capability().enabled();
+            case THIRD_PARTY -> false;
+        };
+        if (!serverAttempted) {
+            return Component.literal(actionLabel + "失败（网络、文件或 Litterbox 返回错误）。")
+                    .withStyle(ChatFormatting.RED);
+        }
+        MutableComponent tail = Component.literal("[切换为强制第三方]")
+                .withStyle(Style.EMPTY
+                        .withColor(ChatFormatting.YELLOW)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent.SuggestCommand("/chatupgrade config uploadmode third"))
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(
+                                "服务端上传失败时不会自动降级。\n"
+                                        + "可切换到强制第三方后重试：\n"
+                                        + "/chatupgrade config uploadmode third"))));
+        return Component.literal(actionLabel + "失败（服务端上传不可用或不满足服务端的限制）。 ")
+                .withStyle(ChatFormatting.RED)
+                .append(tail);
     }
 
     private static @Nullable byte[] readFileBytesQuiet(Path file) {

@@ -24,10 +24,7 @@ public final class UploadRouter {
             case SERVER -> new ServerUploadProvider(type).uploadBytes(data, filename, contentType);
             case AUTO -> {
                 if (ServerMediaClient.capability().enabled()) {
-                    yield new ServerUploadProvider(type).uploadBytes(data, filename, contentType)
-                            .thenCompose(opt -> opt.isPresent()
-                                    ? CompletableFuture.completedFuture(opt)
-                                    : THIRD_PARTY.uploadBytes(data, filename, contentType));
+                    yield new ServerUploadProvider(type).uploadBytes(data, filename, contentType);
                 }
                 yield THIRD_PARTY.uploadBytes(data, filename, contentType);
             }
