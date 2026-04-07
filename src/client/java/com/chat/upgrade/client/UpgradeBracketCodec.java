@@ -337,7 +337,13 @@ public final class UpgradeBracketCodec {
                 sb.append("状态: ").append(switch (e.getState()) {
                     case LOADING -> "加载中(" + (e.getLoadPhase() == ImageEntry.LoadPhase.DECODE ? "解码" : "下载") + ")";
                     case LOADED -> "已加载";
-                    case FAILED -> "加载失败";
+                    case FAILED -> {
+                        ImageEntry.FailureKind fk = e.getFailureKind();
+                        yield switch (fk) {
+                            case RESPONSE_BODY_TOO_LARGE -> "加载失败(文件过大)";
+                            case UNKNOWN -> "加载失败(可能是网络错误/文件失效)";
+                        };
+                    }
                 }).append('\n');
                 sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
@@ -364,7 +370,14 @@ public final class UpgradeBracketCodec {
                 sb.append("状态: ").append(switch (e.getState()) {
                     case LOADING -> "加载中(" + (e.getLoadPhase() == AudioEntry.LoadPhase.DECODE ? "解码" : "下载") + ")";
                     case LOADED -> AudioPlayerService.isPlaying(url) ? "播放中" : "已加载(暂停)";
-                    case FAILED -> "加载失败";
+                    case FAILED -> {
+                        AudioEntry.FailureKind fk = e.getFailureKind();
+                        yield switch (fk) {
+                            case RESPONSE_BODY_TOO_LARGE -> "加载失败(文件过大)";
+                            case UNSUPPORTED_AUDIO_FORMAT -> "加载失败(不支持的音频格式)";
+                            case UNKNOWN -> "加载失败(可能是网络错误/文件失效)";
+                        };
+                    }
                 }).append('\n');
                 sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
@@ -381,7 +394,14 @@ public final class UpgradeBracketCodec {
                 sb.append("状态: ").append(switch (e.getState()) {
                     case LOADING -> "加载中(" + (e.getLoadPhase() == VideoEntry.LoadPhase.DECODE ? "解码" : "下载") + ")";
                     case LOADED -> VideoPlayerService.isPlaying(url) ? "播放中" : "已加载(暂停)";
-                    case FAILED -> "加载失败";
+                    case FAILED -> {
+                        VideoEntry.FailureKind fk = e.getFailureKind();
+                        yield switch (fk) {
+                            case RESPONSE_BODY_TOO_LARGE -> "加载失败(文件过大)";
+                            case UNSUPPORTED_VIDEO_FORMAT -> "加载失败(不支持的视频格式)";
+                            case UNKNOWN -> "加载失败(可能是网络错误/文件失效)";
+                        };
+                    }
                 }).append('\n');
                 sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
                 sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');

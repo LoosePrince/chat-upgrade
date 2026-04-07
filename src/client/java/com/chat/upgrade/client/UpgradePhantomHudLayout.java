@@ -165,6 +165,7 @@ public final class UpgradePhantomHudLayout {
         for (GuiMessage parent : parents) {
             stripPhantomBlock(trimmedMessages, parent, url, InlineResourceType.IMAGE);
             applyImageFailureOnTextLines(trimmedMessages, parent, failureKind);
+            applyHoverRefreshOnTextLines(trimmedMessages, parent, InlineResourceType.IMAGE, url);
         }
     }
 
@@ -186,6 +187,7 @@ public final class UpgradePhantomHudLayout {
         for (GuiMessage parent : parents) {
             stripPhantomBlock(trimmedMessages, parent, url, InlineResourceType.AUDIO);
             applyAudioFailureOnTextLines(trimmedMessages, parent, failureKind);
+            applyHoverRefreshOnTextLines(trimmedMessages, parent, InlineResourceType.AUDIO, url);
         }
     }
 
@@ -207,6 +209,7 @@ public final class UpgradePhantomHudLayout {
         for (GuiMessage parent : parents) {
             stripPhantomBlock(trimmedMessages, parent, url, InlineResourceType.VIDEO);
             applyVideoFailureOnTextLines(trimmedMessages, parent, failureKind);
+            applyHoverRefreshOnTextLines(trimmedMessages, parent, InlineResourceType.VIDEO, url);
         }
     }
 
