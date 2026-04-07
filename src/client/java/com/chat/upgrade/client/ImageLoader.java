@@ -101,6 +101,20 @@ public final class ImageLoader {
         return CACHE.get(url);
     }
 
+    public static void forceReload(String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ImageEntry existing = CACHE.remove(url);
+        if (mc != null && existing != null && existing.isLoaded()) {
+            var textures = mc.getTextureManager();
+            existing.forEachRegisteredTexture(textures::release);
+        }
+        UpgradePhantomHudLayout.clearLayoutRegistrations();
+        getOrLoad(url);
+    }
+
     private static void startLoad(String url, ImageEntry entry) {
         CompletableFuture.supplyAsync(() -> {
             return MediaFetchSupport.sendGet(url, 15, "image");

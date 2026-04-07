@@ -30,6 +30,16 @@ public final class AudioLoader {
         return CACHE.get(url);
     }
 
+    public static void forceReload(String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        CACHE.remove(url);
+        AudioPlayerService.stopAndRemove(url);
+        notifyChanged(url);
+        getOrLoad(url);
+    }
+
     private static void startLoad(String url, AudioEntry entry) {
         CompletableFuture.supplyAsync(() -> {
             return MediaFetchSupport.sendGet(url, 20, "audio");

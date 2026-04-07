@@ -51,6 +51,15 @@ public final class AudioPlayerService {
         ACTIVE_PLAYBACK.clear();
     }
 
+    public static void stopAndRemove(String url) {
+        AudioSession s = SESSIONS.remove(url);
+        if (s != null) {
+            s.close();
+        }
+        LOOP_ENABLED.remove(url);
+        ACTIVE_PLAYBACK.deactivateIfActive(url);
+    }
+
     public static void setGlobalVolumePercent(int percent) {
         int clamped = Math.clamp(percent, 1, 100);
         for (AudioSession session : SESSIONS.values()) {

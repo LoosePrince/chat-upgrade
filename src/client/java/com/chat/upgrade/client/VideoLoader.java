@@ -34,6 +34,16 @@ public final class VideoLoader {
         return CACHE.get(url);
     }
 
+    public static void forceReload(String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        VideoPlayerService.remove(url);
+        CACHE.remove(url);
+        notifyChanged(url);
+        getOrLoad(url);
+    }
+
     private static void startLoad(String url, VideoEntry entry) {
         CompletableFuture.supplyAsync(() -> {
             return MediaFetchSupport.sendGet(url, 20, "video");

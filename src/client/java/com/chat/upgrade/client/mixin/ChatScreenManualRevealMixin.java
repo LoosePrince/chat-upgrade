@@ -12,7 +12,6 @@ import com.chat.upgrade.client.AudioFloatingWindow;
 import com.chat.upgrade.client.AudioFloatingWindowClickEvent;
 import com.chat.upgrade.client.AudioLoader;
 import com.chat.upgrade.client.AudioPlayerService;
-import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ImagePreviewClickEvent;
 import com.chat.upgrade.client.ImagePreviewScreen;
 import com.chat.upgrade.client.ImageLoader;
@@ -106,22 +105,14 @@ public abstract class ChatScreenManualRevealMixin {
             return;
         }
         ManualRevealClickEvent.Parsed reveal = revealOpt.get();
-        boolean enabled = switch (reveal.type()) {
-            case IMAGE -> ChatUpgradeConfig.get().manualImageReveal;
-            case AUDIO -> ChatUpgradeConfig.get().manualAudioReveal;
-            case VIDEO -> ChatUpgradeConfig.get().manualVideoReveal;
-        };
-        if (!enabled) {
-            return;
-        }
         String layoutKey = reveal.url();
         if (reveal.type() == InlineResourceType.IMAGE) {
-            ImageLoader.getOrLoad(reveal.url());
+            ImageLoader.forceReload(reveal.url());
         } else if (reveal.type() == InlineResourceType.AUDIO) {
-            AudioLoader.getOrLoad(reveal.url());
+            AudioLoader.forceReload(reveal.url());
             layoutKey = "audio:" + reveal.url();
         } else {
-            VideoLoader.getOrLoad(reveal.url());
+            VideoLoader.forceReload(reveal.url());
             layoutKey = "video:" + reveal.url();
         }
         Minecraft minecraft = Minecraft.getInstance();

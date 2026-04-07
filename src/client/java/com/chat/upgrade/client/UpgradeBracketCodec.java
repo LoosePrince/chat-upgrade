@@ -256,12 +256,14 @@ public final class UpgradeBracketCodec {
             case AUDIO -> ChatUpgradeConfig.get().manualAudioReveal;
             case VIDEO -> ChatUpgradeConfig.get().manualVideoReveal;
         };
-        if (manualRevealEnabled && imageUrl != null && !imageUrl.isBlank()) {
-            String actionText = switch (type) {
-                case IMAGE -> "点击加载图片预览";
-                case AUDIO -> "点击加载音频预览";
-                case VIDEO -> "点击加载视频预览";
-            };
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            String actionText = manualRevealEnabled
+                    ? switch (type) {
+                        case IMAGE -> "点击加载/刷新图片预览";
+                        case AUDIO -> "点击加载/刷新音频预览";
+                        case VIDEO -> "点击加载/刷新视频预览";
+                    }
+                    : "点击强制重新加载预览(跳过缓存)";
             style = style.withUnderlined(true)
                     .withClickEvent(ManualRevealClickEvent.forResource(type, imageUrl))
                     .withHoverEvent(new HoverEvent.ShowText(
