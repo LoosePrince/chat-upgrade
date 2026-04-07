@@ -41,7 +41,6 @@ public final class ServerMediaServerNetworking {
             context.server().execute(() -> ServerMediaService.beginUpload(
                     payload.uploadId(),
                     payload.typeWire(),
-                    payload.fileName(),
                     payload.contentType(),
                     payload.totalLen(),
                     payload.totalChunks()));

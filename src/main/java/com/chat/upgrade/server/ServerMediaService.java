@@ -48,12 +48,12 @@ public final class ServerMediaService {
         store = new InMemoryMediaStore();
     }
 
-    public static void beginUpload(long uploadId, String typeWire, String fileName, String contentType,
+    public static void beginUpload(long uploadId, String typeWire, String contentType,
             int totalLen, int totalChunks) {
         if (uploadId == 0L) {
             return;
         }
-        UPLOADS.put(uploadId, new PendingUpload(uploadId, typeWire, fileName, contentType, totalLen, totalChunks));
+        UPLOADS.put(uploadId, new PendingUpload(uploadId, typeWire, contentType, totalLen, totalChunks));
     }
 
     public static Optional<UploadCompleted> acceptUploadChunk(long uploadId, int idx, byte[] chunk,
@@ -147,7 +147,6 @@ public final class ServerMediaService {
     private static final class PendingUpload {
         private final long uploadId;
         private final String typeWire;
-        private final String fileName;
         private final String contentType;
         private final int totalLen;
         private final int totalChunks;
@@ -155,11 +154,10 @@ public final class ServerMediaService {
         private int receivedChunks = 0;
         private int receivedBytes = 0;
 
-        PendingUpload(long uploadId, String typeWire, String fileName, String contentType, int totalLen,
+        PendingUpload(long uploadId, String typeWire, String contentType, int totalLen,
                 int totalChunks) {
             this.uploadId = uploadId;
             this.typeWire = typeWire == null ? "image" : typeWire;
-            this.fileName = fileName == null ? "" : fileName;
             this.contentType = contentType == null ? "application/octet-stream" : contentType;
             this.totalLen = Math.max(0, totalLen);
             this.totalChunks = Math.max(0, totalChunks);
