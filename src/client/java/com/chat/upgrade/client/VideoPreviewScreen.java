@@ -20,10 +20,12 @@ public final class VideoPreviewScreen extends Screen {
     private static final int PROGRESS_H = 4;
 
     private final String url;
+    private final @Nullable String nameHint;
 
-    public VideoPreviewScreen(String url) {
+    public VideoPreviewScreen(String url, @Nullable String nameHint) {
         super(Component.literal("视频预览"));
         this.url = url;
+        this.nameHint = nameHint;
     }
 
     @Override
@@ -36,7 +38,7 @@ public final class VideoPreviewScreen extends Screen {
         super.extractRenderState(guiGraphics, mouseX, mouseY, partialTick);
 
         VideoEntry entry = VideoLoader.getOrLoad(url);
-        String name = AudioUiLayout.shortName(null, url);
+        String name = AudioUiLayout.shortName(nameHint, url);
         String size = ChatUpgradeFormatters.formatBytes(entry.getFetchedByteLength());
         String link = url.length() > 56 ? url.substring(0, 53) + "..." : url;
 
@@ -130,13 +132,13 @@ public final class VideoPreviewScreen extends Screen {
         return false;
     }
 
-    public static void open(String url) {
+    public static void open(String url, @Nullable String nameHint) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
             return;
         }
         VideoLoader.getOrLoad(url);
-        mc.setScreen(new VideoPreviewScreen(url));
+        mc.setScreen(new VideoPreviewScreen(url, nameHint));
     }
 
     private void renderControls(GuiGraphicsExtractor guiGraphics, int panelLeft, int panelRight, int controlTop) {
@@ -155,7 +157,7 @@ public final class VideoPreviewScreen extends Screen {
         String left = ChatUpgradeFormatters.formatMs(pos);
         String right = ChatUpgradeFormatters.formatMs(total);
         int leftX = btnX1 + 8;
-        int rightX = panelRight - font.width(right);
+        int rightX = panelRight - font.width(right) - 6;
         guiGraphics.text(font, left, leftX, controlTop + 5, 0xFFCAD2DD, false);
         guiGraphics.text(font, right, rightX, controlTop + 5, 0xFFCAD2DD, false);
 

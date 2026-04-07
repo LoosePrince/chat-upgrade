@@ -87,15 +87,17 @@ public abstract class ChatScreenManualRevealMixin {
             cir.setReturnValue(true);
             return;
         }
-        Optional<String> videoPreviewUrlOpt = VideoPreviewClickEvent.parse(clickEvent);
-        if (videoPreviewUrlOpt.isPresent()) {
-            VideoPreviewScreen.open(videoPreviewUrlOpt.get());
+        Optional<VideoPreviewClickEvent.Parsed> videoPreviewOpt = VideoPreviewClickEvent.parse(clickEvent);
+        if (videoPreviewOpt.isPresent()) {
+            VideoPreviewClickEvent.Parsed p = videoPreviewOpt.get();
+            VideoPreviewScreen.open(p.url(), p.name());
             cir.setReturnValue(true);
             return;
         }
-        Optional<String> imagePreviewUrlOpt = ImagePreviewClickEvent.parse(clickEvent);
-        if (imagePreviewUrlOpt.isPresent()) {
-            ImagePreviewScreen.open(imagePreviewUrlOpt.get());
+        Optional<ImagePreviewClickEvent.Parsed> imagePreviewOpt = ImagePreviewClickEvent.parse(clickEvent);
+        if (imagePreviewOpt.isPresent()) {
+            ImagePreviewClickEvent.Parsed p = imagePreviewOpt.get();
+            ImagePreviewScreen.open(p.url(), p.name());
             cir.setReturnValue(true);
             return;
         }

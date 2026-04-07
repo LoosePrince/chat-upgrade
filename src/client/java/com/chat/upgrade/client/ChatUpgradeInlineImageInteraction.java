@@ -186,7 +186,8 @@ public final class ChatUpgradeInlineImageInteraction {
                 continue;
             }
             if (p.resourceType == InlineResourceType.IMAGE) {
-                return Style.EMPTY.withClickEvent(ImagePreviewClickEvent.forUrl(p.url));
+                String name = p.resourceName == null ? "" : p.resourceName;
+                return Style.EMPTY.withClickEvent(ImagePreviewClickEvent.forUrlAndName(p.url, name));
             }
             continue;
         }
@@ -216,7 +217,10 @@ public final class ChatUpgradeInlineImageInteraction {
         return switch (action.kind()) {
             case TOGGLE -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
             case SEEK -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(p.url, action.ratio()));
-            case OPEN_PREVIEW -> Style.EMPTY.withClickEvent(VideoPreviewClickEvent.forUrl(p.url));
+            case OPEN_PREVIEW -> {
+                String name = p.resourceName == null ? "" : p.resourceName;
+                yield Style.EMPTY.withClickEvent(VideoPreviewClickEvent.forUrlAndName(p.url, name));
+            }
             case NONE -> null;
         };
     }

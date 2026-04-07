@@ -22,14 +22,16 @@ public final class ImagePreviewScreen extends Screen {
     private static final int BTN_W = 44;
 
     private final String url;
+    private final @Nullable String nameHint;
     private float scale = 1.0f;
     private float rotationDeg = 0.0f;
     private double panX = 0.0;
     private double panY = 0.0;
 
-    public ImagePreviewScreen(String url) {
+    public ImagePreviewScreen(String url, @Nullable String nameHint) {
         super(Component.literal("图片预览"));
         this.url = url;
+        this.nameHint = nameHint;
     }
 
     @Override
@@ -39,7 +41,7 @@ public final class ImagePreviewScreen extends Screen {
         ImageEntry entry = ImageLoader.getOrLoad(url);
         int panelLeft = GAP;
         int panelRight = width - GAP;
-        String name = AudioUiLayout.shortName(null, url);
+        String name = AudioUiLayout.shortName(nameHint, url);
         String size = ChatUpgradeFormatters.formatBytes(entry.getFetchedByteLength());
         String link = url.length() > 56 ? url.substring(0, 53) + "..." : url;
         String header = "名称: " + name + "  |  大小: " + size + "  |  链接: " + link;
@@ -172,13 +174,13 @@ public final class ImagePreviewScreen extends Screen {
         return false;
     }
 
-    public static void open(String url) {
+    public static void open(String url, @Nullable String nameHint) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
             return;
         }
         ImageLoader.getOrLoad(url);
-        mc.setScreen(new ImagePreviewScreen(url));
+        mc.setScreen(new ImagePreviewScreen(url, nameHint));
     }
 
     private void resetTransform() {

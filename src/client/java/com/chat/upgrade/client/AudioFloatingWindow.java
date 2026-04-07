@@ -9,7 +9,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.util.Util;
 
 public final class AudioFloatingWindow {
-    private static final int WIDTH = UpgradeHudInlinePaint.AUDIO_WIDTH;
+    private static final int WIDTH = Math.max(96, UpgradeHudInlinePaint.AUDIO_WIDTH / 2);
     private static final int HEIGHT = UpgradeHudInlinePaint.AUDIO_HEIGHT;
     private static final int PAD = UpgradeHudInlinePaint.AUDIO_PAD_X;
     private static final int BTN_W = 14;
