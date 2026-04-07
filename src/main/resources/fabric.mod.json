@@ -21,6 +21,7 @@
 		]
 	},
 	"mixins": [
+		"chat-upgrade.mixins.json",
 		{
 			"config": "chat-upgrade.client.mixins.json",
 			"environment": "client"
