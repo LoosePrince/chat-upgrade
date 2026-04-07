@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class InMemoryMediaStore implements MediaStore {
     private final ConcurrentHashMap<String, StoredMedia> map = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> mediaIdByFingerprint = new ConcurrentHashMap<>();
     private final AtomicLong totalBytes = new AtomicLong(0L);
 
     @Override
@@ -19,6 +20,14 @@ public final class InMemoryMediaStore implements MediaStore {
     }
 
     @Override
+    public Optional<String> findMediaIdByFingerprint(String fingerprint) {
+        if (fingerprint == null || fingerprint.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(mediaIdByFingerprint.get(fingerprint));
+    }
+
+    @Override
     public void put(StoredMedia media) {
         if (media == null || media.mediaId() == null || media.mediaId().isBlank()) {
             return;
@@ -26,8 +35,14 @@ public final class InMemoryMediaStore implements MediaStore {
         StoredMedia prev = map.put(media.mediaId(), media);
         if (prev != null) {
             totalBytes.addAndGet(-prev.byteLength());
+            if (prev.fingerprint() != null && !prev.fingerprint().isBlank()) {
+                mediaIdByFingerprint.remove(prev.fingerprint(), prev.mediaId());
+            }
         }
         totalBytes.addAndGet(media.byteLength());
+        if (media.fingerprint() != null && !media.fingerprint().isBlank()) {
+            mediaIdByFingerprint.put(media.fingerprint(), media.mediaId());
+        }
     }
 
     @Override
@@ -35,6 +50,9 @@ public final class InMemoryMediaStore implements MediaStore {
         StoredMedia prev = map.remove(mediaId);
         if (prev != null) {
             totalBytes.addAndGet(-prev.byteLength());
+            if (prev.fingerprint() != null && !prev.fingerprint().isBlank()) {
+                mediaIdByFingerprint.remove(prev.fingerprint(), prev.mediaId());
+            }
         }
     }
 

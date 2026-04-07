@@ -4,6 +4,7 @@ public record StoredMedia(
         String mediaId,
         String typeWire,
         String contentType,
+        String fingerprint,
         byte[] body,
         long createdAtMs,
         long expiresAtMs) {

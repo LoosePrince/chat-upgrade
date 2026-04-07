@@ -1,5 +1,6 @@
 package com.chat.upgrade.server;
 
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,12 +71,20 @@ public final class ServerMediaService {
         if (body.length > maxSingleBytes) {
             return Optional.of(new UploadCompleted(uploadId, null, "too_large"));
         }
+        String fingerprint = fingerprint(upload.typeWire(), body);
+        Optional<String> existingId = store.findMediaIdByFingerprint(fingerprint);
+        if (existingId.isPresent()) {
+            Optional<StoredMedia> existing = get(existingId.get());
+            if (existing.isPresent()) {
+                return Optional.of(new UploadCompleted(uploadId, existing.get().mediaId(), null));
+            }
+        }
         String mediaId = randomMediaIdHex();
         long now = System.currentTimeMillis();
         long ttlSeconds = ServerMediaServerConfig.get().ttlSeconds;
         long expiresAt = ttlSeconds <= 0 ? 0L : (now + ttlSeconds * 1000L);
         try {
-            store.put(new StoredMedia(mediaId, upload.typeWire(), upload.contentType(), body, now, expiresAt));
+            store.put(new StoredMedia(mediaId, upload.typeWire(), upload.contentType(), fingerprint, body, now, expiresAt));
         } catch (Exception e) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to store upload {}: {}", mediaId, e.getMessage());
             return Optional.of(new UploadCompleted(uploadId, null, "store_failed"));
@@ -110,6 +119,26 @@ public final class ServerMediaService {
             sb.append(Character.forDigit(x & 0xF, 16));
         }
         return sb.toString();
+    }
+
+    private static String fingerprint(String typeWire, byte[] body) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            if (typeWire != null) {
+                md.update(typeWire.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            md.update((byte) 0);
+            md.update(body);
+            byte[] sum = md.digest();
+            StringBuilder sb = new StringBuilder(sum.length * 2);
+            for (byte b : sum) {
+                sb.append(Character.forDigit((b >>> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "md5_error_" + System.nanoTime();
+        }
     }
 
     public record UploadCompleted(long uploadId, @Nullable String mediaId, @Nullable String error) {

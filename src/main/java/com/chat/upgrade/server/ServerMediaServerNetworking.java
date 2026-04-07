@@ -115,7 +115,7 @@ public final class ServerMediaServerNetworking {
                 media.mediaId(),
                 media.typeWire(),
                 media.contentType(),
-                "",
+                media.fingerprint() == null ? "" : media.fingerprint(),
                 totalLen,
                 totalChunks));
 

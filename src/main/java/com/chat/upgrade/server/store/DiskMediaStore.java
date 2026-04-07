@@ -19,6 +19,7 @@ public final class DiskMediaStore implements MediaStore {
 
     private final Path rootDir;
     private final ConcurrentHashMap<String, Meta> metaById = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> mediaIdByFingerprint = new ConcurrentHashMap<>();
     private final AtomicLong totalBytes = new AtomicLong(0L);
 
     public DiskMediaStore(Path rootDir) throws Exception {
@@ -43,12 +44,20 @@ public final class DiskMediaStore implements MediaStore {
                 return Optional.empty();
             }
             byte[] body = Files.readAllBytes(bin);
-            return Optional.of(new StoredMedia(mediaId, meta.typeWire, meta.contentType, body, meta.createdAtMs,
+            return Optional.of(new StoredMedia(mediaId, meta.typeWire, meta.contentType, meta.fingerprint, body, meta.createdAtMs,
                     meta.expiresAtMs));
         } catch (Exception e) {
             delete(mediaId);
             return Optional.empty();
         }
+    }
+
+    @Override
+    public Optional<String> findMediaIdByFingerprint(String fingerprint) {
+        if (fingerprint == null || fingerprint.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(mediaIdByFingerprint.get(fingerprint));
     }
 
     @Override
@@ -61,7 +70,7 @@ public final class DiskMediaStore implements MediaStore {
         Path metaPath = metaPath(id);
         Files.createDirectories(rootDir);
         Files.write(bin, media.body());
-        Meta meta = new Meta(id, media.typeWire(), media.contentType(), media.createdAtMs(), media.expiresAtMs(),
+        Meta meta = new Meta(id, media.typeWire(), media.contentType(), media.fingerprint(), media.createdAtMs(), media.expiresAtMs(),
                 media.byteLength());
         try (Writer w = Files.newBufferedWriter(metaPath)) {
             GSON.toJson(meta, w);
@@ -69,8 +78,14 @@ public final class DiskMediaStore implements MediaStore {
         Meta prev = metaById.put(id, meta);
         if (prev != null) {
             totalBytes.addAndGet(-prev.byteLen);
+            if (prev.fingerprint != null && !prev.fingerprint.isBlank()) {
+                mediaIdByFingerprint.remove(prev.fingerprint, prev.mediaId);
+            }
         }
         totalBytes.addAndGet(meta.byteLen);
+        if (meta.fingerprint != null && !meta.fingerprint.isBlank()) {
+            mediaIdByFingerprint.put(meta.fingerprint, id);
+        }
     }
 
     @Override
@@ -81,6 +96,9 @@ public final class DiskMediaStore implements MediaStore {
         Meta prev = metaById.remove(mediaId);
         if (prev != null) {
             totalBytes.addAndGet(-prev.byteLen);
+            if (prev.fingerprint != null && !prev.fingerprint.isBlank()) {
+                mediaIdByFingerprint.remove(prev.fingerprint, prev.mediaId);
+            }
         }
         try {
             Files.deleteIfExists(binPath(mediaId));
@@ -131,6 +149,9 @@ public final class DiskMediaStore implements MediaStore {
                     }
                     metaById.put(meta.mediaId, meta);
                     totalBytes.addAndGet(meta.byteLen);
+                    if (meta.fingerprint != null && !meta.fingerprint.isBlank()) {
+                        mediaIdByFingerprint.put(meta.fingerprint, meta.mediaId);
+                    }
                 } catch (Exception ignored) {
                 }
             }
@@ -149,14 +170,16 @@ public final class DiskMediaStore implements MediaStore {
         String mediaId;
         String typeWire;
         String contentType;
+        String fingerprint;
         long createdAtMs;
         long expiresAtMs;
         int byteLen;
 
-        Meta(String mediaId, String typeWire, String contentType, long createdAtMs, long expiresAtMs, int byteLen) {
+        Meta(String mediaId, String typeWire, String contentType, String fingerprint, long createdAtMs, long expiresAtMs, int byteLen) {
             this.mediaId = mediaId;
             this.typeWire = typeWire;
             this.contentType = contentType;
+            this.fingerprint = fingerprint;
             this.createdAtMs = createdAtMs;
             this.expiresAtMs = expiresAtMs;
             this.byteLen = byteLen;
