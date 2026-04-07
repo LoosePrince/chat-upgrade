@@ -30,6 +30,43 @@ public final class VideoLoader {
         });
     }
 
+    /**
+     * Completes a load from an already-available payload (e.g. resolved via server packets).
+     * The cache key is still the provided {@code url}.
+     */
+    public static void loadFromBytes(String url, byte[] body, String contentType, String md5Hex) {
+        if (url == null || url.isBlank() || body == null) {
+            return;
+        }
+        VideoEntry entry = CACHE.computeIfAbsent(url, u -> new VideoEntry());
+        int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
+        if (body.length > maxReceive) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: video bytes exceed limit ({}) for {}", maxReceive, url);
+            markFailed(url, entry, VideoEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+            return;
+        }
+        entry.setTransferMetadata(body.length, contentType == null ? "unknown" : contentType, md5Hex);
+        entry.setLoadPhase(VideoEntry.LoadPhase.DECODE);
+        CompletableFuture.runAsync(() -> {
+            if (!FfmpegNativeBootstrap.ensureReady()) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: video runtime not ready for {}, FFmpeg natives unavailable", url);
+                markFailed(url, entry, VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT);
+                return;
+            }
+            VideoPlayerService.Prepared meta;
+            try {
+                meta = VideoPlayerService.prepare(url, body);
+            } catch (Exception ex) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported video {}: {}", url, ex.getMessage());
+                markFailed(url, entry, VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT);
+                return;
+            }
+            PreviewLayout layout = computePreviewLayout(meta.rawWidth(), meta.rawHeight());
+            entry.setLoaded(meta.durationMs(), meta.rawWidth(), meta.rawHeight(), layout.displayW(), layout.displayH());
+            notifyChanged(url);
+        });
+    }
+
     public static VideoEntry getIfPresent(String url) {
         return CACHE.get(url);
     }
@@ -38,6 +75,9 @@ public final class VideoLoader {
         if (url == null || url.isBlank()) {
             return;
         }
+        if (ServerMediaClient.isServerMediaUrl(url)) {
+            ServerMediaClient.forgetRequestForUrl(url);
+        }
         VideoPlayerService.remove(url);
         CACHE.remove(url);
         notifyChanged(url);
@@ -45,6 +85,14 @@ public final class VideoLoader {
     }
 
     private static void startLoad(String url, VideoEntry entry) {
+        if (ServerMediaClient.isServerMediaUrl(url)) {
+            if (!ServerMediaClient.capability().enabled()) {
+                markFailed(url, entry, VideoEntry.FailureKind.UNKNOWN);
+                return;
+            }
+            ServerMediaClient.requestIfNeeded(url);
+            return;
+        }
         CompletableFuture.supplyAsync(() -> {
             return MediaFetchSupport.sendGet(url, 20, "video");
         }).thenAccept(response -> {

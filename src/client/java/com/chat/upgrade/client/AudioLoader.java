@@ -26,6 +26,42 @@ public final class AudioLoader {
         });
     }
 
+    /**
+     * Completes a load from an already-available payload (e.g. resolved via server packets).
+     * The cache key is still the provided {@code url}.
+     */
+    public static void loadFromBytes(String url, byte[] body, String contentType, String md5Hex) {
+        if (url == null || url.isBlank() || body == null) {
+            return;
+        }
+        AudioEntry entry = CACHE.computeIfAbsent(url, u -> new AudioEntry());
+        int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
+        if (body.length > maxReceive) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: audio bytes exceed limit ({}) for {}", maxReceive, url);
+            markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+            return;
+        }
+        entry.setTransferMetadata(body.length, contentType == null ? "unknown" : contentType, md5Hex);
+        entry.setLoadPhase(AudioEntry.LoadPhase.DECODE);
+        CompletableFuture.runAsync(() -> {
+            if (!FfmpegNativeBootstrap.ensureReady()) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: audio runtime not ready for {}, FFmpeg natives unavailable", url);
+                markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                return;
+            }
+            long durationMs;
+            try {
+                durationMs = AudioPlayerService.prepare(url, body);
+            } catch (Exception ex) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, ex.getMessage());
+                markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                return;
+            }
+            entry.setLoaded(durationMs);
+            notifyChanged(url);
+        });
+    }
+
     public static AudioEntry getIfPresent(String url) {
         return CACHE.get(url);
     }
@@ -34,6 +70,9 @@ public final class AudioLoader {
         if (url == null || url.isBlank()) {
             return;
         }
+        if (ServerMediaClient.isServerMediaUrl(url)) {
+            ServerMediaClient.forgetRequestForUrl(url);
+        }
         CACHE.remove(url);
         AudioPlayerService.stopAndRemove(url);
         notifyChanged(url);
@@ -41,6 +80,14 @@ public final class AudioLoader {
     }
 
     private static void startLoad(String url, AudioEntry entry) {
+        if (ServerMediaClient.isServerMediaUrl(url)) {
+            if (!ServerMediaClient.capability().enabled()) {
+                markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
+                return;
+            }
+            ServerMediaClient.requestIfNeeded(url);
+            return;
+        }
         CompletableFuture.supplyAsync(() -> {
             return MediaFetchSupport.sendGet(url, 20, "audio");
         }).thenAccept(response -> {

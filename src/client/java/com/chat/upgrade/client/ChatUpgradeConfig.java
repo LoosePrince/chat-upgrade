@@ -71,6 +71,19 @@ public final class ChatUpgradeConfig {
     public int audioVolumePercent = 100;
     public int videoVolumePercent = 100;
 
+    /**
+     * Upload routing mode for {@code /chatupgrade upload*}.
+     * <p>
+     * AUTO: prefer server upload if the server advertises capability, otherwise third-party.
+     */
+    public UploadMode uploadMode = UploadMode.AUTO;
+
+    public enum UploadMode {
+        AUTO,
+        SERVER,
+        THIRD_PARTY
+    }
+
     private static ChatUpgradeConfig defaults() {
         ChatUpgradeConfig c = new ChatUpgradeConfig();
         c.ciCompatibility = false;
@@ -81,6 +94,7 @@ public final class ChatUpgradeConfig {
         c.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
         c.audioVolumePercent = 100;
         c.videoVolumePercent = 100;
+        c.uploadMode = UploadMode.AUTO;
         c.normalizeLimits();
         return c;
     }
@@ -106,6 +120,9 @@ public final class ChatUpgradeConfig {
         maxReceiveBytes = Math.min(maxReceiveBytes, ABSOLUTE_MAX_TRANSFER_BYTES);
         audioVolumePercent = Math.clamp(audioVolumePercent, 1, 100);
         videoVolumePercent = Math.clamp(videoVolumePercent, 1, 100);
+        if (uploadMode == null) {
+            uploadMode = UploadMode.AUTO;
+        }
         return beforeReceive != maxReceiveBytes
                 || beforeUpload != maxUploadBytes
                 || beforeAudioVolume != audioVolumePercent
@@ -231,6 +248,13 @@ public final class ChatUpgradeConfig {
     public static void setVideoVolumePercentAndSave(int percent) throws IOException {
         synchronized (LOCK) {
             instance.videoVolumePercent = Math.clamp(percent, 1, 100);
+            writeConfigFile();
+        }
+    }
+
+    public static void setUploadModeAndSave(UploadMode mode) throws IOException {
+        synchronized (LOCK) {
+            instance.uploadMode = mode == null ? UploadMode.AUTO : mode;
             writeConfigFile();
         }
     }

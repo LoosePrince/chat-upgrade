@@ -11,6 +11,8 @@ import java.util.regex.Pattern;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.chat.upgrade.net.ServerMediaUrl;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -599,7 +601,9 @@ public final class UpgradeBracketCodec {
     }
 
     public static String buildSendPayload(String url, String name, InlineResourceType type) {
-        boolean useLegacy = type == InlineResourceType.IMAGE && ChatUpgradeConfig.get().ciCompatibility;
+        boolean useLegacy = type == InlineResourceType.IMAGE
+                && ChatUpgradeConfig.get().ciCompatibility
+                && !ServerMediaUrl.isServerMediaUrl(url);
         return useLegacy
                 ? encodeLegacyTagBlock(url, name, type)
                 : encodeNativeTagBlock(url, name, type);

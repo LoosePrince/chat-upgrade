@@ -95,6 +95,40 @@ public final class ImageLoader {
     }
 
     /**
+     * Completes a load from an already-available payload (e.g. resolved via server packets).
+     * The cache key is still the provided {@code url}.
+     */
+    public static void loadFromBytes(String url, byte[] body, String contentType, @Nullable String md5Hex) {
+        if (url == null || url.isBlank() || body == null) {
+            return;
+        }
+        ImageEntry entry = CACHE.computeIfAbsent(url, u -> new ImageEntry());
+        entry.setTransferMetadata(body.length, contentType == null ? "unknown" : contentType, md5Hex);
+        entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
+        CompletableFuture.runAsync(() -> {
+            try {
+                Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
+                if (animatedOpt.isEmpty()) {
+                    animatedOpt = WebpAnimatedDecoder.tryDecode(body);
+                }
+                if (animatedOpt.isEmpty()) {
+                    animatedOpt = ApngAnimatedDecoder.tryDecode(body);
+                }
+                if (animatedOpt.isPresent()) {
+                    AnimatedDecodeResult r = animatedOpt.get();
+                    scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
+                    return;
+                }
+                NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
+                scheduleTextureRegistration(url, entry, img);
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {} from bytes: {}", url, e.getMessage());
+                markFailed(url, entry);
+            }
+        });
+    }
+
+    /**
      * Returns the cached entry without starting a load, or null.
      */
     public static ImageEntry getIfPresent(String url) {
@@ -104,6 +138,9 @@ public final class ImageLoader {
     public static void forceReload(String url) {
         if (url == null || url.isBlank()) {
             return;
+        }
+        if (ServerMediaClient.isServerMediaUrl(url)) {
+            ServerMediaClient.forgetRequestForUrl(url);
         }
         Minecraft mc = Minecraft.getInstance();
         ImageEntry existing = CACHE.remove(url);
@@ -116,6 +153,14 @@ public final class ImageLoader {
     }
 
     private static void startLoad(String url, ImageEntry entry) {
+        if (ServerMediaClient.isServerMediaUrl(url)) {
+            if (!ServerMediaClient.capability().enabled()) {
+                markFailed(url, entry);
+                return;
+            }
+            ServerMediaClient.requestIfNeeded(url);
+            return;
+        }
         CompletableFuture.supplyAsync(() -> {
             return MediaFetchSupport.sendGet(url, 15, "image");
         }).thenAccept(response -> {

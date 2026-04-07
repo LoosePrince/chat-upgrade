@@ -5,6 +5,14 @@ public enum InlineResourceType {
     AUDIO,
     VIDEO;
 
+    public String toWire() {
+        return switch (this) {
+            case IMAGE -> "image";
+            case AUDIO -> "audio";
+            case VIDEO -> "video";
+        };
+    }
+
     public static InlineResourceType fromWire(String value) {
         if (value == null) {
             return IMAGE;

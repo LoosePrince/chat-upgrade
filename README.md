@@ -11,12 +11,14 @@
 </div>
 
 
-基于 **Fabric** 的 Minecraft **客户端**模组：在聊天中识别形如 `[[ChatUpgrade,url=…]]` 的载荷文本，将链接替换为占位符，并在聊天栏内联渲染资源预览（图片、音频播放器、视频播放器）。
+基于 **Fabric** 的 Minecraft 模组：在聊天中识别形如 `[[ChatUpgrade,url=…]]` 的载荷文本，将链接替换为占位符，并在聊天栏内联渲染资源预览（图片、音频播放器、视频播放器）。
+
+同时提供一个**可选服务端功能**：当服务端也安装本模组并启用后，客户端上传不再依赖第三方网站，而是直接上传到服务器；聊天中发送的链接会变为内部特殊 URL（`chatupgrade://media/...`），其他客户端通过服务端数据包拉取媒体字节并渲染（该模式不支持 `CICode` 兼容标签）。
 
 ## 功能概要
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取资源（图片/音频/视频）→ 在对应消息下方预留行高并绘制预览。
-- **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；可选上传到 Litterbox（约 1 小时有效）再发链接。
+- **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；上传可走第三方 Litterbox（约 1 小时有效），或在服务端启用时走“直传服务器”。
 - **配置**：`config/chat-upgrade/chat-upgrade.json` 支持协议兼容、手动触发渲染、接收/上传上限、音频/视频音量；支持游戏内写入与重载。
 - **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片
 
@@ -51,6 +53,7 @@
 | `/chatupgrade uploadaudio pick <name>` | 打开文件选择器选音频并上传发送。 |
 | `/chatupgrade uploadvideo folder <path> <name>` | 从本机路径上传视频到 Litterbox 并发送视频载荷。 |
 | `/chatupgrade uploadvideo pick <name>` | 打开文件选择器选视频并上传发送。 |
+| `/chatupgrade config uploadmode <auto/server/third>` | 上传路由模式：`auto`（默认，服务端支持则直传，否则第三方）、`server`（强制直传服务器）、`third`（强制第三方/Litterbox）。 |
 | `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 图片兼容：`true` 时仅图片发送 `[[CICode,url=…]]`，音频/视频仍发送 `[[ChatUpgrade,url=…]]`；`false` 时全部发送 `[[ChatUpgrade,url=…]]`；写入配置。 |
 | `/chatupgrade config manual <true 或 false>` | 开关**图片手动触发渲染**：`true` 时需点击 `[图片: …]` 后才加载预览；写入配置。 |
 | `/chatupgrade config manualaudio <true 或 false>` | 开关**音频手动触发渲染**：`true` 时需点击 `[音频: …]` 后才加载预览；写入配置。 |
@@ -83,6 +86,28 @@
 | `videoVolumePercent` | `int(1~100)` | 视频播放音量百分比。 |
 | `maxReceiveBytes` | `int` | 接收上限（字节），最大 10 MiB。 |
 | `maxUploadBytes` | `int` | 上传上限（字节），最大 10 MiB。 |
+| `uploadMode` | `"AUTO" \| "SERVER" \| "THIRD_PARTY"` | 上传路由模式；`AUTO` 会在服务端启用直传时优先走服务器，否则走第三方。 |
+
+## 可选：服务端直传媒体（不支持 CICode）
+
+当服务端安装并启用后：
+
+- 客户端上传会直接发到服务器（聊天发送的 `url` 会是 `chatupgrade://media/<id>?t=<type>`），其他客户端会通过服务端数据包拉取字节并渲染。
+- **该模式不支持 `CICode`**：即使客户端开启 `ciCompatibility`，当 `url` 是 `chatupgrade://media/...` 时也会强制发送 `[[ChatUpgrade,...]]`。
+
+服务端配置文件位置：**`config/chat-upgrade/server-media.json`**
+
+常用字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `enabled` | `boolean` | 是否启用服务端直传与下发。 |
+| `storageMode` | `"MEMORY" \| "DISK"` | 存储策略：内存或落盘。 |
+| `diskFolderName` | `string` | 落盘目录名（相对 `config/chat-upgrade/`）。 |
+| `maxSingleBytes` | `int` | 单个媒体最大字节数（上限 10 MiB）。 |
+| `maxChunkBytes` | `int` | 自定义包分块大小（1~256 KiB）。 |
+| `maxTotalBytes` | `long` | 总容量上限（字节）；超出后按最旧优先驱逐。 |
+| `ttlSeconds` | `int` | 过期秒数；`0` 表示不过期（仍可能被容量驱逐）。 |
 
 图像上传扩展名支持：`png/apng/jpg/jpeg/gif/webp/bmp/tif/tiff/jfif/ico`
 

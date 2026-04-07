@@ -10,6 +10,9 @@ import com.chat.upgrade.ChatUpgrade;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.chat.upgrade.client.upload.UploadRouter;
+
+import org.jetbrains.annotations.Nullable;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -49,6 +52,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         registerCommands();
         registerHudTextureInvalidationOnResize();
         registerMediaCleanupOnDisconnect();
+        ServerMediaNetworking.initClient();
     }
 
     private static void registerHudTextureInvalidationOnResize() {
@@ -82,6 +86,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         VideoLoader.invalidateVideoCache();
         ImageLoader.invalidateTextureCache();
         AudioFloatingWindow.clear();
+        ServerMediaClient.clearRuntimeState();
     }
 
     private static void registerCommands() {
@@ -178,6 +183,11 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                         ctx.getSource(),
                                                         Optional.of(StringArgumentType.getString(ctx, "name")))))))
                         .then(ClientCommands.literal("config")
+                                .then(ClientCommands.literal("uploadmode")
+                                        .then(ClientCommands.argument("mode", StringArgumentType.word())
+                                                .executes(ctx -> setUploadMode(
+                                                        ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "mode")))))
                                 .then(ClientCommands.literal("ci")
                                         .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
                                                 .executes(ctx -> setCiCompatibility(
@@ -342,6 +352,37 @@ public class ChatUpgradeClient implements ClientModInitializer {
             source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
+    }
+
+    private static int setUploadMode(FabricClientCommandSource source, String modeRaw) {
+        ChatUpgradeConfig.UploadMode mode = parseUploadMode(modeRaw);
+        if (mode == null) {
+            source.sendError(Component.literal("未知 uploadMode: " + modeRaw + "（可选: auto/server/third）。")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        try {
+            ChatUpgradeConfig.setUploadModeAndSave(mode);
+            source.sendFeedback(Component.literal("uploadMode 已设为 " + mode.name() + "。")
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static @Nullable ChatUpgradeConfig.UploadMode parseUploadMode(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String v = raw.trim().toLowerCase();
+        return switch (v) {
+            case "auto" -> ChatUpgradeConfig.UploadMode.AUTO;
+            case "server" -> ChatUpgradeConfig.UploadMode.SERVER;
+            case "third", "third_party", "thirdparty", "litterbox", "catbox" -> ChatUpgradeConfig.UploadMode.THIRD_PARTY;
+            default -> null;
+        };
     }
 
     private static int reloadConfig(FabricClientCommandSource source) {
@@ -535,8 +576,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank())
                 .orElseGet(() -> displayNameFromPath(file));
-        source.sendFeedback(Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-        finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
+        byte[] bytes = readFileBytesQuiet(file);
+        if (bytes == null) {
+            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+        CompletableFuture<Optional<String>> fut = UploadRouter.uploadBytes(
+                InlineResourceType.IMAGE,
+                bytes,
+                file.getFileName().toString(),
+                "application/octet-stream");
+        finishUploadAndSend(source, fut, displayName);
         return 1;
     }
 
@@ -569,9 +620,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(
-                                Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-                        finishUploadAndSend(source, CatboxUploader.uploadFile(file), displayName);
+                        byte[] bytes = readFileBytesQuiet(file);
+                        if (bytes == null) {
+                            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+                            return;
+                        }
+                        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+                        CompletableFuture<Optional<String>> fut = UploadRouter.uploadBytes(
+                                InlineResourceType.IMAGE,
+                                bytes,
+                                file.getFileName().toString(),
+                                "application/octet-stream");
+                        finishUploadAndSend(source, fut, displayName);
                     });
                 });
         return 1;
@@ -605,8 +665,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElseGet(() -> displayNameFromPath(file));
-        source.sendFeedback(Component.literal("正在上传音频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-        finishUploadAndSendAudio(source, CatboxUploader.uploadFile(file), displayName);
+        byte[] bytes = readFileBytesQuiet(file);
+        if (bytes == null) {
+            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+        CompletableFuture<Optional<String>> fut = UploadRouter.uploadBytes(
+                InlineResourceType.AUDIO,
+                bytes,
+                file.getFileName().toString(),
+                "application/octet-stream");
+        finishUploadAndSendAudio(source, fut, displayName);
         return 1;
     }
 
@@ -639,9 +709,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(
-                                Component.literal("正在上传音频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-                        finishUploadAndSendAudio(source, CatboxUploader.uploadFile(file), displayName);
+                        byte[] bytes = readFileBytesQuiet(file);
+                        if (bytes == null) {
+                            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+                            return;
+                        }
+                        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+                        CompletableFuture<Optional<String>> fut = UploadRouter.uploadBytes(
+                                InlineResourceType.AUDIO,
+                                bytes,
+                                file.getFileName().toString(),
+                                "application/octet-stream");
+                        finishUploadAndSendAudio(source, fut, displayName);
                     });
                 });
         return 1;
@@ -675,8 +754,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElseGet(() -> displayNameFromPath(file));
-        source.sendFeedback(Component.literal("正在上传视频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-        finishUploadAndSendVideo(source, CatboxUploader.uploadFile(file), displayName);
+        byte[] bytes = readFileBytesQuiet(file);
+        if (bytes == null) {
+            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+        CompletableFuture<Optional<String>> fut = UploadRouter.uploadBytes(
+                InlineResourceType.VIDEO,
+                bytes,
+                file.getFileName().toString(),
+                "application/octet-stream");
+        finishUploadAndSendVideo(source, fut, displayName);
         return 1;
     }
 
@@ -709,9 +798,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
-                        source.sendFeedback(
-                                Component.literal("正在上传视频到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-                        finishUploadAndSendVideo(source, CatboxUploader.uploadFile(file), displayName);
+                        byte[] bytes = readFileBytesQuiet(file);
+                        if (bytes == null) {
+                            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+                            return;
+                        }
+                        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+                        CompletableFuture<Optional<String>> fut = UploadRouter.uploadBytes(
+                                InlineResourceType.VIDEO,
+                                bytes,
+                                file.getFileName().toString(),
+                                "application/octet-stream");
+                        finishUploadAndSendVideo(source, fut, displayName);
                     });
                 });
         return 1;
@@ -732,8 +830,9 @@ public class ChatUpgradeClient implements ClientModInitializer {
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElse("粘贴");
-        source.sendFeedback(Component.literal("正在上传到 Litterbox（1 小时有效）…").withStyle(ChatFormatting.GRAY));
-        finishUploadAndSend(source, CatboxUploader.uploadBytes(png.get(), "paste.png"), displayName);
+        source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
+        finishUploadAndSend(source, UploadRouter.uploadBytes(InlineResourceType.IMAGE, png.get(), "paste.png",
+                "image/png"), displayName);
         return 1;
     }
 
@@ -816,5 +915,23 @@ public class ChatUpgradeClient implements ClientModInitializer {
                         + "）。可用 /chatupgrade config maxupload <1-10> 调整。")
                 .withStyle(ChatFormatting.RED));
         return true;
+    }
+
+    private static String uploadHint() {
+        ChatUpgradeConfig.UploadMode mode = ChatUpgradeConfig.get().uploadMode;
+        boolean serverCap = ServerMediaClient.capability().enabled();
+        return switch (mode) {
+            case THIRD_PARTY -> "正在上传到 Litterbox（1 小时有效）…";
+            case SERVER -> "正在上传到服务器…";
+            case AUTO -> serverCap ? "正在上传（优先服务器，失败则回退第三方）…" : "正在上传到 Litterbox（1 小时有效）…";
+        };
+    }
+
+    private static @Nullable byte[] readFileBytesQuiet(Path file) {
+        try {
+            return Files.readAllBytes(file);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
