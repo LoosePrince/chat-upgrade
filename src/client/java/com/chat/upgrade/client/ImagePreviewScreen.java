@@ -9,6 +9,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Util;
 
@@ -29,7 +30,7 @@ public final class ImagePreviewScreen extends Screen {
     private double panY = 0.0;
 
     public ImagePreviewScreen(String url, @Nullable String nameHint) {
-        super(Component.literal("图片预览"));
+        super(Component.translatable("chatupgrade.screen.image_preview.title"));
         this.url = url;
         this.nameHint = nameHint;
     }
@@ -44,7 +45,7 @@ public final class ImagePreviewScreen extends Screen {
         String name = AudioUiLayout.shortName(nameHint, url);
         String size = ChatUpgradeFormatters.formatBytes(entry.getFetchedByteLength());
         String link = url.length() > 56 ? url.substring(0, 53) + "..." : url;
-        String header = "名称: " + name + "  |  大小: " + size + "  |  链接: " + link;
+        String header = I18n.get("chatupgrade.screen.preview.header", name, size, link);
         guiGraphics.text(font, header, panelLeft, GAP + 6, 0xFFE7ECF4, false);
         guiGraphics.fill(panelLeft, GAP + TOP_H - 1, panelRight, GAP + TOP_H, 0xFF3A4456);
 
@@ -57,7 +58,7 @@ public final class ImagePreviewScreen extends Screen {
         guiGraphics.outline(panelLeft, imageTop, boxW, boxH, 0xFF344055);
 
         if (entry.getState() != ImageEntry.State.LOADED) {
-            guiGraphics.centeredText(font, "图片加载中...", width / 2, imageTop + boxH / 2 - 4, 0xFFE6E6E6);
+            guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.image_preview.loading"), width / 2, imageTop + boxH / 2 - 4, 0xFFE6E6E6);
             renderControls(guiGraphics, panelLeft, panelRight, controlTop);
             return;
         }
@@ -65,7 +66,7 @@ public final class ImagePreviewScreen extends Screen {
         @Nullable
         Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(Util.getMillis()) : entry.getTextureId();
         if (textureId == null) {
-            guiGraphics.centeredText(font, "图片纹理不可用", width / 2, imageTop + boxH / 2 - 4, 0xFFFF8080);
+            guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.image_preview.texture_unavailable"), width / 2, imageTop + boxH / 2 - 4, 0xFFFF8080);
             renderControls(guiGraphics, panelLeft, panelRight, controlTop);
             return;
         }
@@ -73,7 +74,7 @@ public final class ImagePreviewScreen extends Screen {
         int texW = entry.getTextureWidth();
         int texH = entry.getTextureHeight();
         if (texW <= 0 || texH <= 0) {
-            guiGraphics.centeredText(font, "图片尺寸异常", width / 2, imageTop + boxH / 2 - 4, 0xFFFF8080);
+            guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.image_preview.invalid_size"), width / 2, imageTop + boxH / 2 - 4, 0xFFFF8080);
             renderControls(guiGraphics, panelLeft, panelRight, controlTop);
             return;
         }
@@ -198,11 +199,11 @@ public final class ImagePreviewScreen extends Screen {
         guiGraphics.fill(panelLeft, controlTop, panelRight, controlTop + CONTROL_H, 0xFF1A212C);
         guiGraphics.outline(panelLeft, controlTop, panelRight - panelLeft, CONTROL_H, 0xFF3A4456);
         int x = panelLeft;
-        x = drawActionButton(guiGraphics, x, controlTop, "放大");
-        x = drawActionButton(guiGraphics, x, controlTop, "缩小");
-        x = drawActionButton(guiGraphics, x, controlTop, "旋转");
-        x = drawActionButton(guiGraphics, x, controlTop, "重置");
-        String right = "缩放 " + Math.round(scale * 100.0f) + "%  |  拖拽移动  |  滚轮缩放";
+        x = drawActionButton(guiGraphics, x, controlTop, I18n.get("chatupgrade.screen.image_preview.button.zoom_in"));
+        x = drawActionButton(guiGraphics, x, controlTop, I18n.get("chatupgrade.screen.image_preview.button.zoom_out"));
+        x = drawActionButton(guiGraphics, x, controlTop, I18n.get("chatupgrade.screen.image_preview.button.rotate"));
+        x = drawActionButton(guiGraphics, x, controlTop, I18n.get("chatupgrade.screen.image_preview.button.reset"));
+        String right = I18n.get("chatupgrade.screen.image_preview.control_hint", Math.round(scale * 100.0f));
         guiGraphics.text(font, right, x + 6, controlTop + 6, 0xFFCAD2DD, false);
     }
 

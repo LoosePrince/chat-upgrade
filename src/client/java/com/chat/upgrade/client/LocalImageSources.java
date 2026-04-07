@@ -1,6 +1,7 @@
 package com.chat.upgrade.client;
 
 import com.chat.upgrade.ChatUpgrade;
+import net.minecraft.client.resources.language.I18n;
 
 import javax.imageio.ImageIO;
 import javax.swing.JFileChooser;
@@ -95,7 +96,7 @@ public final class LocalImageSources {
     public static Optional<Path> pickImageWithFileChooser() {
         if (GraphicsEnvironment.isHeadless()) {
             ChatUpgrade.LOGGER.warn(
-                    "ChatUpgrade: AWT headless，无法打开文件选择器。请使用非 headless 启动（例如 Gradle Loom 的 client 运行配置中加 vmArg -Djava.awt.headless=false；Linux 需 DISPLAY）。");
+                    I18n.get("chatupgrade.log.awt_headless_with_hint"));
             return Optional.empty();
         }
         try {
@@ -109,7 +110,7 @@ public final class LocalImageSources {
 
     public static Optional<Path> pickAudioWithFileChooser() {
         if (GraphicsEnvironment.isHeadless()) {
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT headless，无法打开文件选择器。");
+            ChatUpgrade.LOGGER.warn(I18n.get("chatupgrade.log.awt_headless"));
             return Optional.empty();
         }
         try {
@@ -123,7 +124,7 @@ public final class LocalImageSources {
 
     public static Optional<Path> pickVideoWithFileChooser() {
         if (GraphicsEnvironment.isHeadless()) {
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT headless，无法打开文件选择器。");
+            ChatUpgrade.LOGGER.warn(I18n.get("chatupgrade.log.awt_headless"));
             return Optional.empty();
         }
         try {
@@ -141,9 +142,9 @@ public final class LocalImageSources {
         SwingUtilities.invokeLater(() -> {
             try {
                 JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle("选择要上传的图片");
+                chooser.setDialogTitle(I18n.get("chatupgrade.file_chooser.image.title"));
                 chooser.setFileFilter(new FileNameExtensionFilter(
-                        "图片",
+                        I18n.get("chatupgrade.file_chooser.image.filter"),
                             "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico"));
                 chooser.setMultiSelectionEnabled(false);
                 int result = chooser.showOpenDialog(null);
@@ -166,9 +167,9 @@ public final class LocalImageSources {
         SwingUtilities.invokeLater(() -> {
             try {
                 JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle("选择要上传的音频");
+                chooser.setDialogTitle(I18n.get("chatupgrade.file_chooser.audio.title"));
                 chooser.setFileFilter(new FileNameExtensionFilter(
-                        "音频",
+                        I18n.get("chatupgrade.file_chooser.audio.filter"),
                         "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm"));
                 chooser.setMultiSelectionEnabled(false);
                 int result = chooser.showOpenDialog(null);
@@ -191,9 +192,9 @@ public final class LocalImageSources {
         SwingUtilities.invokeLater(() -> {
             try {
                 JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle("选择要上传的视频");
+                chooser.setDialogTitle(I18n.get("chatupgrade.file_chooser.video.title"));
                 chooser.setFileFilter(new FileNameExtensionFilter(
-                        "视频",
+                        I18n.get("chatupgrade.file_chooser.video.filter"),
                         "mp4", "webm", "mov", "mkv", "m4v", "avi"));
                 chooser.setMultiSelectionEnabled(false);
                 int result = chooser.showOpenDialog(null);

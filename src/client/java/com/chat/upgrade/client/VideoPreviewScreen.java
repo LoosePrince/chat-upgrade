@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
@@ -23,7 +24,7 @@ public final class VideoPreviewScreen extends Screen {
     private final @Nullable String nameHint;
 
     public VideoPreviewScreen(String url, @Nullable String nameHint) {
-        super(Component.literal("视频预览"));
+        super(Component.translatable("chatupgrade.screen.video_preview.title"));
         this.url = url;
         this.nameHint = nameHint;
     }
@@ -44,7 +45,7 @@ public final class VideoPreviewScreen extends Screen {
 
         int panelLeft = GAP;
         int panelRight = width - GAP;
-        String header = "名称: " + name + "  |  大小: " + size + "  |  链接: " + link;
+        String header = I18n.get("chatupgrade.screen.preview.header", name, size, link);
         guiGraphics.text(font, header, panelLeft, GAP + 6, 0xFFE7ECF4, false);
         guiGraphics.fill(panelLeft, GAP + TOP_H - 1, panelRight, GAP + TOP_H, 0xFF3A4456);
 
@@ -58,11 +59,11 @@ public final class VideoPreviewScreen extends Screen {
         guiGraphics.outline(panelLeft, videoTop, boxW, boxH, 0xFF344055);
 
         if (entry.getState() == VideoEntry.State.LOADING) {
-            guiGraphics.centeredText(font, "视频加载中...", width / 2, videoTop + boxH / 2 - 4, 0xFFE6E6E6);
+            guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.video_preview.loading"), width / 2, videoTop + boxH / 2 - 4, 0xFFE6E6E6);
             return;
         }
         if (entry.getState() == VideoEntry.State.FAILED) {
-            guiGraphics.centeredText(font, "视频加载失败", width / 2, videoTop + boxH / 2 - 4, 0xFFFF8080);
+            guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.video_preview.failed"), width / 2, videoTop + boxH / 2 - 4, 0xFFFF8080);
             return;
         }
 
@@ -86,7 +87,7 @@ public final class VideoPreviewScreen extends Screen {
                     entry.getRawHeight() > 0 ? entry.getRawHeight() : (rect.bottom() - rect.top()),
                     ARGB.white(1.0f));
         } else {
-            guiGraphics.centeredText(font, "无可用视频帧", width / 2, videoTop + boxH / 2 - 4, 0xFFFFB0B0);
+            guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.video_preview.no_frame"), width / 2, videoTop + boxH / 2 - 4, 0xFFFFB0B0);
         }
 
         renderControls(guiGraphics, panelLeft, panelRight, controlTop);
@@ -152,7 +153,9 @@ public final class VideoPreviewScreen extends Screen {
         int btnX0 = panelLeft;
         int btnX1 = btnX0 + PLAY_W;
         guiGraphics.fill(btnX0, controlTop, btnX1, controlTop + CONTROL_H, 0xFF2B3646);
-        guiGraphics.centeredText(font, playing ? "暂停" : "播放", (btnX0 + btnX1) / 2, controlTop + 5, 0xFFE7ECF4);
+        guiGraphics.centeredText(font, I18n.get(playing
+                ? "chatupgrade.screen.video_preview.button.pause"
+                : "chatupgrade.screen.video_preview.button.play"), (btnX0 + btnX1) / 2, controlTop + 5, 0xFFE7ECF4);
 
         String left = ChatUpgradeFormatters.formatMs(pos);
         String right = ChatUpgradeFormatters.formatMs(total);

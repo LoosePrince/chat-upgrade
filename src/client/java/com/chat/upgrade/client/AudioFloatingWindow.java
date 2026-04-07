@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.util.Util;
 
 public final class AudioFloatingWindow {
@@ -108,9 +109,9 @@ public final class AudioFloatingWindow {
         gfx.fill(barX0, barY0, fillX, barY1, 0xFF64C8FF);
 
         if (entry.getState() == AudioEntry.State.LOADING) {
-            gfx.text(font, "音频加载中...", x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, 0xFFCAD2DD, false);
+            gfx.text(font, I18n.get("chatupgrade.floating.audio.loading"), x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, 0xFFCAD2DD, false);
         } else if (entry.getState() == AudioEntry.State.FAILED) {
-            gfx.text(font, "音频加载失败", x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, 0xFFFF9090, false);
+            gfx.text(font, I18n.get("chatupgrade.floating.audio.failed"), x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, 0xFFFF9090, false);
         }
     }
 

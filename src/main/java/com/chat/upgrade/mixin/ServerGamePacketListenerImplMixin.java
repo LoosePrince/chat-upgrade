@@ -74,7 +74,7 @@ public abstract class ServerGamePacketListenerImplMixin {
             return null;
         }
         String fields = matcher.group(1);
-        String name = "资源";
+        String name = Component.translatable("chatupgrade.vanilla.default_name").getString();
         String type = "image";
         String url = "";
         for (String part : fields.split(",")) {
@@ -93,9 +93,9 @@ public abstract class ServerGamePacketListenerImplMixin {
             }
         }
         String typeLabel = switch (type) {
-            case "audio" -> "音频";
-            case "video" -> "视频";
-            default -> "图片";
+            case "audio" -> Component.translatable("chatupgrade.type.audio").getString();
+            case "video" -> Component.translatable("chatupgrade.type.video").getString();
+            default -> Component.translatable("chatupgrade.type.image").getString();
         };
         return new VanillaReplacement(typeLabel, name, url);
     }
@@ -119,7 +119,9 @@ public abstract class ServerGamePacketListenerImplMixin {
                 .withColor(ChatFormatting.GRAY)
                 .withUnderlined(thirdParty)
                 .withHoverEvent(new HoverEvent.ShowText(Component.literal(
-                        thirdParty ? "点击打开外部链接" : "内链资源地址（仅安装模组可直接预览）")));
+                        thirdParty
+                                ? Component.translatable("chatupgrade.vanilla.url.open_external").getString()
+                                : Component.translatable("chatupgrade.vanilla.url.internal_only").getString())));
         if (thirdParty) {
             try {
                 urlStyle = urlStyle.withClickEvent(new ClickEvent.OpenUrl(URI.create(replacement.url())));
@@ -132,45 +134,48 @@ public abstract class ServerGamePacketListenerImplMixin {
     @Unique
     private static String chatupgrade$buildHoverText(VanillaReplacement replacement) {
         StringBuilder sb = new StringBuilder();
-        sb.append("资源类型: ").append(replacement.typeLabel()).append('\n');
-        sb.append("显示名称: ").append(replacement.name()).append('\n');
-        sb.append("链接: ").append(replacement.url().isBlank() ? "—" : replacement.url()).append('\n');
+        sb.append(Component.translatable("chatupgrade.hover.resource_type").getString()).append(": ")
+                .append(replacement.typeLabel()).append('\n');
+        sb.append(Component.translatable("chatupgrade.hover.display_name").getString()).append(": ")
+                .append(replacement.name()).append('\n');
+        sb.append(Component.translatable("chatupgrade.hover.url").getString()).append(": ")
+                .append(replacement.url().isBlank() ? Component.translatable("chatupgrade.common.na").getString() : replacement.url()).append('\n');
 
         if (replacement.url().isBlank()) {
-            sb.append("来源: 未提供链接");
+            sb.append(Component.translatable("chatupgrade.vanilla.source.no_link").getString());
             return sb.toString();
         }
 
         Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(replacement.url());
         if (parsed.isEmpty()) {
-            sb.append("来源: 第三方链接");
+            sb.append(Component.translatable("chatupgrade.vanilla.source.third_party").getString());
             return sb.toString();
         }
 
         ServerMediaUrl.Parsed p = parsed.get();
-        sb.append("来源: 服务器内链").append('\n');
-        sb.append("媒体ID: ").append(p.mediaId()).append('\n');
-        sb.append("声明类型: ").append(p.typeWire());
+        sb.append(Component.translatable("chatupgrade.vanilla.source.server_internal").getString()).append('\n');
+        sb.append(Component.translatable("chatupgrade.vanilla.media_id").getString()).append(": ").append(p.mediaId()).append('\n');
+        sb.append(Component.translatable("chatupgrade.vanilla.declared_type").getString()).append(": ").append(p.typeWire());
 
         Optional<StoredMedia> mediaOpt = ServerMediaService.get(p.mediaId());
         if (mediaOpt.isEmpty()) {
-            sb.append('\n').append("服务端状态: 未命中或已过期");
+            sb.append('\n').append(Component.translatable("chatupgrade.vanilla.server_status.miss_or_expired").getString());
             return sb.toString();
         }
 
         StoredMedia media = mediaOpt.get();
-        sb.append('\n').append("服务端状态: 可用");
+        sb.append('\n').append(Component.translatable("chatupgrade.vanilla.server_status.available").getString());
         if (media.contentType() != null && !media.contentType().isBlank()) {
-            sb.append('\n').append("内容类型: ").append(media.contentType());
+            sb.append('\n').append(Component.translatable("chatupgrade.vanilla.content_type").getString()).append(": ").append(media.contentType());
         }
-        sb.append('\n').append("文件大小: ").append(media.byteLength()).append(" B");
+        sb.append('\n').append(Component.translatable("chatupgrade.vanilla.file_size").getString()).append(": ").append(media.byteLength()).append(" B");
         if (media.fingerprint() != null && !media.fingerprint().isBlank()) {
-            sb.append('\n').append("指纹(MD5): ").append(media.fingerprint());
+            sb.append('\n').append(Component.translatable("chatupgrade.vanilla.fingerprint_md5").getString()).append(": ").append(media.fingerprint());
         }
         if (media.expiresAtMs() > 0L) {
-            sb.append('\n').append("过期时间戳: ").append(media.expiresAtMs());
+            sb.append('\n').append(Component.translatable("chatupgrade.vanilla.expires_at_ms").getString()).append(": ").append(media.expiresAtMs());
         } else {
-            sb.append('\n').append("过期时间: 永不过期");
+            sb.append('\n').append(Component.translatable("chatupgrade.vanilla.never_expires").getString());
         }
         return sb.toString();
     }

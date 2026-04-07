@@ -14,6 +14,7 @@ import org.jetbrains.annotations.Nullable;
 import com.chat.upgrade.net.ServerMediaUrl;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -38,17 +39,17 @@ public final class UpgradeBracketCodec {
      * {@link #replaceVisiblePlaceholderWithLoadFailed(FormattedCharSequence)} on
      * HUD lines.
      */
-    public static final String LOAD_FAILED_VISIBLE = "[图片：加载失败]";
-    public static final String AUDIO_LOAD_FAILED_VISIBLE = "[音频：加载失败]";
-    public static final String VIDEO_LOAD_FAILED_VISIBLE = "[视频：加载失败]";
+    public static final String LOAD_FAILED_VISIBLE = I18n.get("chatupgrade.visible.image.load_failed");
+    public static final String AUDIO_LOAD_FAILED_VISIBLE = I18n.get("chatupgrade.visible.audio.load_failed");
+    public static final String VIDEO_LOAD_FAILED_VISIBLE = I18n.get("chatupgrade.visible.video.load_failed");
 
     /**
      * Shown when the remote image exceeds
      * {@link ChatUpgradeConfig#maxReceiveBytes}.
      */
-    public static final String IMAGE_OVERSIZE_VISIBLE = "[图片：图片过大]";
-    public static final String AUDIO_OVERSIZE_VISIBLE = "[音频：文件过大]";
-    public static final String VIDEO_OVERSIZE_VISIBLE = "[视频：文件过大]";
+    public static final String IMAGE_OVERSIZE_VISIBLE = I18n.get("chatupgrade.visible.image.oversize");
+    public static final String AUDIO_OVERSIZE_VISIBLE = I18n.get("chatupgrade.visible.audio.oversize");
+    public static final String VIDEO_OVERSIZE_VISIBLE = I18n.get("chatupgrade.visible.video.oversize");
 
     private static final Pattern BRACKET_PAYLOAD = Pattern.compile(
             "\\[\\[(ChatUpgrade|CICode),([^\\]]+)\\]\\]");
@@ -60,7 +61,7 @@ public final class UpgradeBracketCodec {
      * Matches image/audio placeholders and fullwidth-colon variants after wrapping
      * / font shaping.
      */
-    private static final Pattern VISIBLE_PLACEHOLDER = Pattern.compile("\\[(?:图片|音频|视频)[:：]\\s*[^\\]]+\\]");
+    private static final Pattern VISIBLE_PLACEHOLDER = Pattern.compile("\\[(?:.+?)[:：]\\s*[^\\]]+\\]");
 
     private UpgradeBracketCodec() {
     }
@@ -88,9 +89,9 @@ public final class UpgradeBracketCodec {
         }
         InlineResourceType type = InlineResourceType.fromWire(kv.get("type"));
         String defaultName = switch (type) {
-            case IMAGE -> "图片";
-            case AUDIO -> "音频";
-            case VIDEO -> "视频";
+            case IMAGE -> I18n.get("chatupgrade.type.image");
+            case AUDIO -> I18n.get("chatupgrade.type.audio");
+            case VIDEO -> I18n.get("chatupgrade.type.video");
         };
         String name = kv.getOrDefault("name", defaultName).trim();
         String matched = m.group(0);
@@ -261,20 +262,20 @@ public final class UpgradeBracketCodec {
         if (imageUrl != null && !imageUrl.isBlank()) {
             String actionText = manualRevealEnabled
                     ? switch (type) {
-                        case IMAGE -> "点击加载/刷新图片预览";
-                        case AUDIO -> "点击加载/刷新音频预览";
-                        case VIDEO -> "点击加载/刷新视频预览";
+                        case IMAGE -> I18n.get("chatupgrade.placeholder.click_reload_image");
+                        case AUDIO -> I18n.get("chatupgrade.placeholder.click_reload_audio");
+                        case VIDEO -> I18n.get("chatupgrade.placeholder.click_reload_video");
                     }
-                    : "点击强制重新加载预览(跳过缓存)";
+                    : I18n.get("chatupgrade.placeholder.click_force_reload");
             style = style.withUnderlined(true)
                     .withClickEvent(ManualRevealClickEvent.forResource(type, imageUrl))
                     .withHoverEvent(new HoverEvent.ShowText(
                             Component.literal(actionText + "\n" + buildLabelHoverText(type, name, imageUrl))));
         }
         String label = switch (type) {
-            case IMAGE -> "图片";
-            case AUDIO -> "音频";
-            case VIDEO -> "视频";
+            case IMAGE -> I18n.get("chatupgrade.type.image");
+            case AUDIO -> I18n.get("chatupgrade.type.audio");
+            case VIDEO -> I18n.get("chatupgrade.type.video");
         };
         MutableComponent left = Component.literal("[" + label + ": " + name + "]").withStyle(style);
         MutableComponent urlToken = Component.literal(" [url]").withStyle(buildUrlTokenStyle(imageUrl));
@@ -283,16 +284,16 @@ public final class UpgradeBracketCodec {
 
     private static String buildPlaceholder(InlineResourceType type, String name) {
         String label = switch (type) {
-            case IMAGE -> "图片";
-            case AUDIO -> "音频";
-            case VIDEO -> "视频";
+            case IMAGE -> I18n.get("chatupgrade.type.image");
+            case AUDIO -> I18n.get("chatupgrade.type.audio");
+            case VIDEO -> I18n.get("chatupgrade.type.video");
         };
         return "[" + label + ": " + name + "] [url]";
     }
 
     private static Style buildUrlTokenStyle(String url) {
         Style style = Style.EMPTY.withColor(ChatFormatting.GRAY).withUnderlined(true).withItalic(false)
-                .withHoverEvent(new HoverEvent.ShowText(Component.literal("打开链接\n" + (url == null ? "" : url))));
+                .withHoverEvent(new HoverEvent.ShowText(Component.translatable("chatupgrade.hover.open_url", (url == null ? "" : url))));
         if (url == null || url.isBlank()) {
             return style;
         }
@@ -305,116 +306,134 @@ public final class UpgradeBracketCodec {
 
     private static String buildLabelHoverText(InlineResourceType type, String name, String url) {
         String typeText = switch (type) {
-            case IMAGE -> "图片";
-            case AUDIO -> "音频";
-            case VIDEO -> "视频";
+            case IMAGE -> I18n.get("chatupgrade.type.image");
+            case AUDIO -> I18n.get("chatupgrade.type.audio");
+            case VIDEO -> I18n.get("chatupgrade.type.video");
         };
         String currentWireTag = ChatUpgradeConfig.get().ciCompatibility ? WIRE_TAG_LEGACY : WIRE_TAG_NATIVE;
         String receiveLimit = ChatUpgradeConfig.formatBytesHuman(ChatUpgradeConfig.get().maxReceiveBytes);
         StringBuilder sb = new StringBuilder();
-        sb.append("资源类型: ").append(typeText).append('\n');
-        sb.append("显示名称: ").append(name == null || name.isBlank() ? "—" : name).append('\n');
-        sb.append("链接: ").append(url == null || url.isBlank() ? "—" : url).append('\n');
+        sb.append(I18n.get("chatupgrade.hover.resource_type")).append(": ").append(typeText).append('\n');
+        sb.append(I18n.get("chatupgrade.hover.display_name")).append(": ")
+                .append(name == null || name.isBlank() ? I18n.get("chatupgrade.common.na") : name).append('\n');
+        sb.append(I18n.get("chatupgrade.hover.url")).append(": ")
+                .append(url == null || url.isBlank() ? I18n.get("chatupgrade.common.na") : url).append('\n');
         if (type == InlineResourceType.IMAGE) {
-            sb.append("解析格式: ").append(currentWireTag).append('\n');
+            sb.append(I18n.get("chatupgrade.hover.parse_mode")).append(": ").append(currentWireTag).append('\n');
         }
-        sb.append("接收上限: ").append(receiveLimit).append('\n');
+        sb.append(I18n.get("chatupgrade.hover.receive_limit")).append(": ").append(receiveLimit).append('\n');
         appendResourceDetails(sb, type, url);
-        sb.append("交互说明:\n");
-        sb.append(" - 点击 [url]: 打开外部链接\n");
-        sb.append(" - 悬停预览区: 查看当前状态与操作提示");
+        sb.append(I18n.get("chatupgrade.hover.interaction")).append(":\n");
+        sb.append(" - ").append(I18n.get("chatupgrade.hover.interaction.open_url")).append('\n');
+        sb.append(" - ").append(I18n.get("chatupgrade.hover.interaction.hover_preview"));
         return sb.toString();
     }
 
     private static void appendResourceDetails(StringBuilder sb, InlineResourceType type, String url) {
         if (url == null || url.isBlank()) {
-            sb.append("状态: 未缓存\n");
+            sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(I18n.get("chatupgrade.detail.not_cached")).append('\n');
             return;
         }
         switch (type) {
             case IMAGE -> {
                 ImageEntry e = ImageLoader.getIfPresent(url);
                 if (e == null) {
-                    sb.append("状态: 未缓存\n");
+                    sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(I18n.get("chatupgrade.detail.not_cached")).append('\n');
                     return;
                 }
-                sb.append("状态: ").append(switch (e.getState()) {
-                    case LOADING -> "加载中(" + (e.getLoadPhase() == ImageEntry.LoadPhase.DECODE ? "解码" : "下载") + ")";
-                    case LOADED -> "已加载";
+                sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(switch (e.getState()) {
+                    case LOADING -> I18n.get("chatupgrade.detail.loading", e.getLoadPhase() == ImageEntry.LoadPhase.DECODE
+                            ? I18n.get("chatupgrade.detail.phase.decode")
+                            : I18n.get("chatupgrade.detail.phase.download"));
+                    case LOADED -> I18n.get("chatupgrade.detail.loaded");
                     case FAILED -> {
                         ImageEntry.FailureKind fk = e.getFailureKind();
                         yield switch (fk) {
-                            case RESPONSE_BODY_TOO_LARGE -> "加载失败(文件过大)";
-                            case UNKNOWN -> "加载失败(可能是网络错误/文件失效)";
+                            case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
+                            case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
                     }
                 }).append('\n');
-                sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
-                sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
+                sb.append(I18n.get("chatupgrade.detail.transferred")).append(": ")
+                        .append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
+                sb.append("MD5: ").append(e.getMd5Hex() == null ? I18n.get("chatupgrade.common.na") : e.getMd5Hex()).append('\n');
                 if (e.isLoaded()) {
-                    sb.append("像素尺寸: ").append(e.getRawPixelWidth()).append('×').append(e.getRawPixelHeight())
+                    sb.append(I18n.get("chatupgrade.detail.pixel_size")).append(": ").append(e.getRawPixelWidth()).append('×').append(e.getRawPixelHeight())
                             .append('\n');
-                    sb.append("预览绘制: ").append(e.getWidth()).append('×').append(e.getHeight()).append('\n');
-                    sb.append("纹理尺寸: ").append(e.getTextureWidth()).append('×').append(e.getTextureHeight())
+                    sb.append(I18n.get("chatupgrade.detail.preview_size")).append(": ").append(e.getWidth()).append('×').append(e.getHeight()).append('\n');
+                    sb.append(I18n.get("chatupgrade.detail.texture_size")).append(": ").append(e.getTextureWidth()).append('×').append(e.getTextureHeight())
                             .append('\n');
                     if (e.isAnimated()) {
-                        sb.append("动图: 是(").append(e.getAnimationFrameCount()).append("帧)\n");
+                        sb.append(I18n.get("chatupgrade.detail.animated", e.getAnimationFrameCount())).append('\n');
                     }
-                    sb.append("像素格式: ").append(e.getDecodedFormatName() == null ? "—" : e.getDecodedFormatName())
+                    sb.append(I18n.get("chatupgrade.detail.pixel_format")).append(": ")
+                            .append(e.getDecodedFormatName() == null ? I18n.get("chatupgrade.common.na") : e.getDecodedFormatName())
                             .append('\n');
                 }
-                sb.append("手动触发渲染=").append(ChatUpgradeConfig.get().manualImageReveal ? "开启" : "关闭").append('\n');
+                sb.append(I18n.get("chatupgrade.detail.manual_reveal")).append('=')
+                        .append(ChatUpgradeConfig.get().manualImageReveal ? I18n.get("chatupgrade.common.on") : I18n.get("chatupgrade.common.off"))
+                        .append('\n');
             }
             case AUDIO -> {
                 AudioEntry e = AudioLoader.getIfPresent(url);
                 if (e == null) {
-                    sb.append("状态: 未缓存\n");
+                    sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(I18n.get("chatupgrade.detail.not_cached")).append('\n');
                     return;
                 }
-                sb.append("状态: ").append(switch (e.getState()) {
-                    case LOADING -> "加载中(" + (e.getLoadPhase() == AudioEntry.LoadPhase.DECODE ? "解码" : "下载") + ")";
-                    case LOADED -> AudioPlayerService.isPlaying(url) ? "播放中" : "已加载(暂停)";
+                sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(switch (e.getState()) {
+                    case LOADING -> I18n.get("chatupgrade.detail.loading", e.getLoadPhase() == AudioEntry.LoadPhase.DECODE
+                            ? I18n.get("chatupgrade.detail.phase.decode")
+                            : I18n.get("chatupgrade.detail.phase.download"));
+                    case LOADED -> AudioPlayerService.isPlaying(url) ? I18n.get("chatupgrade.detail.playing")
+                            : I18n.get("chatupgrade.detail.loaded_paused");
                     case FAILED -> {
                         AudioEntry.FailureKind fk = e.getFailureKind();
                         yield switch (fk) {
-                            case RESPONSE_BODY_TOO_LARGE -> "加载失败(文件过大)";
-                            case UNSUPPORTED_AUDIO_FORMAT -> "加载失败(不支持的音频格式)";
-                            case UNKNOWN -> "加载失败(可能是网络错误/文件失效)";
+                            case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
+                            case UNSUPPORTED_AUDIO_FORMAT -> I18n.get("chatupgrade.detail.failed.audio_unsupported");
+                            case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
                     }
                 }).append('\n');
-                sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
-                sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
-                sb.append("时长: ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
-                sb.append("音量: ").append(ChatUpgradeConfig.get().audioVolumePercent).append("%\n");
-                sb.append("手动触发渲染=").append(ChatUpgradeConfig.get().manualAudioReveal ? "开启" : "关闭").append('\n');
+                sb.append(I18n.get("chatupgrade.detail.transferred")).append(": ")
+                        .append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
+                sb.append("MD5: ").append(e.getMd5Hex() == null ? I18n.get("chatupgrade.common.na") : e.getMd5Hex()).append('\n');
+                sb.append(I18n.get("chatupgrade.detail.duration")).append(": ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
+                sb.append(I18n.get("chatupgrade.detail.volume")).append(": ").append(ChatUpgradeConfig.get().audioVolumePercent).append("%\n");
+                sb.append(I18n.get("chatupgrade.detail.manual_reveal")).append('=')
+                        .append(ChatUpgradeConfig.get().manualAudioReveal ? I18n.get("chatupgrade.common.on") : I18n.get("chatupgrade.common.off")).append('\n');
             }
             case VIDEO -> {
                 VideoEntry e = VideoLoader.getIfPresent(url);
                 if (e == null) {
-                    sb.append("状态: 未缓存\n");
+                    sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(I18n.get("chatupgrade.detail.not_cached")).append('\n');
                     return;
                 }
-                sb.append("状态: ").append(switch (e.getState()) {
-                    case LOADING -> "加载中(" + (e.getLoadPhase() == VideoEntry.LoadPhase.DECODE ? "解码" : "下载") + ")";
-                    case LOADED -> VideoPlayerService.isPlaying(url) ? "播放中" : "已加载(暂停)";
+                sb.append(I18n.get("chatupgrade.detail.status")).append(": ").append(switch (e.getState()) {
+                    case LOADING -> I18n.get("chatupgrade.detail.loading", e.getLoadPhase() == VideoEntry.LoadPhase.DECODE
+                            ? I18n.get("chatupgrade.detail.phase.decode")
+                            : I18n.get("chatupgrade.detail.phase.download"));
+                    case LOADED -> VideoPlayerService.isPlaying(url) ? I18n.get("chatupgrade.detail.playing")
+                            : I18n.get("chatupgrade.detail.loaded_paused");
                     case FAILED -> {
                         VideoEntry.FailureKind fk = e.getFailureKind();
                         yield switch (fk) {
-                            case RESPONSE_BODY_TOO_LARGE -> "加载失败(文件过大)";
-                            case UNSUPPORTED_VIDEO_FORMAT -> "加载失败(不支持的视频格式)";
-                            case UNKNOWN -> "加载失败(可能是网络错误/文件失效)";
+                            case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
+                            case UNSUPPORTED_VIDEO_FORMAT -> I18n.get("chatupgrade.detail.failed.video_unsupported");
+                            case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
                     }
                 }).append('\n');
-                sb.append("传输体积: ").append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
-                sb.append("MD5: ").append(e.getMd5Hex() == null ? "—" : e.getMd5Hex()).append('\n');
-                sb.append("时长: ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
-                sb.append("音量: ").append(ChatUpgradeConfig.get().videoVolumePercent).append("%\n");
-                sb.append("手动触发渲染=").append(ChatUpgradeConfig.get().manualVideoReveal ? "开启" : "关闭").append('\n');
+                sb.append(I18n.get("chatupgrade.detail.transferred")).append(": ")
+                        .append(ChatUpgradeFormatters.formatBytes(e.getFetchedByteLength())).append('\n');
+                sb.append("MD5: ").append(e.getMd5Hex() == null ? I18n.get("chatupgrade.common.na") : e.getMd5Hex()).append('\n');
+                sb.append(I18n.get("chatupgrade.detail.duration")).append(": ").append(ChatUpgradeFormatters.formatMs(e.getDurationMs())).append('\n');
+                sb.append(I18n.get("chatupgrade.detail.volume")).append(": ").append(ChatUpgradeConfig.get().videoVolumePercent).append("%\n");
+                sb.append(I18n.get("chatupgrade.detail.manual_reveal")).append('=')
+                        .append(ChatUpgradeConfig.get().manualVideoReveal ? I18n.get("chatupgrade.common.on") : I18n.get("chatupgrade.common.off")).append('\n');
                 if (e.isLoaded()) {
-                    sb.append("像素尺寸: ").append(e.getRawWidth()).append('×').append(e.getRawHeight()).append('\n');
-                    sb.append("预览绘制: ").append(e.getDisplayWidth()).append('×').append(e.getDisplayHeight())
+                    sb.append(I18n.get("chatupgrade.detail.pixel_size")).append(": ").append(e.getRawWidth()).append('×').append(e.getRawHeight()).append('\n');
+                    sb.append(I18n.get("chatupgrade.detail.preview_size")).append(": ").append(e.getDisplayWidth()).append('×').append(e.getDisplayHeight())
                             .append('\n');
                 }
             }

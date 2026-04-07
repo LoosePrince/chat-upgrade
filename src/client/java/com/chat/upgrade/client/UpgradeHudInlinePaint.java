@@ -7,6 +7,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Util;
@@ -86,7 +87,9 @@ public final class UpgradeHudInlinePaint {
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == AudioEntry.State.LOADING) {
             gfx.fill(x0, y0, x1, y0 + h, argb(opacity * 0.5f, 24, 26, 31));
-            String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE ? "音频处理中…" : "音频下载中…";
+            String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE
+                    ? I18n.get("chatupgrade.hud.audio.processing")
+                    : I18n.get("chatupgrade.hud.audio.downloading");
             gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
                     x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 210, 210, 215), false);
             gfx.text(font, label, x0 + AUDIO_PAD_X, y0 + AUDIO_LINE2_Y, argb(opacity, 210, 210, 215), false);
@@ -96,7 +99,7 @@ public final class UpgradeHudInlinePaint {
             gfx.fill(x0, y0, x1, y0 + h, argb(opacity * 0.5f, 24, 26, 31));
             gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
                     x0 + AUDIO_PAD_X, y0 + AUDIO_LINE1_Y, argb(opacity, 255, 120, 120), false);
-            gfx.text(font, "音频加载失败", x0 + AUDIO_PAD_X, y0 + AUDIO_LINE2_Y, argb(opacity, 255, 120, 120), false);
+            gfx.text(font, I18n.get("chatupgrade.hud.audio.failed"), x0 + AUDIO_PAD_X, y0 + AUDIO_LINE2_Y, argb(opacity, 255, 120, 120), false);
             return;
         }
 
@@ -159,7 +162,9 @@ public final class UpgradeHudInlinePaint {
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == VideoEntry.State.LOADING) {
             gfx.fill(x0, y0, x1, y0 + drawH, argb(opacity * 0.55f, 20, 22, 26));
-            String label = entry.getLoadPhase() == VideoEntry.LoadPhase.DECODE ? "视频处理中…" : "视频下载中…";
+            String label = entry.getLoadPhase() == VideoEntry.LoadPhase.DECODE
+                    ? I18n.get("chatupgrade.hud.video.processing")
+                    : I18n.get("chatupgrade.hud.video.downloading");
             gfx.text(font, name, x0 + VideoUiLayout.PAD_X, y0 + 2, argb(opacity, 220, 220, 225), false);
             gfx.text(font, label, x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 210, 210, 215), false);
             return;
@@ -167,7 +172,7 @@ public final class UpgradeHudInlinePaint {
         if (entry.getState() == VideoEntry.State.FAILED) {
             gfx.fill(x0, y0, x1, y0 + drawH, argb(opacity * 0.55f, 20, 22, 26));
             gfx.text(font, name, x0 + VideoUiLayout.PAD_X, y0 + 2, argb(opacity, 255, 120, 120), false);
-            gfx.text(font, "视频加载失败", x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 255, 120, 120), false);
+            gfx.text(font, I18n.get("chatupgrade.hud.video.failed"), x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 255, 120, 120), false);
             return;
         }
 
@@ -277,7 +282,9 @@ public final class UpgradeHudInlinePaint {
         gfx.fill(sweepX, y1 - 7, sweepX + sweepW, y1 - 3, argb(opacity, 100, 180, 255));
 
         Font font = Minecraft.getInstance().font;
-        String label = entry.getLoadPhase() == ImageEntry.LoadPhase.DECODE ? "处理中…" : "下载中…";
+        String label = entry.getLoadPhase() == ImageEntry.LoadPhase.DECODE
+                ? I18n.get("chatupgrade.hud.image.processing")
+                : I18n.get("chatupgrade.hud.image.downloading");
         int textColor = argb(opacity, 200, 200, 210);
         gfx.centeredText(font, label, x0 + s / 2, y0 + s / 2 - font.lineHeight / 2, textColor);
     }

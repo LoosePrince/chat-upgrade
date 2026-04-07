@@ -100,7 +100,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                 .then(ClientCommands.argument("url", StringArgumentType.string())
                                         .executes(ctx -> sendImageUrl(ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "url"),
-                                                "图片"))
+                                                Component.translatable("chatupgrade.type.image").getString()))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                                 .executes(ctx -> sendImageUrl(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "url"),
@@ -109,7 +109,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                 .then(ClientCommands.argument("url", StringArgumentType.string())
                                         .executes(ctx -> sendAudioUrl(ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "url"),
-                                                "音频"))
+                                                Component.translatable("chatupgrade.type.audio").getString()))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                                 .executes(ctx -> sendAudioUrl(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "url"),
@@ -118,7 +118,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                 .then(ClientCommands.argument("url", StringArgumentType.string())
                                         .executes(ctx -> sendVideoUrl(ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "url"),
-                                                "视频"))
+                                                Component.translatable("chatupgrade.type.video").getString()))
                                         .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                                 .executes(ctx -> sendVideoUrl(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "url"),
@@ -263,26 +263,41 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int pluginStatus(FabricClientCommandSource source) {
         FfmpegNativeBootstrap.Status ff = FfmpegNativeBootstrap.status();
-        String ffState = ff.ready() ? "就绪" : (ff.attempted() ? "已尝试但未就绪" : "未尝试");
-        String ffJars = "javacpp=" + (ff.javacppPresent() ? "存在" : "缺失")
-                + "，ffmpeg=" + (ff.ffmpegPresent() ? "存在" : "缺失");
+        String ffState = ff.ready()
+                ? Component.translatable("chatupgrade.plugin.status.ready").getString()
+                : (ff.attempted()
+                        ? Component.translatable("chatupgrade.plugin.status.attempted_not_ready").getString()
+                        : Component.translatable("chatupgrade.plugin.status.not_attempted").getString());
+        String ffJars = Component.translatable("chatupgrade.plugin.status.ffmpeg.jars",
+                ff.javacppPresent()
+                        ? Component.translatable("chatupgrade.common.present")
+                        : Component.translatable("chatupgrade.common.missing"),
+                ff.ffmpegPresent()
+                        ? Component.translatable("chatupgrade.common.present")
+                        : Component.translatable("chatupgrade.common.missing")).getString();
         boolean apngLoaded = ExternalImageIoPluginLoader.isLoaded();
         boolean apngJar = ExternalImageIoPluginLoader.hasApngJar();
-        source.sendFeedback(Component.literal(
-                "FFmpeg: " + ffState
-                        + "（平台: " + ff.platform()
-                        + "；" + ffJars + "）")
+        source.sendFeedback(Component.translatable(
+                "chatupgrade.plugin.status.ffmpeg",
+                ffState,
+                ff.platform(),
+                ffJars)
                 .withStyle(ChatFormatting.AQUA));
-        source.sendFeedback(Component.literal(
-                "APNG: " + (apngLoaded ? "已加载" : "未加载")
-                        + "（jar: " + (apngJar ? "存在" : "缺失") + "）")
+        source.sendFeedback(Component.translatable(
+                "chatupgrade.plugin.status.apng",
+                apngLoaded
+                        ? Component.translatable("chatupgrade.common.loaded")
+                        : Component.translatable("chatupgrade.common.not_loaded"),
+                apngJar
+                        ? Component.translatable("chatupgrade.common.present")
+                        : Component.translatable("chatupgrade.common.missing"))
                 .withStyle(ChatFormatting.AQUA));
         return 1;
     }
 
     private static int pluginLoadFfmpeg(FabricClientCommandSource source, boolean forceDownload) {
-        source.sendFeedback(Component.literal(
-                forceDownload ? "正在强制下载并加载 FFmpeg..." : "正在加载 FFmpeg...")
+        source.sendFeedback(Component.translatable(
+                forceDownload ? "chatupgrade.plugin.ffmpeg.loading_force" : "chatupgrade.plugin.ffmpeg.loading")
                 .withStyle(ChatFormatting.GRAY));
         CompletableFuture.runAsync(() -> {
             boolean ok = FfmpegNativeBootstrap.reload(forceDownload);
@@ -290,9 +305,9 @@ public class ChatUpgradeClient implements ClientModInitializer {
             if (mc != null) {
                 mc.execute(() -> {
                     if (ok) {
-                        source.sendFeedback(Component.literal("FFmpeg 已就绪。").withStyle(ChatFormatting.GREEN));
+                        source.sendFeedback(Component.translatable("chatupgrade.plugin.ffmpeg.ready").withStyle(ChatFormatting.GREEN));
                     } else {
-                        source.sendError(Component.literal("FFmpeg 仍未就绪，请查看 latest.log。")
+                        source.sendError(Component.translatable("chatupgrade.plugin.ffmpeg.not_ready")
                                 .withStyle(ChatFormatting.RED));
                     }
                 });
@@ -302,8 +317,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
     }
 
     private static int pluginLoadApng(FabricClientCommandSource source, boolean forceDownload) {
-        source.sendFeedback(Component.literal(
-                forceDownload ? "正在强制下载并加载 APNG 插件..." : "正在加载 APNG 插件...")
+        source.sendFeedback(Component.translatable(
+                forceDownload ? "chatupgrade.plugin.apng.loading_force" : "chatupgrade.plugin.apng.loading")
                 .withStyle(ChatFormatting.GRAY));
         CompletableFuture.runAsync(() -> {
             ExternalImageIoPluginLoader.reload(forceDownload);
@@ -312,10 +327,10 @@ public class ChatUpgradeClient implements ClientModInitializer {
             if (mc != null) {
                 mc.execute(() -> {
                     if (ok) {
-                        source.sendFeedback(Component.literal("APNG 插件已处理完成（已写入 libs 并尝试加载）。")
+                        source.sendFeedback(Component.translatable("chatupgrade.plugin.apng.done")
                                 .withStyle(ChatFormatting.GREEN));
                     } else {
-                        source.sendError(Component.literal("APNG 插件下载/加载失败，请查看 latest.log。")
+                        source.sendError(Component.translatable("chatupgrade.plugin.apng.failed")
                                 .withStyle(ChatFormatting.RED));
                     }
                 });
@@ -325,8 +340,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
     }
 
     private static int pluginLoadAll(FabricClientCommandSource source, boolean forceDownload) {
-        source.sendFeedback(Component.literal(
-                forceDownload ? "正在强制下载并加载 FFmpeg + APNG..." : "正在加载 FFmpeg + APNG...")
+        source.sendFeedback(Component.translatable(
+                forceDownload ? "chatupgrade.plugin.all.loading_force" : "chatupgrade.plugin.all.loading")
                 .withStyle(ChatFormatting.GRAY));
         CompletableFuture.runAsync(() -> {
             boolean ffOk = FfmpegNativeBootstrap.reload(forceDownload);
@@ -335,9 +350,14 @@ public class ChatUpgradeClient implements ClientModInitializer {
             Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> {
-                    source.sendFeedback(Component.literal(
-                            "结果：FFmpeg=" + (ffOk ? "就绪" : "未就绪")
-                                    + "，APNG=" + (apngOk ? "已处理" : "失败"))
+                    source.sendFeedback(Component.translatable(
+                            "chatupgrade.plugin.all.result",
+                            ffOk
+                                    ? Component.translatable("chatupgrade.plugin.status.ready")
+                                    : Component.translatable("chatupgrade.plugin.status.not_ready"),
+                            apngOk
+                                    ? Component.translatable("chatupgrade.common.done")
+                                    : Component.translatable("chatupgrade.common.failed"))
                             .withStyle((ffOk && apngOk) ? ChatFormatting.GREEN : ChatFormatting.YELLOW));
                 });
             }
@@ -348,12 +368,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int setCiCompatibility(FabricClientCommandSource source, boolean enabled) {
         try {
             ChatUpgradeConfig.setCiCompatibilityAndSave(enabled);
-            source.sendFeedback(Component.literal(
-                    "CICode 格式已" + (enabled ? "开启" : "关闭") + "。")
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.ci.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -361,17 +382,17 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int setUploadMode(FabricClientCommandSource source, String modeRaw) {
         ChatUpgradeConfig.UploadMode mode = parseUploadMode(modeRaw);
         if (mode == null) {
-            source.sendError(Component.literal("未知 uploadMode: " + modeRaw + "（可选: auto/server/third）。")
+            source.sendError(Component.translatable("chatupgrade.config.upload_mode.invalid", modeRaw)
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
         try {
             ChatUpgradeConfig.setUploadModeAndSave(mode);
-            source.sendFeedback(Component.literal("uploadMode 已设为 " + mode.name() + "。")
+            source.sendFeedback(Component.translatable("chatupgrade.config.upload_mode.updated", mode.name())
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -399,15 +420,16 @@ public class ChatUpgradeClient implements ClientModInitializer {
         boolean manualVideo = cfg.manualVideoReveal;
         AudioPlayerService.setGlobalVolumePercent(cfg.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(cfg.videoVolumePercent);
-        source.sendFeedback(Component.literal(
-                "已重载 config/chat-upgrade/chat-upgrade.json 。CICode: " + (ci ? "开" : "关")
-                        + "；手动渲染: " + (manual ? "开" : "关")
-                        + "；音频手动渲染: " + (manualAudio ? "开" : "关")
-                        + "；视频手动渲染: " + (manualVideo ? "开" : "关")
-                        + "；音频音量: " + cfg.audioVolumePercent + "%"
-                        + "；视频音量: " + cfg.videoVolumePercent + "%"
-                        + "；接收上限: " + ChatUpgradeConfig.formatBytesHuman(cfg.maxReceiveBytes)
-                        + "；上传上限: " + ChatUpgradeConfig.formatBytesHuman(cfg.maxUploadBytes))
+        source.sendFeedback(Component.translatable(
+                "chatupgrade.config.reload.done",
+                ci ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
+                manual ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
+                manualAudio ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
+                manualVideo ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
+                cfg.audioVolumePercent,
+                cfg.videoVolumePercent,
+                ChatUpgradeConfig.formatBytesHuman(cfg.maxReceiveBytes),
+                ChatUpgradeConfig.formatBytesHuman(cfg.maxUploadBytes))
                 .withStyle(ChatFormatting.GREEN));
         return 1;
     }
@@ -416,16 +438,17 @@ public class ChatUpgradeClient implements ClientModInitializer {
         try {
             int bytes = Math.multiplyExact(mebibytes, 1024 * 1024);
             ChatUpgradeConfig.setMaxReceiveBytesAndSave(bytes);
-            source.sendFeedback(Component.literal(
-                    "接收体积上限已设为 " + mebibytes + " MiB（" + ChatUpgradeConfig.formatBytesHuman(bytes)
-                            + "）；配置项最高不超过 10 MiB。")
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.max_receive.updated",
+                    mebibytes,
+                    ChatUpgradeConfig.formatBytesHuman(bytes))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (ArithmeticException e) {
-            source.sendError(Component.literal("数值过大。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.value_too_large").withStyle(ChatFormatting.RED));
             return 0;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -434,16 +457,17 @@ public class ChatUpgradeClient implements ClientModInitializer {
         try {
             int bytes = Math.multiplyExact(mebibytes, 1024 * 1024);
             ChatUpgradeConfig.setMaxUploadBytesAndSave(bytes);
-            source.sendFeedback(Component.literal(
-                    "上传体积上限已设为 " + mebibytes + " MiB（" + ChatUpgradeConfig.formatBytesHuman(bytes)
-                            + "）；配置项最高不超过 10 MiB。")
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.max_upload.updated",
+                    mebibytes,
+                    ChatUpgradeConfig.formatBytesHuman(bytes))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (ArithmeticException e) {
-            source.sendError(Component.literal("数值过大。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.value_too_large").withStyle(ChatFormatting.RED));
             return 0;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -451,12 +475,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int setManualImageReveal(FabricClientCommandSource source, boolean enabled) {
         try {
             ChatUpgradeConfig.setManualImageRevealAndSave(enabled);
-            source.sendFeedback(Component.literal(
-                    "手动渲染（点击 [图片: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.manual_image.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -464,12 +489,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int setManualAudioReveal(FabricClientCommandSource source, boolean enabled) {
         try {
             ChatUpgradeConfig.setManualAudioRevealAndSave(enabled);
-            source.sendFeedback(Component.literal(
-                    "音频手动渲染（点击 [音频: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.manual_audio.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -477,12 +503,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int setManualVideoReveal(FabricClientCommandSource source, boolean enabled) {
         try {
             ChatUpgradeConfig.setManualVideoRevealAndSave(enabled);
-            source.sendFeedback(Component.literal(
-                    "视频手动渲染（点击 [视频: …] 后再加载预览）已" + (enabled ? "开启" : "关闭") + "。")
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.manual_video.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -491,11 +518,11 @@ public class ChatUpgradeClient implements ClientModInitializer {
         try {
             ChatUpgradeConfig.setAudioVolumePercentAndSave(percent);
             AudioPlayerService.setGlobalVolumePercent(percent);
-            source.sendFeedback(Component.literal("音频音量已设为 " + Math.clamp(percent, 1, 100) + "%。")
+            source.sendFeedback(Component.translatable("chatupgrade.config.audio_volume.updated", Math.clamp(percent, 1, 100))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
@@ -504,19 +531,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
         try {
             ChatUpgradeConfig.setVideoVolumePercentAndSave(percent);
             VideoPlayerService.setGlobalVolumePercent(percent);
-            source.sendFeedback(Component.literal(
-                    "视频音量已设为 " + Math.clamp(percent, 1, 100) + "%。")
+            source.sendFeedback(Component.translatable("chatupgrade.config.video_volume.updated", Math.clamp(percent, 1, 100))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
-            source.sendError(Component.literal("无法写入配置: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
     }
 
     private static int sendImageUrl(FabricClientCommandSource source, String url, String name) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         String payload = UpgradeBracketCodec.buildSendPayload(url, name);
@@ -526,7 +552,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int sendAudioUrl(FabricClientCommandSource source, String url, String name) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         String payload = UpgradeBracketCodec.buildSendPayload(url, name, InlineResourceType.AUDIO);
@@ -536,7 +562,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int sendVideoUrl(FabricClientCommandSource source, String url, String name) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         String payload = UpgradeBracketCodec.buildSendPayload(url, name, InlineResourceType.VIDEO);
@@ -553,12 +579,12 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int uploadFromFolderPath(FabricClientCommandSource source, String path,
             Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         String innerPath = path.trim();
         if (innerPath.isEmpty()) {
-            source.sendError(Component.literal("路径不能为空。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.empty_path").withStyle(ChatFormatting.RED));
             return 0;
         }
 
@@ -566,7 +592,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         Optional<Path> image = LocalImageSources.resolveFolderOrFile(root);
         if (image.isEmpty()) {
             source.sendError(Component.literal(
-                    "未找到可用图片：请提供图片文件路径，或包含常见图片扩展名的文件夹（取最新修改的一个）。")
+                    Component.translatable("chatupgrade.error.image_not_found").getString())
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
@@ -576,14 +602,14 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return 0;
             }
         } catch (IOException e) {
-            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.read_file_size", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank())
                 .orElseGet(() -> displayNameFromPath(file));
         byte[] bytes = readFileBytesQuiet(file);
         if (bytes == null) {
-            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.read_file_content").withStyle(ChatFormatting.RED));
             return 0;
         }
         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
@@ -598,10 +624,10 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int uploadViaFilePicker(FabricClientCommandSource source, Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
-        source.sendFeedback(Component.literal("正在打开文件选择器…").withStyle(ChatFormatting.GRAY));
+        source.sendFeedback(Component.translatable("chatupgrade.upload.open_image_picker").withStyle(ChatFormatting.GRAY));
         CompletableFuture.supplyAsync(LocalImageSources::pickImageWithFileChooser)
                 .thenAccept(picked -> {
                     Minecraft mc = Minecraft.getInstance();
@@ -610,7 +636,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         if (picked.isEmpty()) {
-                            source.sendFeedback(Component.literal("未选择文件或无法打开对话框。")
+                            source.sendFeedback(Component.translatable("chatupgrade.upload.no_file_picked")
                                     .withStyle(ChatFormatting.GRAY));
                             return;
                         }
@@ -620,14 +646,14 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                 return;
                             }
                         } catch (IOException e) {
-                            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage())
+                            source.sendError(Component.translatable("chatupgrade.error.read_file_size", e.getMessage())
                                     .withStyle(ChatFormatting.RED));
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
                         byte[] bytes = readFileBytesQuiet(file);
                         if (bytes == null) {
-                            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+                            source.sendError(Component.translatable("chatupgrade.error.read_file_content").withStyle(ChatFormatting.RED));
                             return;
                         }
                         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
@@ -645,18 +671,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int uploadAudioFromFolderPath(FabricClientCommandSource source, String path,
             Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         String innerPath = path.trim();
         if (innerPath.isEmpty()) {
-            source.sendError(Component.literal("路径不能为空。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.empty_path").withStyle(ChatFormatting.RED));
             return 0;
         }
         Path root = Path.of(innerPath);
         Optional<Path> audio = LocalImageSources.resolveAudioFolderOrFile(root);
         if (audio.isEmpty()) {
-            source.sendError(Component.literal("未找到可用音频文件（支持 ogg/wav/mp3/flac/m4a/aac/opus/webm）。")
+            source.sendError(Component.translatable("chatupgrade.error.audio_not_found")
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
@@ -666,13 +692,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return 0;
             }
         } catch (IOException e) {
-            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.read_file_size", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElseGet(() -> displayNameFromPath(file));
         byte[] bytes = readFileBytesQuiet(file);
         if (bytes == null) {
-            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.read_file_content").withStyle(ChatFormatting.RED));
             return 0;
         }
         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
@@ -687,10 +713,10 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int uploadAudioViaFilePicker(FabricClientCommandSource source, Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
-        source.sendFeedback(Component.literal("正在打开音频文件选择器…").withStyle(ChatFormatting.GRAY));
+        source.sendFeedback(Component.translatable("chatupgrade.upload.open_audio_picker").withStyle(ChatFormatting.GRAY));
         CompletableFuture.supplyAsync(LocalImageSources::pickAudioWithFileChooser)
                 .thenAccept(picked -> {
                     Minecraft mc = Minecraft.getInstance();
@@ -699,7 +725,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         if (picked.isEmpty()) {
-                            source.sendFeedback(Component.literal("未选择文件或无法打开对话框。")
+                            source.sendFeedback(Component.translatable("chatupgrade.upload.no_file_picked")
                                     .withStyle(ChatFormatting.GRAY));
                             return;
                         }
@@ -709,14 +735,14 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                 return;
                             }
                         } catch (IOException e) {
-                            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage())
+                            source.sendError(Component.translatable("chatupgrade.error.read_file_size", e.getMessage())
                                     .withStyle(ChatFormatting.RED));
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
                         byte[] bytes = readFileBytesQuiet(file);
                         if (bytes == null) {
-                            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+                            source.sendError(Component.translatable("chatupgrade.error.read_file_content").withStyle(ChatFormatting.RED));
                             return;
                         }
                         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
@@ -734,18 +760,18 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int uploadVideoFromFolderPath(FabricClientCommandSource source, String path,
             Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         String innerPath = path.trim();
         if (innerPath.isEmpty()) {
-            source.sendError(Component.literal("路径不能为空。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.empty_path").withStyle(ChatFormatting.RED));
             return 0;
         }
         Path root = Path.of(innerPath);
         Optional<Path> video = LocalImageSources.resolveVideoFolderOrFile(root);
         if (video.isEmpty()) {
-            source.sendError(Component.literal("未找到可用视频文件（至少支持 mp4，其他尽可能支持）。")
+            source.sendError(Component.translatable("chatupgrade.error.video_not_found")
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
@@ -755,13 +781,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return 0;
             }
         } catch (IOException e) {
-            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage()).withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.read_file_size", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
         String displayName = displayNameArg.filter(s -> !s.isBlank()).orElseGet(() -> displayNameFromPath(file));
         byte[] bytes = readFileBytesQuiet(file);
         if (bytes == null) {
-            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.read_file_content").withStyle(ChatFormatting.RED));
             return 0;
         }
         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
@@ -776,10 +802,10 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int uploadVideoViaFilePicker(FabricClientCommandSource source, Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
-        source.sendFeedback(Component.literal("正在打开视频文件选择器…").withStyle(ChatFormatting.GRAY));
+        source.sendFeedback(Component.translatable("chatupgrade.upload.open_video_picker").withStyle(ChatFormatting.GRAY));
         CompletableFuture.supplyAsync(LocalImageSources::pickVideoWithFileChooser)
                 .thenAccept(picked -> {
                     Minecraft mc = Minecraft.getInstance();
@@ -788,7 +814,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
                             return;
                         }
                         if (picked.isEmpty()) {
-                            source.sendFeedback(Component.literal("未选择文件或无法打开对话框。")
+                            source.sendFeedback(Component.translatable("chatupgrade.upload.no_file_picked")
                                     .withStyle(ChatFormatting.GRAY));
                             return;
                         }
@@ -798,14 +824,14 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                 return;
                             }
                         } catch (IOException e) {
-                            source.sendError(Component.literal("无法读取文件大小: " + e.getMessage())
+                            source.sendError(Component.translatable("chatupgrade.error.read_file_size", e.getMessage())
                                     .withStyle(ChatFormatting.RED));
                             return;
                         }
                         String displayName = displayNameArg.orElseGet(() -> displayNameFromPath(file));
                         byte[] bytes = readFileBytesQuiet(file);
                         if (bytes == null) {
-                            source.sendError(Component.literal("无法读取文件内容，上传失败。").withStyle(ChatFormatting.RED));
+                            source.sendError(Component.translatable("chatupgrade.error.read_file_content").withStyle(ChatFormatting.RED));
                             return;
                         }
                         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
@@ -822,19 +848,20 @@ public class ChatUpgradeClient implements ClientModInitializer {
 
     private static int uploadFromClipboard(FabricClientCommandSource source, Optional<String> displayNameArg) {
         if (source.getPlayer() == null) {
-            source.sendError(Component.literal("未连接到服务器，无法发送。").withStyle(ChatFormatting.RED));
+            source.sendError(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
             return 0;
         }
         Optional<byte[]> png = LocalImageSources.readClipboardImagePngBytes();
         if (png.isEmpty()) {
-            source.sendError(Component.literal("剪贴板里没有可用的图片（可尝试在画图/浏览器中复制后再试）。")
+            source.sendError(Component.translatable("chatupgrade.error.clipboard_no_image")
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
         if (rejectIfUploadTooLarge(source, png.get().length)) {
             return 0;
         }
-        String displayName = displayNameArg.filter(s -> !s.isBlank()).orElse("粘贴");
+        String displayName = displayNameArg.filter(s -> !s.isBlank())
+                .orElse(Component.translatable("chatupgrade.upload.default_name.paste").getString());
         source.sendFeedback(Component.literal(uploadHint()).withStyle(ChatFormatting.GRAY));
         finishUploadAndSend(source, UploadRouter.uploadBytes(InlineResourceType.IMAGE, png.get(), "paste.png",
                 "image/png"), displayName);
@@ -850,13 +877,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(uploadFailedMessage("上传"));
+                source.sendError(uploadFailedMessage(Component.translatable("chatupgrade.upload.action.upload").getString()));
                 return;
             }
             String url = urlOpt.get();
             String payload = UpgradeBracketCodec.buildSendPayload(url, displayName);
             source.getPlayer().connection.sendChat(payload);
-            source.sendFeedback(Component.literal("已发送: " + url).withStyle(ChatFormatting.GREEN));
+            source.sendFeedback(Component.translatable("chatupgrade.upload.sent", url).withStyle(ChatFormatting.GREEN));
         }));
     }
 
@@ -869,13 +896,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(uploadFailedMessage("音频上传"));
+                source.sendError(uploadFailedMessage(Component.translatable("chatupgrade.upload.action.audio_upload").getString()));
                 return;
             }
             String url = urlOpt.get();
             String payload = UpgradeBracketCodec.buildSendPayload(url, displayName, InlineResourceType.AUDIO);
             source.getPlayer().connection.sendChat(payload);
-            source.sendFeedback(Component.literal("已发送音频: " + url).withStyle(ChatFormatting.GREEN));
+            source.sendFeedback(Component.translatable("chatupgrade.upload.audio_sent", url).withStyle(ChatFormatting.GREEN));
         }));
     }
 
@@ -888,13 +915,13 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 return;
             }
             if (urlOpt.isEmpty()) {
-                source.sendError(uploadFailedMessage("视频上传"));
+                source.sendError(uploadFailedMessage(Component.translatable("chatupgrade.upload.action.video_upload").getString()));
                 return;
             }
             String url = urlOpt.get();
             String payload = UpgradeBracketCodec.buildSendPayload(url, displayName, InlineResourceType.VIDEO);
             source.getPlayer().connection.sendChat(payload);
-            source.sendFeedback(Component.literal("已发送视频: " + url).withStyle(ChatFormatting.GREEN));
+            source.sendFeedback(Component.translatable("chatupgrade.upload.video_sent", url).withStyle(ChatFormatting.GREEN));
         }));
     }
 
@@ -909,12 +936,10 @@ public class ChatUpgradeClient implements ClientModInitializer {
         if (sizeBytes <= max) {
             return false;
         }
-        source.sendError(Component.literal(
-                "文件超过上传体积限制（上限 "
-                        + ChatUpgradeConfig.formatBytesHuman(max)
-                        + "，当前 "
-                        + ChatUpgradeConfig.formatBytesHuman(sizeBytes)
-                        + "）。可用 /chatupgrade config maxupload <1-10> 调整。")
+        source.sendError(Component.translatable(
+                "chatupgrade.upload.too_large",
+                ChatUpgradeConfig.formatBytesHuman(max),
+                ChatUpgradeConfig.formatBytesHuman(sizeBytes))
                 .withStyle(ChatFormatting.RED));
         return true;
     }
@@ -923,9 +948,11 @@ public class ChatUpgradeClient implements ClientModInitializer {
         ChatUpgradeConfig.UploadMode mode = ChatUpgradeConfig.get().uploadMode;
         boolean serverCap = ServerMediaClient.capability().enabled();
         return switch (mode) {
-            case THIRD_PARTY -> "正在上传到 Litterbox（1 小时有效）…";
-            case SERVER -> "正在上传到服务器…";
-            case AUTO -> serverCap ? "正在上传到服务器…" : "正在上传到 Litterbox（1 小时有效）…";
+            case THIRD_PARTY -> Component.translatable("chatupgrade.upload.hint.third_party").getString();
+            case SERVER -> Component.translatable("chatupgrade.upload.hint.server").getString();
+            case AUTO -> serverCap
+                    ? Component.translatable("chatupgrade.upload.hint.server").getString()
+                    : Component.translatable("chatupgrade.upload.hint.third_party").getString();
         };
     }
 
@@ -937,19 +964,16 @@ public class ChatUpgradeClient implements ClientModInitializer {
             case THIRD_PARTY -> false;
         };
         if (!serverAttempted) {
-            return Component.literal(actionLabel + "失败（网络、文件或 Litterbox 返回错误）。")
+            return Component.translatable("chatupgrade.upload.failed.third_party", actionLabel)
                     .withStyle(ChatFormatting.RED);
         }
-        MutableComponent tail = Component.literal("[切换为强制第三方]")
+        MutableComponent tail = Component.translatable("chatupgrade.upload.switch_to_third")
                 .withStyle(Style.EMPTY
                         .withColor(ChatFormatting.YELLOW)
                         .withUnderlined(true)
                         .withClickEvent(new ClickEvent.SuggestCommand("/chatupgrade config uploadmode third"))
-                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(
-                                "服务端上传失败时不会自动降级。\n"
-                                        + "可切换到强制第三方后重试：\n"
-                                        + "/chatupgrade config uploadmode third"))));
-        return Component.literal(actionLabel + "失败（服务端上传不可用或不满足服务端的限制）。 ")
+                        .withHoverEvent(new HoverEvent.ShowText(Component.translatable("chatupgrade.upload.switch_to_third.hover"))));
+        return Component.translatable("chatupgrade.upload.failed.server", actionLabel)
                 .withStyle(ChatFormatting.RED)
                 .append(tail);
     }

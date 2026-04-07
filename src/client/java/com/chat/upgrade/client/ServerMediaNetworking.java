@@ -45,7 +45,7 @@ public final class ServerMediaNetworking {
                     capabilityAnnounced = true;
                     if (context.client().player != null) {
                         context.client().player.sendSystemMessage(
-                                Component.literal("[Chat Upgrade] 服务端上传可用").withStyle(ChatFormatting.GREEN));
+                                Component.translatable("chatupgrade.server_media.upload_ready").withStyle(ChatFormatting.GREEN));
                     }
                 }
             });

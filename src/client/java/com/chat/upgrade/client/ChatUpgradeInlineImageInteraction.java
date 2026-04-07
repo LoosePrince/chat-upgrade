@@ -20,6 +20,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
@@ -153,11 +154,11 @@ public final class ChatUpgradeInlineImageInteraction {
         Font font = acc.chatupgrade$font();
         GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
         String state = switch (entry.getState()) {
-            case LOADING -> "图片加载中";
-            case LOADED -> "图片已加载";
-            case FAILED -> "图片加载失败";
+            case LOADING -> I18n.get("chatupgrade.inline.state.image_loading");
+            case LOADED -> I18n.get("chatupgrade.inline.state.image_loaded");
+            case FAILED -> I18n.get("chatupgrade.inline.state.image_failed");
         };
-        Component tip = Component.literal(state + "\n预览区域：仅显示内容\n链接与详情：请悬停 [类型:名称] 或点击 [url]");
+        Component tip = Component.literal(I18n.get("chatupgrade.inline.tip.preview_area", state));
         gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(),
                 acc.chatupgrade$globalMouseY());
     }
@@ -288,13 +289,20 @@ public final class ChatUpgradeInlineImageInteraction {
         }
         long pos = AudioPlayerService.positionMs(url);
         return switch (action.kind()) {
-            case TOGGLE -> AudioPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
-            case TOGGLE_LOOP -> AudioPlayerService.isLoopEnabled(url) ? "按钮：关闭循环播放" : "按钮：开启循环播放";
-            case OPEN_URL -> "按钮：打开链接";
-            case TOGGLE_FLOATING -> "按钮：创建/移除小窗";
-            case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
+            case TOGGLE -> AudioPlayerService.isPlaying(url)
+                    ? I18n.get("chatupgrade.inline.audio.button.pause")
+                    : I18n.get("chatupgrade.inline.audio.button.play");
+            case TOGGLE_LOOP -> AudioPlayerService.isLoopEnabled(url)
+                    ? I18n.get("chatupgrade.inline.audio.button.loop_off")
+                    : I18n.get("chatupgrade.inline.audio.button.loop_on");
+            case OPEN_URL -> I18n.get("chatupgrade.inline.audio.button.open_url");
+            case TOGGLE_FLOATING -> I18n.get("chatupgrade.inline.audio.button.floating");
+            case SEEK -> I18n.get("chatupgrade.inline.audio.seek_to",
+                    ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total))));
             case NONE ->
-                "音频播放器区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total);
+                I18n.get("chatupgrade.inline.audio.current",
+                        ChatUpgradeFormatters.formatMs(pos),
+                        ChatUpgradeFormatters.formatMs(total));
         };
     }
 
@@ -319,11 +327,15 @@ public final class ChatUpgradeInlineImageInteraction {
                 entry.getRawHeight());
         VideoAction action = resolveVideoAction(pseudo, localX, localY);
         return switch (action.kind()) {
-            case TOGGLE -> VideoPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
-            case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
-            case OPEN_PREVIEW -> "视频画面区域：点击打开预览窗口";
-            case NONE -> "视频卡片区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / "
-                    + ChatUpgradeFormatters.formatMs(total);
+            case TOGGLE -> VideoPlayerService.isPlaying(url)
+                    ? I18n.get("chatupgrade.inline.video.button.pause")
+                    : I18n.get("chatupgrade.inline.video.button.play");
+            case SEEK -> I18n.get("chatupgrade.inline.video.seek_to",
+                    ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total))));
+            case OPEN_PREVIEW -> I18n.get("chatupgrade.inline.video.open_preview");
+            case NONE -> I18n.get("chatupgrade.inline.video.current",
+                    ChatUpgradeFormatters.formatMs(pos),
+                    ChatUpgradeFormatters.formatMs(total));
         };
     }
 
