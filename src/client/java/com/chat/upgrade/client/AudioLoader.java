@@ -55,6 +55,12 @@ public final class AudioLoader {
                 byte[] body = payload.body();
                 entry.setTransferMetadata(body.length, payload.contentType(), payload.md5Hex());
                 entry.setLoadPhase(AudioEntry.LoadPhase.DECODE);
+                if (!FfmpegNativeBootstrap.ensureReady()) {
+                    ChatUpgrade.LOGGER.warn("chat-upgrade: audio runtime not ready for {}, FFmpeg natives unavailable",
+                            url);
+                    markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                    return;
+                }
                 long durationMs;
                 try {
                     durationMs = AudioPlayerService.prepare(url, body);

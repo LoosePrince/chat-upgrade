@@ -88,13 +88,11 @@
 
 音频上传扩展名支持：`ogg/wav/mp3/flac/m4a/aac/opus/webm`。  
 
-音频播放能力取决于客户端 Java Sound 可解码格式（不支持的格式会提示加载失败）。
-
 视频上传扩展名支持：`mp4/webm/mov/mkv/m4v/avi`。  
 
-视频解码基于 **JavaCPP FFmpeg**，仅测试 `mp4` 格式；其他格式按解码器能力尽可能支持。
+音频与视频播放基于 **JavaCPP FFmpeg 解码 + OpenAL 播放**：理论上只要 FFmpeg 可解码（测试仅确保 `mp3`、`mp4` 有效），客户端就可以播放；若 FFmpeg 未就绪会提示加载失败并在日志中记录原因。
 
-默认发布包不内置 FFmpeg native：首次启动会自动下载当前平台整包到 `config/chat-upgrade/libs/`，并将 native 按 `java.library.path` 规则释放到 Minecraft 的 `...-natives` 目录后启用（下载失败会记录日志并导致视频不可用）。
+默认发布包不内置 FFmpeg native：首次启动会自动下载当前平台整包到 `config/chat-upgrade/libs/`，并将 native 按 `java.library.path` 规则释放到 Minecraft 的 `...-natives` 目录后启用（下载失败会记录日志并导致视频不可用，可通过命令重新下载）。
 
 发布包不内置 imageio-apng 插件：首次启动会自动下载到 `config/chat-upgrade/libs/`，并由模组在启动阶段通过外置插件加载器注册到 ImageIO SPI（下载失败会记录日志并导致 APNG 不可用）。
 

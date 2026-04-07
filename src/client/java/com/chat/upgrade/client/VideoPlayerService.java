@@ -41,7 +41,6 @@ import static org.bytedeco.ffmpeg.global.swscale.sws_scale;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -52,10 +51,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.SourceDataLine;
 
 import org.bytedeco.ffmpeg.avcodec.AVCodec;
 import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
@@ -680,11 +675,6 @@ public final class VideoPlayerService {
     }
 
     private static void writeS16Le(ByteArrayOutputStream out, short v) {
-        if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
-            out.write(v & 0xFF);
-            out.write((v >> 8) & 0xFF);
-            return;
-        }
         out.write(v & 0xFF);
         out.write((v >> 8) & 0xFF);
     }
@@ -715,9 +705,6 @@ public final class VideoPlayerService {
     }
 
     private record VideoAudioTrack(byte[] pcmS16Le, int sampleRate, int channels) {
-        int bytesPerFrame() {
-            return channels * 2;
-        }
     }
 
     private static final class VideoAudioPlayback {
@@ -726,7 +713,7 @@ public final class VideoPlayerService {
         private volatile int volumePercent;
         private volatile boolean running = true;
         private Thread worker;
-        private SourceDataLine line;
+        private OpenAlPcmPlayer player;
 
         VideoAudioPlayback(VideoAudioTrack track, long startMs, int volumePercent) {
             this.track = track;
@@ -742,15 +729,19 @@ public final class VideoPlayerService {
 
         void setVolumePercent(int percent) {
             this.volumePercent = Math.clamp(percent, 1, 100);
+            OpenAlPcmPlayer p = this.player;
+            if (p != null) {
+                p.setVolumePercent(this.volumePercent);
+            }
         }
 
         void stop() {
             running = false;
             try {
-                if (line != null) {
-                    line.stop();
-                    line.flush();
-                    line.close();
+                OpenAlPcmPlayer p = this.player;
+                if (p != null) {
+                    p.stop();
+                    p.close();
                 }
             } catch (Exception ignored) {
             }
@@ -758,51 +749,28 @@ public final class VideoPlayerService {
 
         private void run() {
             try {
-                AudioFormat format = new AudioFormat(track.sampleRate(), 16, track.channels(), true, false);
-                SourceDataLine dataLine = AudioSystem.getSourceDataLine(format);
-                this.line = dataLine;
-                dataLine.open(format);
-                dataLine.start();
-                byte[] pcm = track.pcmS16Le();
-                int bytesPerFrame = Math.max(2, track.bytesPerFrame());
-                long startFrame = (startMs * track.sampleRate()) / 1000L;
-                int offset = (int) Math.min((long) pcm.length, startFrame * bytesPerFrame);
-                offset -= offset % bytesPerFrame;
-                byte[] chunk = new byte[4096];
-                while (running && offset < pcm.length) {
-                    int n = Math.min(chunk.length, pcm.length - offset);
-                    n -= n % 2;
-                    if (n <= 0) {
+                OpenAlPcmPlayer p = new OpenAlPcmPlayer(track.pcmS16Le(), track.sampleRate(), track.channels());
+                this.player = p;
+                p.setVolumePercent(volumePercent);
+                p.playFrom(startMs);
+                long dur = p.durationMs();
+                while (running) {
+                    if (!p.isPlaying()) {
                         break;
                     }
-                    System.arraycopy(pcm, offset, chunk, 0, n);
-                    applyVolumeInPlace(chunk, n, volumePercent);
-                    dataLine.write(chunk, 0, n);
-                    offset += n;
+                    if (dur > 0L && p.positionMs() >= dur) {
+                        break;
+                    }
+                    try {
+                        Thread.sleep(20L);
+                    } catch (InterruptedException ignored) {
+                    }
                 }
-                dataLine.drain();
-                dataLine.stop();
-                dataLine.close();
+                p.stop();
+                p.close();
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.debug("chat-upgrade: video audio playback failed: {}", e.getMessage());
             }
-        }
-    }
-
-    private static void applyVolumeInPlace(byte[] pcmLeS16, int length, int volumePercent) {
-        double gain = Math.clamp(volumePercent / 100.0, 0.01, 1.0);
-        for (int i = 0; i + 1 < length; i += 2) {
-            int lo = pcmLeS16[i] & 0xFF;
-            int hi = pcmLeS16[i + 1];
-            short sample = (short) ((hi << 8) | lo);
-            int scaled = (int) Math.round(sample * gain);
-            if (scaled > Short.MAX_VALUE) {
-                scaled = Short.MAX_VALUE;
-            } else if (scaled < Short.MIN_VALUE) {
-                scaled = Short.MIN_VALUE;
-            }
-            pcmLeS16[i] = (byte) (scaled & 0xFF);
-            pcmLeS16[i + 1] = (byte) ((scaled >> 8) & 0xFF);
         }
     }
 

@@ -14,6 +14,7 @@ import com.chat.upgrade.client.mixin.ChatUpgradeDrawingBackgroundAccessor;
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingFocusedAccessor;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -49,6 +50,8 @@ public final class ChatUpgradeInlineImageInteraction {
         }
         int drawW;
         int drawH;
+        int rawW = 0;
+        int rawH = 0;
         if (attachable.chatupgrade$getResourceType() == InlineResourceType.AUDIO) {
             AudioEntry entry = AudioLoader.getIfPresent(url);
             if (entry == null || entry.getState() == AudioEntry.State.FAILED) {
@@ -64,6 +67,8 @@ public final class ChatUpgradeInlineImageInteraction {
             }
             drawW = VideoUiLayout.WIDTH;
             drawH = VideoUiLayout.HEIGHT;
+            rawW = entry.getRawWidth();
+            rawH = entry.getRawHeight();
             tryVideoTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
         } else {
             ImageEntry entry = ImageLoader.getIfPresent(url);
@@ -78,6 +83,8 @@ public final class ChatUpgradeInlineImageInteraction {
                 case LOADED -> {
                     drawW = entry.getWidth();
                     drawH = entry.getHeight();
+                    rawW = entry.getRawPixelWidth();
+                    rawH = entry.getRawPixelHeight();
                     if (drawH > ImageLoader.PREVIEW_HEIGHT) {
                         drawH = ImageLoader.PREVIEW_HEIGHT;
                     }
@@ -99,16 +106,23 @@ public final class ChatUpgradeInlineImageInteraction {
         }
 
         GuiMessage parent = line.parent();
+        int localLeft = 0;
+        int localTop = textTop;
+        int localRight = localLeft + drawW;
+        int localBottom = localTop + drawH;
+
         PLANES.add(new Plane(
                 pose,
-                0,
-                textTop,
-                drawW,
-                textTop + drawH,
+                localLeft,
+                localTop,
+                localRight,
+                localBottom,
                 url,
                 attachable.chatupgrade$getResourceName(),
                 parent,
-                attachable.chatupgrade$getResourceType()));
+                attachable.chatupgrade$getResourceType(),
+                rawW,
+                rawH));
     }
 
     private static GuiMessage parentFrom(GuiMessage.Line line) {
@@ -198,7 +212,13 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     private static @Nullable Style styleForVideoClick(Plane p, float localX, float localY) {
-        return Style.EMPTY.withClickEvent(VideoPreviewClickEvent.forUrl(p.url));
+        VideoAction action = resolveVideoAction(p, localX, localY);
+        return switch (action.kind()) {
+            case TOGGLE -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(p.url));
+            case SEEK -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(p.url, action.ratio()));
+            case OPEN_PREVIEW -> Style.EMPTY.withClickEvent(VideoPreviewClickEvent.forUrl(p.url));
+            case NONE -> null;
+        };
     }
 
     private static void tryAudioTooltipOnFocused(
@@ -281,8 +301,26 @@ public final class ChatUpgradeInlineImageInteraction {
             total = entry.getDurationMs();
         }
         long pos = VideoPlayerService.positionMs(url);
-        return "视频预览区域：点击打开预览窗口\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / "
-                + ChatUpgradeFormatters.formatMs(total);
+        Plane pseudo = new Plane(
+                new Matrix3x2f(),
+                0,
+                textTop,
+                drawW,
+                textTop + VideoUiLayout.HEIGHT,
+                url,
+                "",
+                null,
+                InlineResourceType.VIDEO,
+                entry.getRawWidth(),
+                entry.getRawHeight());
+        VideoAction action = resolveVideoAction(pseudo, localX, localY);
+        return switch (action.kind()) {
+            case TOGGLE -> VideoPlayerService.isPlaying(url) ? "按钮：暂停播放" : "按钮：开始播放";
+            case SEEK -> "进度条：点击将跳转到 " + ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total)));
+            case OPEN_PREVIEW -> "视频画面区域：点击打开预览窗口";
+            case NONE -> "视频卡片区域\n当前: " + ChatUpgradeFormatters.formatMs(pos) + " / "
+                    + ChatUpgradeFormatters.formatMs(total);
+        };
     }
 
     private static AudioAction resolveAudioAction(float localX, float localY, int x0, int y0, int x1) {
@@ -314,11 +352,59 @@ public final class ChatUpgradeInlineImageInteraction {
         return new AudioAction(AudioActionKind.NONE, 0.0);
     }
 
+    private static VideoAction resolveVideoAction(Plane p, float localX, float localY) {
+        int x0 = p.localLeft;
+        int y0 = p.localTop;
+        int x1 = p.localRight;
+
+        int controlY = y0 + VideoUiLayout.CONTROL_TOP;
+        int btnX0 = x0 + VideoUiLayout.PAD_X;
+        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H)) {
+            return new VideoAction(VideoActionKind.TOGGLE, 0.0);
+        }
+
+        Font font = Minecraft.getInstance().font;
+        long pos = Math.max(0L, VideoPlayerService.positionMs(p.url));
+        long total = Math.max(0L, VideoPlayerService.durationMs(p.url));
+        String left = ChatUpgradeFormatters.formatMs(pos);
+        String right = ChatUpgradeFormatters.formatMs(total);
+        int leftX = btnX1 + 4;
+        int rightX = x1 - VideoUiLayout.PAD_X - font.width(right);
+        int barX0 = leftX + font.width(left) + 4;
+        int barX1 = rightX - 4;
+        int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
+        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
+        if (barX1 > barX0 && ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
+            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+            return new VideoAction(VideoActionKind.SEEK, ratio);
+        }
+
+        int boxW = Math.max(1, p.localRight - p.localLeft);
+        int rawW = p.mediaRawWidth;
+        int rawH = p.mediaRawHeight;
+        if (rawW <= 0 || rawH <= 0) {
+            return new VideoAction(VideoActionKind.NONE, 0.0);
+        }
+        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(p.localLeft, p.localTop, boxW, rawW, rawH);
+        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(), rect.bottom())) {
+            return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0);
+        }
+        return new VideoAction(VideoActionKind.NONE, 0.0);
+    }
+
     private enum AudioActionKind {
         TOGGLE, TOGGLE_LOOP, OPEN_URL, TOGGLE_FLOATING, SEEK, NONE
     }
 
     private record AudioAction(AudioActionKind kind, double ratio) {
+    }
+
+    private enum VideoActionKind {
+        TOGGLE, SEEK, OPEN_PREVIEW, NONE
+    }
+
+    private record VideoAction(VideoActionKind kind, double ratio) {
     }
 
     private static boolean containsScreenPoint(Plane p, int screenX, int screenY) {
@@ -354,6 +440,8 @@ public final class ChatUpgradeInlineImageInteraction {
             String url,
             String resourceName,
             GuiMessage parent,
-            InlineResourceType resourceType) {
+            InlineResourceType resourceType,
+            int mediaRawWidth,
+            int mediaRawHeight) {
     }
 }

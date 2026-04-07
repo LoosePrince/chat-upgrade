@@ -459,7 +459,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
             ChatUpgradeConfig.setVideoVolumePercentAndSave(percent);
             VideoPlayerService.setGlobalVolumePercent(percent);
             source.sendFeedback(Component.literal(
-                    "视频音量已设为 " + Math.clamp(percent, 1, 100) + "%（当前视频预览不播放音轨，配置已保存）。")
+                    "视频音量已设为 " + Math.clamp(percent, 1, 100) + "%。")
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
