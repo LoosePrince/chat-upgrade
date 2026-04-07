@@ -13,12 +13,12 @@
 
 基于 **Fabric** 的 Minecraft 模组：在聊天中识别形如 `[[ChatUpgrade,url=…]]` 的载荷文本，将链接替换为占位符，并在聊天栏内联渲染资源预览（图片、音频播放器、视频播放器）。
 
-同时提供一个**可选服务端功能**：当服务端也安装本模组并启用后，客户端上传不再依赖第三方网站，而是直接上传到服务器；聊天中发送的链接会变为内部特殊 URL（`chatupgrade://media/...`），其他客户端通过服务端数据包拉取媒体字节并渲染（该模式不支持 `CICode` 兼容标签）。
+同时提供一个**可选服务端功能**：当服务端也安装本模组并启用后，客户端上传不再依赖第三方网站，而是直接上传到服务器（本地游戏和局域网均适用服务端上传行为）；聊天中发送的链接会变为内部特殊 URL（`chatupgrade://media/...`），其他客户端通过服务端数据包拉取媒体字节并渲染（该模式不支持 `CICode` 兼容标签）。
 
 ## 功能概要
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取资源（图片/音频/视频）→ 在对应消息下方预留行高并绘制预览。
-- **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；上传可走第三方 Litterbox（约 1 小时有效），或在服务端启用时走“直传服务器”。
+- **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；默认 `auto` 模式下，只要检测到服务端已启用媒体能力，就会优先上传到服务端（聊天会有提示），未检测到可用能力时才走第三方 Litterbox（约 1 小时有效）。
 - **配置**：`config/chat-upgrade/chat-upgrade.json` 支持协议兼容、手动触发渲染、接收/上传上限、音频/视频音量；支持游戏内写入与重载。
 - **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片
 
@@ -46,18 +46,19 @@
 | `/chatupgrade send <url> <name>` | 向聊天发送图片载荷；`url` 是图片链接；`name` 可省略（默认「图片」）。 |
 | `/chatupgrade sendaudio <url> <name>` | 向聊天发送音频载荷；`url` 是音频链接；`name` 可省略（默认「音频」）。 |
 | `/chatupgrade sendvideo <url> <name>` | 向聊天发送视频载荷；`url` 是视频链接；`name` 可省略（默认「视频」）。 |
-| `/chatupgrade upload folder <path> <name>` | 从本机路径上传至 Litterbox（约 1 小时有效）再发送。`<path>` 为路径；`<name>` 可省略（默认「音频」）。|
-| `/chatupgrade upload pick <name>` | 打开文件选择器选图并上传发送；`name` 可省略。 |
-| `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送；`name` 可省略（默认「粘贴」）。 |
-| `/chatupgrade uploadaudio folder <path> <name>` | 从本机路径上传音频到 Litterbox 并发送音频载荷。 |
-| `/chatupgrade uploadaudio pick <name>` | 打开文件选择器选音频并上传发送。 |
-| `/chatupgrade uploadvideo folder <path> <name>` | 从本机路径上传视频到 Litterbox 并发送视频载荷。 |
-| `/chatupgrade uploadvideo pick <name>` | 打开文件选择器选视频并上传发送。 |
-| `/chatupgrade config uploadmode <auto/server/third>` | 上传路由模式：`auto`（默认，服务端支持则直传，否则第三方）、`server`（强制直传服务器）、`third`（强制第三方/Litterbox）。 |
+| `/chatupgrade upload folder <path> <name>` | 从本机路径上传图片并发送（按 `uploadMode` 路由到服务端或第三方）。`<path>` 为路径；`<name>` 可省略（默认文件名）。|
+| `/chatupgrade upload pick <name>` | 打开文件选择器选图并上传发送（按 `uploadMode` 路由）。`name` 可省略。 |
+| `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送（按 `uploadMode` 路由）。`name` 可省略（默认「粘贴」）。 |
+| `/chatupgrade uploadaudio folder <path> <name>` | 从本机路径上传音频并发送音频载荷（按 `uploadMode` 路由到服务端或第三方）。 |
+| `/chatupgrade uploadaudio pick <name>` | 打开文件选择器选音频并上传发送（按 `uploadMode` 路由）。 |
+| `/chatupgrade uploadvideo folder <path> <name>` | 从本机路径上传视频并发送视频载荷（按 `uploadMode` 路由到服务端或第三方）。 |
+| `/chatupgrade uploadvideo pick <name>` | 打开文件选择器选视频并上传发送（按 `uploadMode` 路由）。 |
+| `/chatupgrade config uploadmode <auto/server/third>` | 上传路由模式：`auto`（默认，只要识别到服务端媒体能力 `enabled=true` 就走服务端上传；否则第三方）、`server`（强制直传服务器）、`third`（强制第三方/Litterbox）。 |
 | `/chatupgrade config ci <true 或 false>` | 开关 **CICode** 图片兼容：`true` 时仅图片发送 `[[CICode,url=…]]`，音频/视频仍发送 `[[ChatUpgrade,url=…]]`；`false` 时全部发送 `[[ChatUpgrade,url=…]]`；写入配置。 |
 | `/chatupgrade config manual <true 或 false>` | 开关**图片手动触发渲染**：`true` 时需点击 `[图片: …]` 后才加载预览；写入配置。 |
 | `/chatupgrade config manualaudio <true 或 false>` | 开关**音频手动触发渲染**：`true` 时需点击 `[音频: …]` 后才加载预览；写入配置。 |
 | `/chatupgrade config manualvideo <true 或 false>` | 开关**视频手动触发渲染**：`true` 时需点击 `[视频: …]` 后才加载预览；写入配置。 |
+| `/chatupgrade config smoothscroll <true 或 false>` | 开关**聊天平滑滚动**：`true` 启用平滑滚动（默认开启）；写入配置。 |
 | `/chatupgrade config audiovolume <1-100>` | 设置音频播放音量百分比（1~100）；写入配置并立即作用于已加载音频会话。 |
 | `/chatupgrade config videovolume <1-100>` | 设置视频音量百分比（1~100）；写入配置。 |
 | `/chatupgrade config maxreceive <1-10>` | 设置接收体积上限（MiB）；写入配置。 |
@@ -82,11 +83,12 @@
 | `manualImageReveal` | `boolean` | 图片改为点击占位符后才触发加载。 |
 | `manualAudioReveal` | `boolean` | 音频改为点击占位符后才触发加载。 |
 | `manualVideoReveal` | `boolean` | 视频改为点击占位符后才触发加载。 |
+| `smoothScrollEnabled` | `boolean` | 聊天平滑滚动开关；默认 `true`。 |
 | `audioVolumePercent` | `int(1~100)` | 音频播放音量百分比。 |
 | `videoVolumePercent` | `int(1~100)` | 视频播放音量百分比。 |
 | `maxReceiveBytes` | `int` | 接收上限（字节），最大 10 MiB。 |
 | `maxUploadBytes` | `int` | 上传上限（字节），最大 10 MiB。 |
-| `uploadMode` | `"AUTO" \| "SERVER" \| "THIRD_PARTY"` | 上传路由模式；`AUTO` 会在服务端启用直传时优先走服务器，否则走第三方。 |
+| `uploadMode` | `"AUTO" \| "SERVER" \| "THIRD_PARTY"` | 上传路由模式；`AUTO` 默认优先服务端（当服务端能力包中 `enabled=true`），否则走第三方。 |
 
 ## 可选：服务端直传媒体（不支持 CICode）
 
