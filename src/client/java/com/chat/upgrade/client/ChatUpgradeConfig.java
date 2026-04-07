@@ -54,6 +54,8 @@ public final class ChatUpgradeConfig {
     public boolean manualImageReveal;
     public boolean manualAudioReveal;
     public boolean manualVideoReveal;
+    /** Enable smooth chat scrolling (default on). */
+    public Boolean smoothScrollEnabled;
 
     /**
      * Maximum HTTP response body size when downloading an image for chat preview.
@@ -90,6 +92,7 @@ public final class ChatUpgradeConfig {
         c.manualImageReveal = false;
         c.manualAudioReveal = false;
         c.manualVideoReveal = false;
+        c.smoothScrollEnabled = true;
         c.maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         c.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
         c.audioVolumePercent = 100;
@@ -110,6 +113,7 @@ public final class ChatUpgradeConfig {
         int beforeUpload = maxUploadBytes;
         int beforeAudioVolume = audioVolumePercent;
         int beforeVideoVolume = videoVolumePercent;
+        Boolean beforeSmoothScroll = smoothScrollEnabled;
         if (maxReceiveBytes <= 0) {
             maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         }
@@ -123,10 +127,14 @@ public final class ChatUpgradeConfig {
         if (uploadMode == null) {
             uploadMode = UploadMode.AUTO;
         }
+        if (smoothScrollEnabled == null) {
+            smoothScrollEnabled = true;
+        }
         return beforeReceive != maxReceiveBytes
                 || beforeUpload != maxUploadBytes
                 || beforeAudioVolume != audioVolumePercent
-                || beforeVideoVolume != videoVolumePercent;
+                || beforeVideoVolume != videoVolumePercent
+                || beforeSmoothScroll != smoothScrollEnabled;
     }
 
     public static ChatUpgradeConfig get() {
@@ -220,6 +228,18 @@ public final class ChatUpgradeConfig {
             instance.manualVideoReveal = value;
             writeConfigFile();
         }
+    }
+
+    public static void setSmoothScrollEnabledAndSave(boolean value) throws IOException {
+        synchronized (LOCK) {
+            instance.smoothScrollEnabled = value;
+            writeConfigFile();
+        }
+    }
+
+    public static boolean isSmoothScrollEnabled() {
+        Boolean enabled = instance.smoothScrollEnabled;
+        return enabled == null || enabled;
     }
 
     public static void setMaxReceiveBytesAndSave(int bytes) throws IOException {

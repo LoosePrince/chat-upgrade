@@ -212,6 +212,11 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                 .executes(ctx -> setManualVideoReveal(
                                                         ctx.getSource(),
                                                         BoolArgumentType.getBool(ctx, "enabled")))))
+                                .then(ClientCommands.literal("smoothscroll")
+                                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
+                                                .executes(ctx -> setSmoothScrollEnabled(
+                                                        ctx.getSource(),
+                                                        BoolArgumentType.getBool(ctx, "enabled")))))
                                 .then(ClientCommands.literal("reload")
                                         .executes(ctx -> reloadConfig(ctx.getSource())))
                                 .then(ClientCommands.literal("audiovolume")
@@ -505,6 +510,20 @@ public class ChatUpgradeClient implements ClientModInitializer {
             ChatUpgradeConfig.setManualVideoRevealAndSave(enabled);
             source.sendFeedback(Component.translatable(
                     "chatupgrade.config.manual_video.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setSmoothScrollEnabled(FabricClientCommandSource source, boolean enabled) {
+        try {
+            ChatUpgradeConfig.setSmoothScrollEnabledAndSave(enabled);
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.smooth_scroll.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;

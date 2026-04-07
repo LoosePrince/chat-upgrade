@@ -1,5 +1,6 @@
 package com.chat.upgrade.client.mixin;
 
+import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ChatUpgradeChatRenderState;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -24,6 +25,11 @@ public abstract class ChatScreenSmoothScrollMixin {
             Operation<Void> original,
             @Local(name = "scrollY") double scaledScrollY
     ) {
+        if (!ChatUpgradeConfig.isSmoothScrollEnabled()) {
+            ChatUpgradeChatRenderState.cancelWheelOverscroll();
+            original.call(chatComponent, ignoredIntScroll);
+            return;
+        }
         int lineHeight = ((ChatComponentLineHeightAccessor) chatComponent).chatupgrade$invokeGetLineHeight();
         ChatComponentScrollAccessors accessors = (ChatComponentScrollAccessors) chatComponent;
         int total = accessors.chatupgrade$getTrimmedMessages().size();

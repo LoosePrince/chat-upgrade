@@ -88,6 +88,7 @@
   "chatupgrade.config.manual_image.updated": "手动渲染（点击 [图片: …] 后再加载预览）已%s。",
   "chatupgrade.config.manual_audio.updated": "音频手动渲染（点击 [音频: …] 后再加载预览）已%s。",
   "chatupgrade.config.manual_video.updated": "视频手动渲染（点击 [视频: …] 后再加载预览）已%s。",
+  "chatupgrade.config.smooth_scroll.updated": "聊天平滑滚动已%s。",
   "chatupgrade.config.audio_volume.updated": "音频音量已设为 %s%%。",
   "chatupgrade.config.video_volume.updated": "视频音量已设为 %s%%。",
   "chatupgrade.error.write_config": "无法写入配置: %s",
