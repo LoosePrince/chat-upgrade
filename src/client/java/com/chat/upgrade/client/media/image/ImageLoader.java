@@ -43,6 +43,8 @@ public final class ImageLoader {
 
     /** Hard cap so huge remote images do not blow VRAM (long edge). */
     private static final int MAX_TEXTURE_DIMENSION = 1024;
+    /** Full preview texture cap for popup preview screen (static images). */
+    private static final int MAX_FULL_TEXTURE_DIMENSION = 4096;
 
     private static final ConcurrentHashMap<String, ImageEntry> CACHE = new ConcurrentHashMap<>();
     private static final AtomicInteger TEXTURE_COUNTER = new AtomicInteger(0);
@@ -107,28 +109,24 @@ public final class ImageLoader {
             return;
         }
         ImageEntry entry = CACHE.computeIfAbsent(url, u -> new ImageEntry());
+        ChatUpgrade.LOGGER.info(
+                "chat-upgrade: image loadFromBytes url={} bytes={} contentType={}",
+                url, body.length, contentType == null ? "unknown" : contentType);
         entry.setTransferMetadata(body.length, contentType == null ? "unknown" : contentType, md5Hex);
         entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
         CompletableFuture.runAsync(() -> {
             try {
-                Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
-                if (animatedOpt.isEmpty()) {
-                    animatedOpt = WebpAnimatedDecoder.tryDecode(body);
-                }
-                if (animatedOpt.isEmpty()) {
-                    animatedOpt = ApngAnimatedDecoder.tryDecode(body);
-                }
-                if (animatedOpt.isPresent()) {
-                    AnimatedDecodeResult r = animatedOpt.get();
-                    scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
-                    return;
-                }
-                NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
-                scheduleTextureRegistration(url, entry, img);
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {} from bytes: {}", url, e.getMessage());
+                decodeAndSchedule(url, entry, body, true);
+            } catch (Throwable t) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {} from bytes: {} [{}]",
+                        url, t.getMessage(), t.getClass().getName());
                 markFailed(url, entry);
             }
+        }).exceptionally(t -> {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: async decode pipeline crashed for {}: {}",
+                    url, t.getMessage());
+            markFailed(url, entry);
+            return null;
         });
     }
 
@@ -187,27 +185,13 @@ public final class ImageLoader {
                 String md5Hex = payload.md5Hex();
                 entry.setTransferMetadata(byteLen, contentType, md5Hex);
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
-                Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
-                if (animatedOpt.isEmpty()) {
-                    animatedOpt = WebpAnimatedDecoder.tryDecode(body);
-                }
-                if (animatedOpt.isEmpty()) {
-                    animatedOpt = ApngAnimatedDecoder.tryDecode(body);
-                }
-                if (animatedOpt.isPresent()) {
-                    AnimatedDecodeResult r = animatedOpt.get();
-                    ChatUpgrade.LOGGER.info("chat-upgrade: animated decode ok for {} (frames={})", url,
-                            r.frames().length);
-                    scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
-                    return;
-                }
-                NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
-                scheduleTextureRegistration(url, entry, img);
+                decodeAndSchedule(url, entry, body, false);
             } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: image body exceeds limit ({}) for {}", maxReceive, url);
                 markFailedOversize(url, entry);
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {}: {}", url, e.getMessage());
+            } catch (Throwable t) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {}: {} [{}]",
+                        url, t.getMessage(), t.getClass().getName());
                 markFailed(url, entry);
             }
         }).exceptionally(e -> {
@@ -215,6 +199,29 @@ public final class ImageLoader {
             markFailed(url, entry);
             return null;
         });
+    }
+
+    private static void decodeAndSchedule(String url, ImageEntry entry, byte[] body, boolean logRasterSuccess)
+            throws Exception {
+        Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
+        if (animatedOpt.isEmpty()) {
+            animatedOpt = WebpAnimatedDecoder.tryDecode(body);
+        }
+        if (animatedOpt.isEmpty()) {
+            animatedOpt = ApngAnimatedDecoder.tryDecode(body);
+        }
+        if (animatedOpt.isPresent()) {
+            AnimatedDecodeResult r = animatedOpt.get();
+            ChatUpgrade.LOGGER.info("chat-upgrade: animated decode ok for {} (frames={})", url, r.frames().length);
+            scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
+            return;
+        }
+        NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
+        if (logRasterSuccess) {
+            ChatUpgrade.LOGGER.info("chat-upgrade: raster decode ok for {} ({}x{}, format={})",
+                    url, img.getWidth(), img.getHeight(), img.format().name());
+        }
+        scheduleTextureRegistration(url, entry, img);
     }
 
     private static void markFailed(String url, ImageEntry entry) {
@@ -267,6 +274,20 @@ public final class ImageLoader {
             texH = Math.max(1, (int) (texH * shrink));
         }
         return new PreviewLayout(displayW, displayH, texW, texH);
+    }
+
+    private static int[] computeFullTextureSize(int rawW, int rawH) {
+        int fullW = Math.max(1, rawW);
+        int fullH = Math.max(1, rawH);
+        if (fullW <= MAX_FULL_TEXTURE_DIMENSION && fullH <= MAX_FULL_TEXTURE_DIMENSION) {
+            return new int[] { fullW, fullH };
+        }
+        double shrink = Math.min(
+                (double) MAX_FULL_TEXTURE_DIMENSION / fullW,
+                (double) MAX_FULL_TEXTURE_DIMENSION / fullH);
+        fullW = Math.max(1, (int) Math.floor(fullW * shrink));
+        fullH = Math.max(1, (int) Math.floor(fullH * shrink));
+        return new int[] { fullW, fullH };
     }
 
     private static void closeNativeImages(@Nullable NativeImage[] frames) {
@@ -364,11 +385,17 @@ public final class ImageLoader {
                 int displayH = layout.displayH();
                 int texW = layout.texW();
                 int texH = layout.texH();
+                int[] fullSize = computeFullTextureSize(rawW, rawH);
+                int fullTexW = fullSize[0];
+                int fullTexH = fullSize[1];
 
-                // One resize from full source → supersampled texture; blit still uses
-                // displayW×displayH on screen.
+                // Generate two textures for static images:
+                // 1) HUD preview texture (small/supersampled)
+                // 2) Preview screen texture (much larger, capped)
                 NativeImage scaled = new NativeImage(img.format(), texW, texH, false);
                 img.resizeSubRectTo(0, 0, rawW, rawH, scaled);
+                NativeImage fullPreview = new NativeImage(img.format(), fullTexW, fullTexH, false);
+                img.resizeSubRectTo(0, 0, rawW, rawH, fullPreview);
                 entry.setDecodedFormatName(img.format().name());
                 img.close();
 
@@ -381,7 +408,14 @@ public final class ImageLoader {
                 DynamicTexture texture = new DynamicTexture(() -> "upgrade_preview_" + finalId, texturePixels);
                 Minecraft.getInstance().getTextureManager().register(location, texture);
 
-                entry.setLoaded(location, displayW, displayH, texW, texH, rawW, rawH);
+                int fullId = TEXTURE_COUNTER.getAndIncrement();
+                Identifier fullLocation = Identifier.fromNamespaceAndPath(
+                        ChatUpgrade.MOD_ID, "upgrade_preview_full_" + fullId);
+                int finalFullId = fullId;
+                DynamicTexture fullTexture = new DynamicTexture(() -> "upgrade_preview_full_" + finalFullId, fullPreview);
+                Minecraft.getInstance().getTextureManager().register(fullLocation, fullTexture);
+
+                entry.setLoaded(location, fullLocation, displayW, displayH, texW, texH, fullTexW, fullTexH, rawW, rawH);
                 UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register texture for {}: {}", url, e.getMessage());

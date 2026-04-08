@@ -31,6 +31,8 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
 
     /** Static preview; null when {@link #frameTextureIds} is used for animation. */
     private @Nullable Identifier textureId;
+    /** Optional higher-resolution texture for full preview screen (static images only). */
+    private @Nullable Identifier fullTextureId;
     /**
      * Multiple frames for animated GIF; when non-null and length &gt; 1, use
      * {@link #textureIdAtMillis(long)}.
@@ -44,6 +46,9 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
     /** Actual GPU texture pixel size (may match width/height after CPU scale). */
     private int textureWidth;
     private int textureHeight;
+    /** Full preview texture size (0 means unavailable). */
+    private int fullTextureWidth;
+    private int fullTextureHeight;
 
     /** Original decoded image size (pixels). */
     private int rawPixelWidth;
@@ -62,13 +67,17 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
 
     public void setLoaded(
             Identifier textureId,
+            @Nullable Identifier fullTextureId,
             int drawWidth,
             int drawHeight,
             int texWidth,
             int texHeight,
+            int fullTexWidth,
+            int fullTexHeight,
             int rawPixelWidth,
             int rawPixelHeight) {
         this.textureId = textureId;
+        this.fullTextureId = fullTextureId;
         this.frameTextureIds = null;
         this.frameDelayMs = null;
         this.totalLoopDurationMs = 0L;
@@ -76,6 +85,8 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
         this.height = drawHeight;
         this.textureWidth = texWidth;
         this.textureHeight = texHeight;
+        this.fullTextureWidth = fullTexWidth;
+        this.fullTextureHeight = fullTexHeight;
         this.rawPixelWidth = rawPixelWidth;
         this.rawPixelHeight = rawPixelHeight;
         setState(State.LOADED);
@@ -95,6 +106,7 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
             int rawPixelWidth,
             int rawPixelHeight) {
         this.textureId = null;
+        this.fullTextureId = null;
         this.frameTextureIds = Arrays.copyOf(frameTextureIds, frameTextureIds.length);
         this.frameDelayMs = Arrays.copyOf(frameDelayMs, frameDelayMs.length);
         long total = 0L;
@@ -106,6 +118,8 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
         this.height = drawHeight;
         this.textureWidth = texWidth;
         this.textureHeight = texHeight;
+        this.fullTextureWidth = 0;
+        this.fullTextureHeight = 0;
         this.rawPixelWidth = rawPixelWidth;
         this.rawPixelHeight = rawPixelHeight;
         setState(State.LOADED);
@@ -167,6 +181,9 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
         } else if (textureId != null) {
             consumer.accept(textureId);
         }
+        if (fullTextureId != null) {
+            consumer.accept(fullTextureId);
+        }
     }
 
     public void setFailed(FailureKind kind) {
@@ -180,6 +197,10 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
 
     public @Nullable Identifier getTextureId() {
         return textureId;
+    }
+
+    public @Nullable Identifier getFullTextureId() {
+        return fullTextureId;
     }
 
     public int getWidth() {
@@ -196,6 +217,14 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
 
     public int getTextureHeight() {
         return textureHeight;
+    }
+
+    public int getFullTextureWidth() {
+        return fullTextureWidth;
+    }
+
+    public int getFullTextureHeight() {
+        return fullTextureHeight;
     }
 
     public int getRawPixelWidth() {

@@ -3,12 +3,12 @@ import com.chat.upgrade.ChatUpgrade;
 import net.minecraft.client.resources.language.I18n;
 
 import javax.imageio.ImageIO;
-import javax.swing.JFileChooser;
 import javax.swing.SwingUtilities;
-import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.Image;
+import java.awt.FileDialog;
+import java.awt.Frame;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
@@ -23,7 +23,6 @@ import java.util.Comparator;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -104,7 +103,7 @@ public final class LocalImageSources {
             ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT toolkit unavailable: {}", t.getMessage());
             return Optional.empty();
         }
-        return pickWithJFileChooser();
+        return pickWithFileDialog(I18n.get("chatupgrade.file_chooser.image.title"), IMAGE_EXTENSIONS);
     }
 
     public static Optional<Path> pickAudioWithFileChooser() {
@@ -118,7 +117,7 @@ public final class LocalImageSources {
             ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT toolkit unavailable: {}", t.getMessage());
             return Optional.empty();
         }
-        return pickAudioWithJFileChooser();
+        return pickWithFileDialog(I18n.get("chatupgrade.file_chooser.audio.title"), AUDIO_EXTENSIONS);
     }
 
     public static Optional<Path> pickVideoWithFileChooser() {
@@ -132,90 +131,46 @@ public final class LocalImageSources {
             ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT toolkit unavailable: {}", t.getMessage());
             return Optional.empty();
         }
-        return pickVideoWithJFileChooser();
+        return pickWithFileDialog(I18n.get("chatupgrade.file_chooser.video.title"), VIDEO_EXTENSIONS);
     }
 
-    private static Optional<Path> pickWithJFileChooser() {
+    private static Optional<Path> pickWithFileDialog(String title, Set<String> extensions) {
         final Path[] holder = new Path[1];
-        CountDownLatch done = new CountDownLatch(1);
-        SwingUtilities.invokeLater(() -> {
+        Runnable show = () -> {
             try {
-                JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle(I18n.get("chatupgrade.file_chooser.image.title"));
-                chooser.setFileFilter(new FileNameExtensionFilter(
-                        I18n.get("chatupgrade.file_chooser.image.filter"),
-                            "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico"));
-                chooser.setMultiSelectionEnabled(false);
-                int result = chooser.showOpenDialog(null);
-                if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
-                    holder[0] = chooser.getSelectedFile().toPath();
+                FileDialog dialog = new FileDialog((Frame) null, title, FileDialog.LOAD);
+                dialog.setMultipleMode(false);
+                dialog.setFilenameFilter((dir, name) -> {
+                    if (name == null) {
+                        return false;
+                    }
+                    int dot = name.lastIndexOf('.');
+                    if (dot < 0 || dot >= name.length() - 1) {
+                        return false;
+                    }
+                    String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
+                    return extensions.contains(ext);
+                });
+                dialog.setVisible(true);
+                String dir = dialog.getDirectory();
+                String file = dialog.getFile();
+                if (dir != null && file != null && !file.isBlank()) {
+                    holder[0] = Path.of(dir, file);
                 }
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser error: {}", e.getMessage());
-            } finally {
-                done.countDown();
+            } catch (Throwable t) {
+                ChatUpgrade.LOGGER.warn("ChatUpgrade: FileDialog error: {}", t.toString());
             }
-        });
-        awaitLatch(done);
-        return Optional.ofNullable(holder[0]);
-    }
-
-    private static Optional<Path> pickAudioWithJFileChooser() {
-        final Path[] holder = new Path[1];
-        CountDownLatch done = new CountDownLatch(1);
-        SwingUtilities.invokeLater(() -> {
-            try {
-                JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle(I18n.get("chatupgrade.file_chooser.audio.title"));
-                chooser.setFileFilter(new FileNameExtensionFilter(
-                        I18n.get("chatupgrade.file_chooser.audio.filter"),
-                        "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm"));
-                chooser.setMultiSelectionEnabled(false);
-                int result = chooser.showOpenDialog(null);
-                if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
-                    holder[0] = chooser.getSelectedFile().toPath();
-                }
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser audio error: {}", e.getMessage());
-            } finally {
-                done.countDown();
-            }
-        });
-        awaitLatch(done);
-        return Optional.ofNullable(holder[0]);
-    }
-
-    private static Optional<Path> pickVideoWithJFileChooser() {
-        final Path[] holder = new Path[1];
-        CountDownLatch done = new CountDownLatch(1);
-        SwingUtilities.invokeLater(() -> {
-            try {
-                JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle(I18n.get("chatupgrade.file_chooser.video.title"));
-                chooser.setFileFilter(new FileNameExtensionFilter(
-                        I18n.get("chatupgrade.file_chooser.video.filter"),
-                        "mp4", "webm", "mov", "mkv", "m4v", "avi"));
-                chooser.setMultiSelectionEnabled(false);
-                int result = chooser.showOpenDialog(null);
-                if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
-                    holder[0] = chooser.getSelectedFile().toPath();
-                }
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.warn("ChatUpgrade: JFileChooser video error: {}", e.getMessage());
-            } finally {
-                done.countDown();
-            }
-        });
-        awaitLatch(done);
-        return Optional.ofNullable(holder[0]);
-    }
-
-    private static void awaitLatch(CountDownLatch done) {
+        };
         try {
-            done.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            if (SwingUtilities.isEventDispatchThread()) {
+                show.run();
+            } else {
+                SwingUtilities.invokeAndWait(show);
+            }
+        } catch (Throwable t) {
+            ChatUpgrade.LOGGER.warn("ChatUpgrade: FileDialog invoke error: {}", t.toString());
         }
+        return Optional.ofNullable(holder[0]);
     }
 
     /**

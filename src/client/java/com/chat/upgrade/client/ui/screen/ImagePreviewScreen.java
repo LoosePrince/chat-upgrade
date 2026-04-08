@@ -68,15 +68,22 @@ public final class ImagePreviewScreen extends Screen {
         }
 
         @Nullable
-        Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(Util.getMillis()) : entry.getTextureId();
+        Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(Util.getMillis()) : entry.getFullTextureId();
+        if (!entry.isAnimated() && textureId == null) {
+            textureId = entry.getTextureId();
+        }
         if (textureId == null) {
             guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.image_preview.texture_unavailable"), width / 2, imageTop + boxH / 2 - 4, 0xFFFF8080);
             renderControls(guiGraphics, panelLeft, panelRight, controlTop);
             return;
         }
 
-        int texW = entry.getTextureWidth();
-        int texH = entry.getTextureHeight();
+        int texW = entry.isAnimated() ? entry.getTextureWidth() : entry.getFullTextureWidth();
+        int texH = entry.isAnimated() ? entry.getTextureHeight() : entry.getFullTextureHeight();
+        if (!entry.isAnimated() && (texW <= 0 || texH <= 0)) {
+            texW = entry.getTextureWidth();
+            texH = entry.getTextureHeight();
+        }
         if (texW <= 0 || texH <= 0) {
             guiGraphics.centeredText(font, I18n.get("chatupgrade.screen.image_preview.invalid_size"), width / 2, imageTop + boxH / 2 - 4, 0xFFFF8080);
             renderControls(guiGraphics, panelLeft, panelRight, controlTop);
