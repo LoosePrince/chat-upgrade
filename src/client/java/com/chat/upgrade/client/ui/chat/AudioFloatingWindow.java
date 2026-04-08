@@ -100,10 +100,14 @@ public final class AudioFloatingWindow {
         Rects rects = buttonRects(x0 + PAD, rowTop);
         boolean playing = AudioPlayerService.isPlaying(url);
         boolean loop = AudioPlayerService.isLoopEnabled(url);
-        paintButton(gfx, font, rects.playL, rects.top, rects.playR, rects.bottom, playing ? "Pause" : "Play", true);
-        paintButton(gfx, font, rects.loopL, rects.top, rects.loopR, rects.bottom, loop ? "Loop" : "Once", loop);
-        paintButton(gfx, font, rects.openL, rects.top, rects.openR, rects.bottom, "Open", false);
-        paintButton(gfx, font, rects.removeL, rects.top, rects.removeR, rects.bottom, "X", false);
+        String playIcon = playing ? "⏸" : "▶";
+        String loopIcon = loop ? "🔁" : "1×";
+        String openIcon = "⧉";
+        String closeIcon = "✕";
+        paintButton(gfx, font, rects.playL, rects.top, rects.playR, rects.bottom, playIcon, true);
+        paintButton(gfx, font, rects.loopL, rects.top, rects.loopR, rects.bottom, loopIcon, loop);
+        paintButton(gfx, font, rects.openL, rects.top, rects.openR, rects.bottom, openIcon, false);
+        paintButton(gfx, font, rects.removeL, rects.top, rects.removeR, rects.bottom, closeIcon, false);
 
         int barX0 = x0 + PAD;
         int barX1 = x1 - PAD;

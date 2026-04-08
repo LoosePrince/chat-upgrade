@@ -127,12 +127,16 @@ public final class UpgradeHudInlinePaint {
 
         boolean loop = AudioPlayerService.isLoopEnabled(url);
         AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
-        paintButton(gfx, font, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom(), playing ? "Pause" : "Play",
+        String playIcon = playing ? "⏸" : "▶";
+        String loopIcon = loop ? "🔁" : "1×";
+        String openIcon = "⧉";
+        String popIcon = "🗖";
+        paintButton(gfx, font, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom(), playIcon,
                 opacity, true);
-        paintButton(gfx, font, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom(), loop ? "Loop" : "Once",
+        paintButton(gfx, font, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom(), loopIcon,
                 opacity, loop);
-        paintButton(gfx, font, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom(), "Open", opacity, false);
-        paintButton(gfx, font, rects.popLeft(), rects.top(), rects.popRight(), rects.bottom(), "Pop", opacity, false);
+        paintButton(gfx, font, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom(), openIcon, opacity, false);
+        paintButton(gfx, font, rects.popLeft(), rects.top(), rects.popRight(), rects.bottom(), popIcon, opacity, false);
 
         int barX0 = x0 + AUDIO_PAD_X;
         int barX1 = x1 - AUDIO_PAD_X;
@@ -219,7 +223,7 @@ public final class UpgradeHudInlinePaint {
         int btnX0 = x0 + VideoUiLayout.PAD_X;
         int btnX1 = btnX0 + VideoUiLayout.BTN_W;
         gfx.fill(btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H, argb(opacity, 58, 62, 72));
-        String icon = playing ? "Pause" : "Play";
+        String icon = playing ? "⏸" : "▶";
         int iconX = btnX0 + Math.max(1, (VideoUiLayout.BTN_W - font.width(icon)) / 2);
         gfx.text(font, icon, iconX, controlY, argb(opacity, 235, 236, 242), false);
 
