@@ -1,8 +1,8 @@
 package com.chat.upgrade.client.mixin;
 
 import com.llamalad7.mixinextras.sugar.Local;
-import com.chat.upgrade.client.ChatGraphicsAccessBridge;
-import com.chat.upgrade.client.ChatUpgradeRenderScope;
+import com.chat.upgrade.client.ui.chat.ChatGraphicsAccessBridge;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeRenderScope;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
 import org.spongepowered.asm.mixin.Mixin;

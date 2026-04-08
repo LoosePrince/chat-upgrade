@@ -4,8 +4,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
-import com.chat.upgrade.client.InlineResourceType;
-import com.chat.upgrade.client.ServerMediaClient;
+import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 
 public final class UploadRouter {
     private static final UploadProvider THIRD_PARTY = new ThirdPartyUploadProvider();

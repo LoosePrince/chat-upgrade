@@ -13,16 +13,16 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import com.chat.upgrade.client.AudioLoader;
-import com.chat.upgrade.client.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ChatUpgradeConfig;
-import com.chat.upgrade.client.ImageLoader;
-import com.chat.upgrade.client.InlineResourceType;
-import com.chat.upgrade.client.UpgradeBracketCodec;
-import com.chat.upgrade.client.UpgradeChatHudSync;
-import com.chat.upgrade.client.UpgradePhantomCoordinator;
-import com.chat.upgrade.client.UpgradePhantomHudLayout;
-import com.chat.upgrade.client.VideoLoader;
+import com.chat.upgrade.client.media.audio.AudioLoader;
+import com.chat.upgrade.client.media.image.ImageLoader;
+import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.video.VideoLoader;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
+import com.chat.upgrade.client.ui.chat.UpgradeChatHudSync;
+import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
 
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;

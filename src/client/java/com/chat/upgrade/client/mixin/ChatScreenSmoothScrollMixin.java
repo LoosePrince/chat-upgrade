@@ -1,10 +1,10 @@
 package com.chat.upgrade.client.mixin;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
-import com.chat.upgrade.client.ChatUpgradeChatRenderState;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import org.spongepowered.asm.mixin.Mixin;

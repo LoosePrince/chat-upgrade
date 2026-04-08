@@ -1,7 +1,8 @@
 package com.chat.upgrade.client.mixininterface;
 
-import com.chat.upgrade.client.InlineResourceType;
 import org.jetbrains.annotations.Nullable;
+
+import com.chat.upgrade.client.media.model.InlineResourceType;
 
 /** Per-line image URL / continuation phantom (via {@link com.chat.upgrade.client.mixin.GuiMessageLineMixin}). */
 public interface ImageAttachable {

@@ -8,8 +8,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import com.chat.upgrade.client.InlineResourceType;
-import com.chat.upgrade.client.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.mixininterface.GuiMessageLineReadable;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
 

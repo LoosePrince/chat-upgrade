@@ -6,7 +6,7 @@ import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.input.MouseButtonEvent;
-import com.chat.upgrade.client.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;

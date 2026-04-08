@@ -2,11 +2,11 @@ package com.chat.upgrade.client;
 
 import java.util.Locale;
 
-final class ChatUpgradeFormatters {
+public final class ChatUpgradeFormatters {
     private ChatUpgradeFormatters() {
     }
 
-    static String formatBytes(int len) {
+    public static String formatBytes(int len) {
         if (len < 0) {
             return "—";
         }
@@ -19,7 +19,7 @@ final class ChatUpgradeFormatters {
         return String.format(Locale.ROOT, "%.2f MiB", len / (1024.0 * 1024.0));
     }
 
-    static String formatMs(long ms) {
+    public static String formatMs(long ms) {
         long s = Math.max(0L, ms / 1000L);
         long m = s / 60L;
         long r = s % 60L;

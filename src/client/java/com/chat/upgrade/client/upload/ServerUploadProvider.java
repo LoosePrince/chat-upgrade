@@ -7,9 +7,9 @@ import java.util.concurrent.CompletableFuture;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.chat.upgrade.client.InlineResourceType;
-import com.chat.upgrade.client.ServerMediaClient;
-import com.chat.upgrade.client.ServerMediaNetworking;
+import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
+import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 
 public final class ServerUploadProvider implements UploadProvider {
     private final InlineResourceType type;

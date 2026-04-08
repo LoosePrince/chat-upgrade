@@ -1,6 +1,6 @@
 package com.chat.upgrade.client.mixin;
 
-import com.chat.upgrade.client.ChatUpgradeInlineImageInteraction;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;

@@ -6,7 +6,7 @@ import java.util.concurrent.CompletableFuture;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.chat.upgrade.client.CatboxUploader;
+// same package
 
 public final class ThirdPartyUploadProvider implements UploadProvider {
     @Override

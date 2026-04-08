@@ -1,6 +1,6 @@
 package com.chat.upgrade.client.mixin;
 
-import com.chat.upgrade.client.ChatUpgradeInlineImageInteraction;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
 import net.minecraft.client.gui.components.ChatComponent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
