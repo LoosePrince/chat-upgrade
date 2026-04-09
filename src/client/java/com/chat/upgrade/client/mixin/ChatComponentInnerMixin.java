@@ -38,7 +38,7 @@ public abstract class ChatComponentInnerMixin {
         try {
             UpgradePhantomHudLayout.dispatchLinePaint(line, y, opacity);
             InlineEmojiHudPaint.paintLineEmoji(line, y, opacity, lineHeight);
-            ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity);
+            ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity, lineHeight);
             return original.call(graphics, y, opacity, text);
         } finally {
             graphics.updatePose(pose -> pose.translate(0.0F, -smoothOffset));

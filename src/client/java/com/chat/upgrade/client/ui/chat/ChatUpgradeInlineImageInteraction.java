@@ -35,6 +35,7 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.Identifier;
 
 /**
  * Registers screen-space hit parallelograms for inline chat images (same pose
@@ -43,6 +44,10 @@ import net.minecraft.network.chat.Style;
  */
 public final class ChatUpgradeInlineImageInteraction {
     private static final List<Plane> PLANES = new ArrayList<>();
+    private static final int EMOJI_SIDE_GAP_PX = 1;
+    private static final int EMOJI_HOVER_LINES = 6;
+    private static final int EMOJI_HOVER_OFFSET_X = 10;
+    private static final int EMOJI_HOVER_OFFSET_Y = -8;
 
     private ChatUpgradeInlineImageInteraction() {
     }
@@ -51,11 +56,16 @@ public final class ChatUpgradeInlineImageInteraction {
         PLANES.clear();
     }
 
-    public static void afterChatLinePaint(ChatComponent.ChatGraphicsAccess graphics, GuiMessage.Line line, int textTop,
-            float textOpacity) {
+    public static void afterChatLinePaint(
+            ChatComponent.ChatGraphicsAccess graphics,
+            GuiMessage.Line line,
+            int textTop,
+            float textOpacity,
+            int lineHeight) {
         if (!(((Object) line) instanceof ImageAttachable attachable)) {
             return;
         }
+        tryEmojiInteractionAndHover(graphics, line, attachable, textTop, textOpacity, lineHeight);
         String url = attachable.chatupgrade$getImageUrl();
         if (url == null) {
             return;
@@ -135,6 +145,117 @@ public final class ChatUpgradeInlineImageInteraction {
                 attachable.chatupgrade$getResourceType(),
                 rawW,
                 rawH));
+    }
+
+    private static void tryEmojiInteractionAndHover(
+            ChatComponent.ChatGraphicsAccess graphics,
+            GuiMessage.Line line,
+            ImageAttachable attachable,
+            int textTop,
+            float textOpacity,
+            int lineHeight) {
+        List<InlineEmojiSlot> slots = attachable.chatupgrade$getInlineEmojiSlots();
+        if (slots == null || slots.isEmpty()) {
+            return;
+        }
+        Matrix3x2fc pose = poseFromGraphics(graphics);
+        if (pose == null) {
+            return;
+        }
+        Font font = Minecraft.getInstance().font;
+        String plain = extractPlain(line.content());
+        int size = Math.max(1, lineHeight - EMOJI_SIDE_GAP_PX * 2);
+        for (InlineEmojiSlot slot : slots) {
+            int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
+            int x = font.width(plain.substring(0, charIndex)) + EMOJI_SIDE_GAP_PX;
+            int y0 = textTop + EMOJI_SIDE_GAP_PX;
+            PLANES.add(new Plane(
+                    pose,
+                    x,
+                    y0,
+                    x + size,
+                    y0 + size,
+                    slot.iconUrl(),
+                    slot.token(),
+                    line.parent(),
+                    InlineResourceType.IMAGE,
+                    0,
+                    0));
+            tryEmojiHoverPreviewOnFocused(graphics, x, y0, size, slot, textOpacity, lineHeight);
+        }
+    }
+
+    private static void tryEmojiHoverPreviewOnFocused(
+            ChatComponent.ChatGraphicsAccess graphics,
+            int emojiX,
+            int emojiY,
+            int emojiSize,
+            InlineEmojiSlot slot,
+            float textOpacity,
+            int lineHeight) {
+        if (!(graphics instanceof ChatUpgradeDrawingFocusedAccessor acc)) {
+            return;
+        }
+        if (textOpacity <= 1.0e-5F) {
+            return;
+        }
+        Vector2f local = acc.chatupgrade$localMousePos();
+        if (!ActiveTextCollector.isPointInRectangle(local.x, local.y, emojiX, emojiY, emojiX + emojiSize, emojiY + emojiSize)) {
+            return;
+        }
+        GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
+        ImageEntry entry = ImageLoader.getOrLoad(slot.iconUrl());
+        int previewSize = Math.max(1, lineHeight * EMOJI_HOVER_LINES);
+        int x = localMouseToLocalX(acc, acc.chatupgrade$globalMouseX()) + EMOJI_HOVER_OFFSET_X;
+        int y = localMouseToLocalY(acc, acc.chatupgrade$globalMouseY()) + EMOJI_HOVER_OFFSET_Y - previewSize;
+        int x1 = x + previewSize;
+        int y1 = y + previewSize;
+        gfx.fill(x - 1, y - 1, x1 + 1, y1 + 1, 0xCC0A0C10);
+        switch (entry.getState()) {
+            case LOADED -> {
+                Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(net.minecraft.util.Util.getMillis())
+                        : entry.getTextureId();
+                if (textureId == null) {
+                    return;
+                }
+                gfx.blit(
+                        net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+                        textureId,
+                        x, y,
+                        0.0f, 0.0f,
+                        previewSize, previewSize,
+                        entry.getTextureWidth(), entry.getTextureHeight(),
+                        entry.getTextureWidth(), entry.getTextureHeight(),
+                        net.minecraft.util.ARGB.white(Math.min(1.0f, textOpacity + 0.1f)));
+            }
+            case LOADING -> {
+                gfx.fill(x, y, x1, y1, 0xCC23262E);
+                gfx.centeredText(acc.chatupgrade$font(), "…", x + previewSize / 2, y + previewSize / 2 - 4, 0xFFE6EAF2);
+            }
+            case FAILED -> {
+                gfx.fill(x, y, x1, y1, 0xCC3A1D1D);
+                gfx.centeredText(acc.chatupgrade$font(), "x", x + previewSize / 2, y + previewSize / 2 - 4, 0xFFFFB0B0);
+            }
+        }
+    }
+
+    private static int localMouseToLocalX(ChatUpgradeDrawingFocusedAccessor acc, int globalMouseX) {
+        Vector2f local = acc.chatupgrade$localMousePos();
+        return Math.round(local.x - acc.chatupgrade$globalMouseX() + globalMouseX);
+    }
+
+    private static int localMouseToLocalY(ChatUpgradeDrawingFocusedAccessor acc, int globalMouseY) {
+        Vector2f local = acc.chatupgrade$localMousePos();
+        return Math.round(local.y - acc.chatupgrade$globalMouseY() + globalMouseY);
+    }
+
+    private static String extractPlain(net.minecraft.util.FormattedCharSequence seq) {
+        StringBuilder sb = new StringBuilder();
+        seq.accept((index, style, codePoint) -> {
+            sb.appendCodePoint(codePoint);
+            return true;
+        });
+        return sb.toString();
     }
 
     private static GuiMessage parentFrom(GuiMessage.Line line) {
