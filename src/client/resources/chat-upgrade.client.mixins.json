@@ -8,6 +8,7 @@
 		"ChatComponentInlineImageExtractMixin",
 		"ChatComponentScrollAccessors",
 		"ChatComponentLineHeightAccessor",
+		"ChatComponentInnerOuterAccessor",
 		"ChatComponentMixin",
 		"ChatComponentInnerMixin",
 		"ChatUpgradeClickableTextOnlyGraphicsAccessor",

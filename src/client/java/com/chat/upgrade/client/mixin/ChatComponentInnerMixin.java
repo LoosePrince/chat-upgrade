@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
+import com.chat.upgrade.client.ui.chat.InlineEmojiHudPaint;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
@@ -32,13 +33,20 @@ public abstract class ChatComponentInnerMixin {
             @Local(argsOnly = true, ordinal = 0) GuiMessage.Line line
     ) {
         float smoothOffset = ChatUpgradeChatRenderState.smoothOffsetPx();
+        int lineHeight = chatupgrade$lineHeight();
         graphics.updatePose(pose -> pose.translate(0.0F, smoothOffset));
         try {
             UpgradePhantomHudLayout.dispatchLinePaint(line, y, opacity);
+            InlineEmojiHudPaint.paintLineEmoji(line, y, opacity, lineHeight);
             ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity);
             return original.call(graphics, y, opacity, text);
         } finally {
             graphics.updatePose(pose -> pose.translate(0.0F, -smoothOffset));
         }
+    }
+
+    private int chatupgrade$lineHeight() {
+        ChatComponent outer = ((ChatComponentInnerOuterAccessor) (Object) this).chatupgrade$getOuterChatComponent();
+        return Math.max(1, ((ChatComponentLineHeightAccessor) outer).chatupgrade$invokeGetLineHeight());
     }
 }

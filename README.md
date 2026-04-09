@@ -18,6 +18,7 @@
 ## 功能概要
 
 - **解析与展示**：进服聊天中的括号 URL 载荷 → 占位符 + 异步拉取资源（图片/音频/视频）→ 在对应消息下方预留行高并绘制预览。
+- **行内表情**：识别消息中的 `[:token]`（例如 `[:bilibili_tv_gif-2]`），按 `owo.json` 的 `text -> icon` 映射替换为同高正方形图片，表情资源来自 [https://looseprince.github.io/Twikoo-Magic/](https://looseprince.github.io/Twikoo-Magic/)。
 - **发送**：客户端命令（如 `/chatupgrade send`、`upload`、`sendaudio`、`uploadaudio`、`sendvideo`、`uploadvideo`）拼出载荷并发送；默认 `auto` 模式下，只要检测到服务端已启用媒体能力，就会优先上传到服务端（聊天会有提示），未检测到可用能力时才走第三方 Litterbox（约 1 小时有效）。
 - **配置**：`config/chat-upgrade/chat-upgrade.json` 支持协议兼容、手动触发渲染、接收/上传上限、音频/视频音量；支持游戏内写入与重载。
 - **ChatImage兼容**：你可以切换到 `ChatImage兼容` 模式以发送 [ChatImage](https://www.mcmod.cn/class/9111.html) 格式的图片

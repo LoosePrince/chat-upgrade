@@ -1,5 +1,7 @@
 package com.chat.upgrade.client.mixin;
 
+import java.util.List;
+
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -10,6 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
+import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.mixininterface.GuiMessageLineReadable;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
 
@@ -33,6 +37,8 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     private boolean chatupgrade$imageIsContinuation;
     @Unique
     private InlineResourceType chatupgrade$resourceType = InlineResourceType.IMAGE;
+    @Unique
+    private List<InlineEmojiSlot> chatupgrade$inlineEmojiSlots = List.of();
 
     @Inject(method = "<init>", at = @At("TAIL"))
     private void chatupgrade$captureImageData(CallbackInfo ci) {
@@ -41,6 +47,7 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
         this.chatupgrade$resourceName = hints.topName();
         this.chatupgrade$imageUrl = hints.topUrl();
         this.chatupgrade$imageIsContinuation = hints.continuation();
+        this.chatupgrade$inlineEmojiSlots = InlineEmojiCoordinator.consumeForLine(content());
     }
 
     @Override
@@ -71,5 +78,10 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Override
     public InlineResourceType chatupgrade$getResourceType() {
         return chatupgrade$resourceType;
+    }
+
+    @Override
+    public List<InlineEmojiSlot> chatupgrade$getInlineEmojiSlots() {
+        return chatupgrade$inlineEmojiSlots;
     }
 }

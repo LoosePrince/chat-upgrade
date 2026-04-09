@@ -10,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.upload.UploadRouter;
+import com.chat.upgrade.client.emoji.TwikooOwoRegistry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageLoader;
@@ -21,6 +22,7 @@ import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.upload.LocalImageSources;
 import com.mojang.brigadier.arguments.BoolArgumentType;
@@ -70,6 +72,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         registerHudTextureInvalidationOnResize();
         registerMediaCleanupOnDisconnect();
         ServerMediaNetworking.initClient();
+        TwikooOwoRegistry.refreshIfExpired();
     }
 
     private static void registerHudTextureInvalidationOnResize() {
@@ -94,8 +97,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
     }
 
     private static void registerMediaCleanupOnDisconnect() {
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clearAllMediaRuntimeState());
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> clearAllMediaRuntimeState());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(ChatUpgradeClient::clearAllMediaRuntimeState));
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> client.execute(ChatUpgradeClient::clearAllMediaRuntimeState));
     }
 
     private static void clearAllMediaRuntimeState() {
@@ -104,6 +107,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
         ImageLoader.invalidateTextureCache();
         AudioFloatingWindow.clear();
         ServerMediaClient.clearRuntimeState();
+        InlineEmojiCoordinator.clearPendingSlots();
+        TwikooOwoRegistry.clearRuntimeState();
     }
 
     private static void registerCommands() {

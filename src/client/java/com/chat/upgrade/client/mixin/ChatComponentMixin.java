@@ -19,6 +19,8 @@ import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeChatHudSync;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
@@ -72,7 +74,13 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @Unique
     private Component chatupgrade$processIncoming(Component original) {
-        UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
+        InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(original);
+        if (emojiDecoded.hasSlots()) {
+            InlineEmojiCoordinator.setPendingSlots(emojiDecoded.slots());
+        } else {
+            InlineEmojiCoordinator.clearPendingSlots();
+        }
+        UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(emojiDecoded.modified());
         if (decoded.hasUrl()) {
             UpgradePhantomCoordinator.setPendingDecoded(decoded.url(), decoded.name(), decoded.resourceType());
             if (decoded.resourceType() == InlineResourceType.IMAGE) {
@@ -90,7 +98,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             }
             return decoded.modified();
         }
-        return original;
+        return emojiDecoded.modified();
     }
 
     @Inject(method = "addPlayerMessage", at = @At("HEAD"))
