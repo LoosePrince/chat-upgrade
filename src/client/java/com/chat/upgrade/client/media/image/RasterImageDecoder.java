@@ -31,8 +31,16 @@ public final class RasterImageDecoder {
         boolean isJpeg = looksLikeJpeg(bytes);
         if (isJpeg) {
             ChatUpgrade.LOGGER.info("ChatUpgrade: JPEG detected, using Commons Imaging path");
-            BufferedImage jpeg = decodeJpegWithCommonsImaging(bytes);
-            return fromBufferedImage(jpeg);
+            try {
+                BufferedImage jpeg = decodeJpegWithCommonsImaging(bytes);
+                return fromBufferedImage(jpeg);
+            } catch (IOException commonsFailure) {
+                // Commons Imaging does not support all progressive/non-baseline JPEGs.
+                // Fall back to the normal decode chain (NativeImage/ImageIO readers).
+                ChatUpgrade.LOGGER.warn(
+                        "ChatUpgrade: Commons JPEG path failed, fallback to ImageIO chain: {}",
+                        commonsFailure.getMessage());
+            }
         }
         try {
             return NativeImage.read(bytes);

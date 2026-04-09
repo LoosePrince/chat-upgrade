@@ -34,7 +34,7 @@ public final class InlineEmojiHudPaint {
         }
         Font font = Minecraft.getInstance().font;
         String plain = extractPlain(line.content());
-        int size = Math.max(1, lineHeight + EMOJI_SIDE_GAP_PX * 2);
+        int size = Math.max(1, lineHeight - EMOJI_SIDE_GAP_PX * 2);
         for (InlineEmojiSlot slot : slots) {
             int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
             int x = font.width(plain.substring(0, charIndex)) + EMOJI_SIDE_GAP_PX;

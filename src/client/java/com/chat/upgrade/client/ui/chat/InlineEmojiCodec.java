@@ -13,7 +13,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 
 public final class InlineEmojiCodec {
-    private static final Pattern INLINE_EMOJI = Pattern.compile("\\[:([a-zA-Z0-9_\\-]+)]");
+    private static final Pattern INLINE_EMOJI = Pattern.compile("\\[:([^\\]\\r\\n]+)]");
     private static final String UNKNOWN_EMOJI_TEXT = "[未知表情]";
     private static final String EMOJI_SLOT_INSERTION = "chatupgrade:inline-emoji-slot";
     // Width reservation so inline emoji does not overlap following text.
