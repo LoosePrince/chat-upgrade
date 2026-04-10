@@ -5,12 +5,9 @@
 
 name: build
 on:
-  pull_request:
-    paths:
-      - build.gradle
-      - gradle.properties
-      - .github/workflows/build.yml
   push:
+    branches:
+      - main
     paths:
       - build.gradle
       - gradle.properties
@@ -140,6 +137,37 @@ jobs:
           echo "title=$title" >> "$GITHUB_OUTPUT"
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
           echo "asset_file=$asset_file" >> "$GITHUB_OUTPUT"
+          echo "minecraft_version=$minecraft_version" >> "$GITHUB_OUTPUT"
+          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          cat "$body_file" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: check github release exists
+        if: steps.version_changed.outputs.changed == 'true'
+        id: release_exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: publish to modrinth
+        if: steps.version_changed.outputs.changed == 'true' && steps.release_exists.outputs.exists == 'false'
+        uses: Kira-NT/mc-publish@v3.3.0
+        with:
+          files: ${{ steps.meta.outputs.asset_file }}
+          name: ${{ steps.meta.outputs.title }}
+          version: ${{ steps.meta.outputs.mod_version }}
+          version-type: release
+          changelog: ${{ steps.meta.outputs.changelog }}
+          loaders: fabric
+          game-versions: ${{ steps.meta.outputs.minecraft_version }}
+          modrinth-id: Af5aD8GN
+          modrinth-token: ${{ secrets.MODRINTH_API_TOKEN }}
       - name: create or update github release
         if: steps.version_changed.outputs.changed == 'true'
         env:
