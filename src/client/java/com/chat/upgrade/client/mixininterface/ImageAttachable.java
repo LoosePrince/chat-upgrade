@@ -16,6 +16,7 @@ public interface ImageAttachable {
     @Nullable String chatupgrade$getResourceName();
 
     boolean chatupgrade$isImageContinuation();
+    boolean chatupgrade$isImagePhantomTop();
 
     InlineResourceType chatupgrade$getResourceType();
 

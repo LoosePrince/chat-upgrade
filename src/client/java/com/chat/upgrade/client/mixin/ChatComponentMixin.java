@@ -206,12 +206,11 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         if (linesAdded <= 0) {
             return;
         }
-        UpgradePhantomCoordinator.prepareNextPhantomTop(attachment);
         GuiMessage parentMessage = trimmedMessages.get(0).parent();
         switch (type) {
-            case AUDIO -> UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);
-            case VIDEO -> UpgradePhantomHudLayout.onVideoMessageCommitted(url, parentMessage, trimmedMessages);
-            case IMAGE -> UpgradePhantomHudLayout.onUrlMessageCommitted(url, parentMessage, trimmedMessages);
+            case AUDIO -> UpgradePhantomHudLayout.onAudioMessageCommitted(url, attachment, parentMessage, trimmedMessages);
+            case VIDEO -> UpgradePhantomHudLayout.onVideoMessageCommitted(url, attachment, parentMessage, trimmedMessages);
+            case IMAGE -> UpgradePhantomHudLayout.onUrlMessageCommitted(url, attachment, parentMessage, trimmedMessages);
         }
     }
 

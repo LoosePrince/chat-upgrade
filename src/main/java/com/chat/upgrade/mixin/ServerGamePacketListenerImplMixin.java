@@ -16,6 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
+import com.chat.upgrade.server.AttachmentRouteDescriptor;
 import com.chat.upgrade.server.ServerMediaService;
 import com.chat.upgrade.server.store.StoredMedia;
 
@@ -34,6 +35,13 @@ import net.minecraft.server.players.PlayerList;
 
 @Mixin(ServerGamePacketListenerImpl.class)
 public abstract class ServerGamePacketListenerImplMixin {
+    @Unique
+    private static final int CHATUPGRADE_ROUTE_STRUCTURED_ATTACHMENT = 0;
+    @Unique
+    private static final int CHATUPGRADE_ROUTE_LEGACY_MOD = 1;
+    @Unique
+    private static final int CHATUPGRADE_ROUTE_VANILLA = 2;
+
     @Shadow
     public ServerPlayer player;
 
@@ -51,13 +59,13 @@ public abstract class ServerGamePacketListenerImplMixin {
         PlayerList playerList = server.getPlayerList();
         String sender = player.getName().getString();
         for (ServerPlayer target : playerList.getPlayers()) {
-            ReceiverRoute route = chatupgrade$routeFor(target);
-            if (route == ReceiverRoute.STRUCTURED_ATTACHMENT && chatupgrade$sendStructuredAttachment(target, sender, descriptor)) {
+            int route = chatupgrade$routeFor(target);
+            if (route == CHATUPGRADE_ROUTE_STRUCTURED_ATTACHMENT && chatupgrade$sendStructuredAttachment(target, sender, descriptor)) {
                 continue;
             }
             Component out = switch (route) {
-                case STRUCTURED_ATTACHMENT, LEGACY_MOD -> chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
-                case VANILLA -> chatupgrade$buildVanillaMessage(sender, descriptor);
+                case CHATUPGRADE_ROUTE_STRUCTURED_ATTACHMENT, CHATUPGRADE_ROUTE_LEGACY_MOD -> chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
+                default -> chatupgrade$buildVanillaMessage(sender, descriptor);
             };
             target.sendSystemMessage(out, false);
         }
@@ -65,14 +73,14 @@ public abstract class ServerGamePacketListenerImplMixin {
     }
 
     @Unique
-    private static ReceiverRoute chatupgrade$routeFor(ServerPlayer target) {
+    private static int chatupgrade$routeFor(ServerPlayer target) {
         if (ServerPlayNetworking.canSend(target, ServerMediaPayloads.S2CAttachmentCapability.TYPE)) {
-            return ReceiverRoute.STRUCTURED_ATTACHMENT;
+            return CHATUPGRADE_ROUTE_STRUCTURED_ATTACHMENT;
         }
         if (ServerPlayNetworking.canSend(target, ServerMediaPayloads.S2CCapability.TYPE)) {
-            return ReceiverRoute.LEGACY_MOD;
+            return CHATUPGRADE_ROUTE_LEGACY_MOD;
         }
-        return ReceiverRoute.VANILLA;
+        return CHATUPGRADE_ROUTE_VANILLA;
     }
 
     @Unique
@@ -252,33 +260,5 @@ public abstract class ServerGamePacketListenerImplMixin {
             sb.append('\n').append(Component.translatable("chatupgrade.vanilla.never_expires").getString());
         }
         return sb.toString();
-    }
-
-    @Unique
-    private enum ReceiverRoute {
-        STRUCTURED_ATTACHMENT,
-        LEGACY_MOD,
-        VANILLA
-    }
-
-    @Unique
-    private record AttachmentRouteDescriptor(
-            String legacyMessage,
-            String visibleText,
-            String typeWire,
-            String typeLabel,
-            String name,
-            String url) {
-        Optional<StructuredAttachment> structuredAttachment() {
-            if (url.isBlank()) {
-                return Optional.empty();
-            }
-            Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(url);
-            if (parsed.isPresent()) {
-                ServerMediaUrl.Parsed serverMedia = parsed.get();
-                return Optional.of(StructuredAttachment.serverMedia(null, serverMedia.mediaId(), serverMedia.typeWire(), name));
-            }
-            return Optional.of(StructuredAttachment.externalUrl(null, typeWire, name, url));
-        }
     }
 }

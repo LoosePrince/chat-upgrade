@@ -38,6 +38,7 @@ public final class UpgradePhantomCoordinator {
     public record PhantomLineHints(
             @Nullable RichAttachment attachment,
             InlineResourceType fallbackType,
+            boolean phantomTop,
             boolean continuation) {
         public @Nullable String topUrl() {
             return continuation || attachment == null ? null : attachment.urlOrNull();
@@ -99,6 +100,7 @@ public final class UpgradePhantomCoordinator {
         PhantomLineHints hints = new PhantomLineHints(
                 attachment,
                 nextPhantomTopType,
+                attachment != null,
                 nextPhantomContinuation);
         if (!nextPhantomContinuation && nextPhantomTopAttachment != null) {
             nextPhantomTopAttachment = null;

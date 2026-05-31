@@ -14,6 +14,7 @@ import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 
@@ -30,6 +31,7 @@ public final class UpgradePhantomHudLayout {
     private static final int VIDEO_PHANTOM_COUNT = 7;
     private static final Map<InlineResourceType, ConcurrentHashMap<String, Set<GuiMessage>>> URL_TO_MESSAGE_PARENTS_BY_TYPE = new EnumMap<>(
             InlineResourceType.class);
+    private static final ConcurrentHashMap<GuiMessage, RichAttachment> ATTACHMENT_BY_PARENT = new ConcurrentHashMap<>();
 
     static {
         URL_TO_MESSAGE_PARENTS_BY_TYPE.put(InlineResourceType.IMAGE, new ConcurrentHashMap<>());
@@ -44,29 +46,47 @@ public final class UpgradePhantomHudLayout {
         for (ConcurrentHashMap<String, Set<GuiMessage>> map : URL_TO_MESSAGE_PARENTS_BY_TYPE.values()) {
             map.clear();
         }
+        ATTACHMENT_BY_PARENT.clear();
     }
 
     public static void dispatchLinePaint(GuiMessage.Line line, int messageY, float opacity) {
+        ImageAttachable attachable = (ImageAttachable) (Object) line;
+        if (!attachable.chatupgrade$isImagePhantomTop()) {
+            return;
+        }
         UpgradeHudInlinePaint.paintLinePreview(line, messageY, opacity);
     }
 
-    public static void onUrlMessageCommitted(String url, GuiMessage parent, List<GuiMessage.Line> trimmedMessages) {
-        registerParent(InlineResourceType.IMAGE, url, parent);
+    public static void onUrlMessageCommitted(
+            String url,
+            RichAttachment attachment,
+            GuiMessage parent,
+            List<GuiMessage.Line> trimmedMessages) {
+        registerParent(InlineResourceType.IMAGE, url, parent, attachment);
         syncLayoutForUrl(url, trimmedMessages);
     }
 
-    public static void onAudioMessageCommitted(String url, GuiMessage parent, List<GuiMessage.Line> trimmedMessages) {
-        registerParent(InlineResourceType.AUDIO, url, parent);
+    public static void onAudioMessageCommitted(
+            String url,
+            RichAttachment attachment,
+            GuiMessage parent,
+            List<GuiMessage.Line> trimmedMessages) {
+        registerParent(InlineResourceType.AUDIO, url, parent, attachment);
         syncLayoutForAudio(url, trimmedMessages);
     }
 
-    public static void onVideoMessageCommitted(String url, GuiMessage parent, List<GuiMessage.Line> trimmedMessages) {
-        registerParent(InlineResourceType.VIDEO, url, parent);
+    public static void onVideoMessageCommitted(
+            String url,
+            RichAttachment attachment,
+            GuiMessage parent,
+            List<GuiMessage.Line> trimmedMessages) {
+        registerParent(InlineResourceType.VIDEO, url, parent, attachment);
         syncLayoutForVideo(url, trimmedMessages);
     }
 
-    private static void registerParent(InlineResourceType type, String url, GuiMessage parent) {
+    private static void registerParent(InlineResourceType type, String url, GuiMessage parent, RichAttachment attachment) {
         parentMap(type).computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(parent);
+        ATTACHMENT_BY_PARENT.put(parent, attachment);
     }
 
     public static void notifyUrlEntryChanged(String url) {
@@ -222,7 +242,7 @@ public final class UpgradePhantomHudLayout {
 
     public static boolean isPhantomLine(GuiMessage.Line line) {
         ImageAttachable a = (ImageAttachable) (Object) line;
-        return a.chatupgrade$getImageUrl() != null || a.chatupgrade$isImageContinuation();
+        return a.chatupgrade$isImagePhantomTop() || a.chatupgrade$isImageContinuation();
     }
 
     private static boolean hasPhantomTop(
@@ -235,7 +255,9 @@ public final class UpgradePhantomHudLayout {
                 continue;
             }
             ImageAttachable a = (ImageAttachable) (Object) line;
-            if (a.chatupgrade$getResourceType() == type && url.equals(a.chatupgrade$getImageUrl())) {
+            if (a.chatupgrade$isImagePhantomTop()
+                    && a.chatupgrade$getResourceType() == type
+                    && url.equals(a.chatupgrade$getImageUrl())) {
                 return true;
             }
         }
@@ -246,27 +268,26 @@ public final class UpgradePhantomHudLayout {
         return URL_TO_MESSAGE_PARENTS_BY_TYPE.get(type);
     }
 
-    private static int lastTextLineIndex(List<GuiMessage.Line> trim, GuiMessage parent) {
-        int last = -1;
+    private static int firstTextLineIndex(List<GuiMessage.Line> trim, GuiMessage parent) {
         for (int i = 0; i < trim.size(); i++) {
             GuiMessage.Line line = trim.get(i);
             if (!line.parent().equals(parent)) {
                 continue;
             }
             if (!isPhantomLine(line)) {
-                last = i;
+                return i;
             }
         }
-        return last;
+        return -1;
     }
 
     private static void insertPhantomBlock(List<GuiMessage.Line> trim, GuiMessage parent, String url,
             InlineResourceType type) {
-        int lastText = lastTextLineIndex(trim, parent);
-        if (lastText < 0) {
+        int firstText = firstTextLineIndex(trim, parent);
+        if (firstText < 0) {
             return;
         }
-        int insertAt = lastText + 1;
+        int insertAt = firstText;
         int phantomCount = switch (type) {
             case IMAGE -> ImageLoader.PHANTOM_COUNT;
             case AUDIO -> AUDIO_PHANTOM_COUNT;
@@ -278,8 +299,10 @@ public final class UpgradePhantomHudLayout {
             trim.add(insertAt, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
         }
         UpgradePhantomCoordinator.prepareNextPhantomType(type);
-        UpgradePhantomCoordinator.prepareNextPhantomTopUrl(url);
+        UpgradePhantomCoordinator.prepareNextPhantomTop(
+                ATTACHMENT_BY_PARENT.getOrDefault(parent, RichAttachment.legacyBracket(url, null, type)));
         trim.add(insertAt + phantomCount - 1, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
+        ATTACHMENT_BY_PARENT.remove(parent);
     }
 
     private static void stripPhantomBlock(List<GuiMessage.Line> trim, GuiMessage parent, String url,

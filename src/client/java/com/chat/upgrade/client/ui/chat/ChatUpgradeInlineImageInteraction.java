@@ -69,7 +69,7 @@ public final class ChatUpgradeInlineImageInteraction {
         tryEmojiInteractionAndHover(graphics, line, attachable, textTop, textOpacity, lineHeight);
         RichAttachment attachment = attachable.chatupgrade$getAttachment();
         String url = attachment == null ? attachable.chatupgrade$getImageUrl() : attachment.urlOrNull();
-        if (url == null) {
+        if (!attachable.chatupgrade$isImagePhantomTop() || url == null) {
             return;
         }
         InlineResourceType resourceType = attachment == null ? attachable.chatupgrade$getResourceType() : attachment.type();

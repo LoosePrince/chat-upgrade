@@ -37,6 +37,8 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     private @Nullable String chatupgrade$resourceName;
 
     @Unique
+    private boolean chatupgrade$imageIsPhantomTop;
+    @Unique
     private boolean chatupgrade$imageIsContinuation;
     @Unique
     private InlineResourceType chatupgrade$resourceType = InlineResourceType.IMAGE;
@@ -50,6 +52,7 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
         this.chatupgrade$resourceType = hints.topType();
         this.chatupgrade$resourceName = hints.topName();
         this.chatupgrade$imageUrl = hints.topUrl();
+        this.chatupgrade$imageIsPhantomTop = hints.phantomTop();
         this.chatupgrade$imageIsContinuation = hints.continuation();
         this.chatupgrade$inlineEmojiSlots = InlineEmojiCoordinator.consumeForLine(content());
     }
@@ -82,6 +85,11 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Override
     public boolean chatupgrade$isImageContinuation() {
         return chatupgrade$imageIsContinuation;
+    }
+
+    @Override
+    public boolean chatupgrade$isImagePhantomTop() {
+        return chatupgrade$imageIsPhantomTop;
     }
 
     @Override
