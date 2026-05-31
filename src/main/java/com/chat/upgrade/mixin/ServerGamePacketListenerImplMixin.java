@@ -15,6 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.ServerMediaUrl;
+import com.chat.upgrade.net.StructuredAttachment;
 import com.chat.upgrade.server.ServerMediaService;
 import com.chat.upgrade.server.store.StoredMedia;
 
@@ -39,8 +40,8 @@ public abstract class ServerGamePacketListenerImplMixin {
     @Inject(method = "handleChat", at = @At("HEAD"), cancellable = true)
     private void chatupgrade$rewriteForVanillaReceivers(ServerboundChatPacket packet, CallbackInfo ci) {
         String raw = packet.message();
-        VanillaReplacement replacement = chatupgrade$replacementForVanilla(raw);
-        if (replacement == null) {
+        AttachmentRouteDescriptor descriptor = chatupgrade$descriptorFor(raw);
+        if (descriptor == null) {
             return;
         }
         MinecraftServer server = player.level().getServer();
@@ -50,13 +51,44 @@ public abstract class ServerGamePacketListenerImplMixin {
         PlayerList playerList = server.getPlayerList();
         String sender = player.getName().getString();
         for (ServerPlayer target : playerList.getPlayers()) {
-            boolean hasMod = ServerPlayNetworking.canSend(target, ServerMediaPayloads.S2CCapability.TYPE);
-            Component out = hasMod
-                    ? Component.literal("<" + sender + "> " + raw)
-                    : Component.literal("<" + sender + "> ").append(chatupgrade$buildVanillaComponent(replacement));
+            ReceiverRoute route = chatupgrade$routeFor(target);
+            Component out = switch (route) {
+                case STRUCTURED_ATTACHMENT -> chatupgrade$buildStructuredCompatibleMessage(sender, descriptor);
+                case LEGACY_MOD -> chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
+                case VANILLA -> chatupgrade$buildVanillaMessage(sender, descriptor);
+            };
             target.sendSystemMessage(out, false);
         }
         ci.cancel();
+    }
+
+    @Unique
+    private static ReceiverRoute chatupgrade$routeFor(ServerPlayer target) {
+        if (ServerPlayNetworking.canSend(target, ServerMediaPayloads.S2CAttachmentCapability.TYPE)) {
+            return ReceiverRoute.STRUCTURED_ATTACHMENT;
+        }
+        if (ServerPlayNetworking.canSend(target, ServerMediaPayloads.S2CCapability.TYPE)) {
+            return ReceiverRoute.LEGACY_MOD;
+        }
+        return ReceiverRoute.VANILLA;
+    }
+
+    @Unique
+    private static Component chatupgrade$buildStructuredCompatibleMessage(
+            String sender,
+            AttachmentRouteDescriptor descriptor) {
+        descriptor.structuredAttachment();
+        return chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
+    }
+
+    @Unique
+    private static Component chatupgrade$buildLegacyModMessage(String sender, String raw) {
+        return Component.literal("<" + sender + "> " + raw);
+    }
+
+    @Unique
+    private static Component chatupgrade$buildVanillaMessage(String sender, AttachmentRouteDescriptor descriptor) {
+        return Component.literal("<" + sender + "> ").append(chatupgrade$buildVanillaComponent(descriptor));
     }
 
     @Unique
@@ -65,7 +97,7 @@ public abstract class ServerGamePacketListenerImplMixin {
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     @Unique
-    private static VanillaReplacement chatupgrade$replacementForVanilla(String raw) {
+    private static AttachmentRouteDescriptor chatupgrade$descriptorFor(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
@@ -92,29 +124,45 @@ public abstract class ServerGamePacketListenerImplMixin {
                 url = v;
             }
         }
-        String typeLabel = switch (type) {
+        String normalizedType = chatupgrade$normalizeType(type);
+        return new AttachmentRouteDescriptor(raw, normalizedType, chatupgrade$typeLabel(normalizedType), name, url);
+    }
+
+    @Unique
+    private static String chatupgrade$normalizeType(String type) {
+        if ("audio".equalsIgnoreCase(type)) {
+            return "audio";
+        }
+        if ("video".equalsIgnoreCase(type)) {
+            return "video";
+        }
+        return "image";
+    }
+
+    @Unique
+    private static String chatupgrade$typeLabel(String type) {
+        return switch (type) {
             case "audio" -> Component.translatable("chatupgrade.type.audio").getString();
             case "video" -> Component.translatable("chatupgrade.type.video").getString();
             default -> Component.translatable("chatupgrade.type.image").getString();
         };
-        return new VanillaReplacement(typeLabel, name, url);
     }
 
     @Unique
-    private static Component chatupgrade$buildVanillaComponent(VanillaReplacement replacement) {
-        String labelText = "[" + replacement.typeLabel() + "：" + replacement.name() + "]";
+    private static Component chatupgrade$buildVanillaComponent(AttachmentRouteDescriptor descriptor) {
+        String labelText = "[" + descriptor.typeLabel() + "：" + descriptor.name() + "]";
         Style labelStyle = Style.EMPTY
                 .withColor(ChatFormatting.AQUA)
                 .withUnderlined(true)
-                .withHoverEvent(new HoverEvent.ShowText(Component.literal(chatupgrade$buildHoverText(replacement))))
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal(chatupgrade$buildHoverText(descriptor))))
                 .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://github.com/LoosePrince/chat-upgrade")));
 
         MutableComponent out = Component.literal(labelText).withStyle(labelStyle);
-        if (replacement.url().isBlank()) {
+        if (descriptor.url().isBlank()) {
             return out;
         }
 
-        boolean thirdParty = !ServerMediaUrl.isServerMediaUrl(replacement.url());
+        boolean thirdParty = !ServerMediaUrl.isServerMediaUrl(descriptor.url());
         Style urlStyle = Style.EMPTY
                 .withColor(ChatFormatting.GRAY)
                 .withUnderlined(thirdParty)
@@ -124,7 +172,7 @@ public abstract class ServerGamePacketListenerImplMixin {
                                 : Component.translatable("chatupgrade.vanilla.url.internal_only").getString())));
         if (thirdParty) {
             try {
-                urlStyle = urlStyle.withClickEvent(new ClickEvent.OpenUrl(URI.create(replacement.url())));
+                urlStyle = urlStyle.withClickEvent(new ClickEvent.OpenUrl(URI.create(descriptor.url())));
             } catch (Exception ignored) {
             }
         }
@@ -132,21 +180,21 @@ public abstract class ServerGamePacketListenerImplMixin {
     }
 
     @Unique
-    private static String chatupgrade$buildHoverText(VanillaReplacement replacement) {
+    private static String chatupgrade$buildHoverText(AttachmentRouteDescriptor descriptor) {
         StringBuilder sb = new StringBuilder();
         sb.append(Component.translatable("chatupgrade.hover.resource_type").getString()).append(": ")
-                .append(replacement.typeLabel()).append('\n');
+                .append(descriptor.typeLabel()).append('\n');
         sb.append(Component.translatable("chatupgrade.hover.display_name").getString()).append(": ")
-                .append(replacement.name()).append('\n');
+                .append(descriptor.name()).append('\n');
         sb.append(Component.translatable("chatupgrade.hover.url").getString()).append(": ")
-                .append(replacement.url().isBlank() ? Component.translatable("chatupgrade.common.na").getString() : replacement.url()).append('\n');
+                .append(descriptor.url().isBlank() ? Component.translatable("chatupgrade.common.na").getString() : descriptor.url()).append('\n');
 
-        if (replacement.url().isBlank()) {
+        if (descriptor.url().isBlank()) {
             sb.append(Component.translatable("chatupgrade.vanilla.source.no_link").getString());
             return sb.toString();
         }
 
-        Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(replacement.url());
+        Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(descriptor.url());
         if (parsed.isEmpty()) {
             sb.append(Component.translatable("chatupgrade.vanilla.source.third_party").getString());
             return sb.toString();
@@ -181,6 +229,24 @@ public abstract class ServerGamePacketListenerImplMixin {
     }
 
     @Unique
-    private record VanillaReplacement(String typeLabel, String name, String url) {
+    private enum ReceiverRoute {
+        STRUCTURED_ATTACHMENT,
+        LEGACY_MOD,
+        VANILLA
+    }
+
+    @Unique
+    private record AttachmentRouteDescriptor(String legacyMessage, String typeWire, String typeLabel, String name, String url) {
+        Optional<StructuredAttachment> structuredAttachment() {
+            if (url.isBlank()) {
+                return Optional.empty();
+            }
+            Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(url);
+            if (parsed.isPresent()) {
+                ServerMediaUrl.Parsed serverMedia = parsed.get();
+                return Optional.of(StructuredAttachment.serverMedia(null, serverMedia.mediaId(), serverMedia.typeWire(), name));
+            }
+            return Optional.of(StructuredAttachment.externalUrl(null, typeWire, name, url));
+        }
     }
 }
