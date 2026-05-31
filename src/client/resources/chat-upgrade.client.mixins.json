@@ -20,6 +20,7 @@
 		"ChatScreenScrollbarDragMixin",
 		"ChatScreenImageClickMixin",
 		"ChatScreenAudioFloatingWindowMixin",
+		"ChatScreenRichInputMixin",
 		"ContainerEventHandlerAudioFloatingDragMixin",
 		"MouseHandlerActiveButtonAccessor"
 	],
