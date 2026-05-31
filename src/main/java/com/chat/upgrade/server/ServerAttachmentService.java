@@ -86,6 +86,27 @@ public final class ServerAttachmentService {
         return Optional.of(stored);
     }
 
+    public static Optional<StoredAttachment> findByMediaId(String mediaId) {
+        String safeMediaId = normalizeOptional(mediaId);
+        if (safeMediaId == null) {
+            return Optional.empty();
+        }
+        long now = System.currentTimeMillis();
+        for (StoredAttachment stored : new ArrayList<>(ATTACHMENTS.values())) {
+            if (stored == null) {
+                continue;
+            }
+            if (stored.isExpired(now)) {
+                ATTACHMENTS.remove(stored.attachmentId(), stored);
+                continue;
+            }
+            if (safeMediaId.equals(stored.mediaId())) {
+                return Optional.of(stored);
+            }
+        }
+        return Optional.empty();
+    }
+
     public static Optional<StructuredAttachment> descriptor(String attachmentId) {
         return get(attachmentId).map(StoredAttachment::descriptor);
     }

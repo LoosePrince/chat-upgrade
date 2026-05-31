@@ -5,6 +5,8 @@ import java.util.Optional;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.ServerMediaPayloads;
+import com.chat.upgrade.net.StructuredAttachment;
+import com.chat.upgrade.server.store.StoredAttachment;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -86,6 +88,20 @@ public final class ServerMediaServerNetworking {
                 sendMedia(context.player(), mediaOpt.get());
             });
         });
+
+        ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SAttachMetadata.TYPE, (payload, context) -> {
+            if (!ServerMediaServerConfig.get().enabled) {
+                return;
+            }
+            context.server().execute(() -> handleAttachMetadata(context.player(), payload));
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SRequestAttachmentMeta.TYPE, (payload, context) -> {
+            if (!ServerMediaServerConfig.get().enabled) {
+                return;
+            }
+            context.server().execute(() -> handleRequestAttachmentMeta(context.player(), payload));
+        });
     }
 
     private static void sendCapability(ServerPlayer player) {
@@ -93,6 +109,10 @@ public final class ServerMediaServerNetworking {
         byte storage = (byte) (cfg.storageMode == ServerMediaServerConfig.StorageMode.DISK ? 1 : 0);
         ServerPlayNetworking.send(player, new ServerMediaPayloads.S2CCapability(
                 cfg.enabled, cfg.maxSingleBytes, cfg.maxChunkBytes, storage, cfg.ttlSeconds));
+        ServerPlayNetworking.send(player, new ServerMediaPayloads.S2CAttachmentCapability(
+                cfg.enabled,
+                StructuredAttachment.CURRENT_SCHEMA_VERSION,
+                cfg.ttlSeconds));
     }
 
     private static void sendUploadAck(ServerPlayer player, long uploadId, String mediaId, String typeWire) {
@@ -102,6 +122,76 @@ public final class ServerMediaServerNetworking {
                 mediaId,
                 safeType,
                 ServerMediaUrl.format(mediaId, safeType)));
+    }
+
+    private static void handleAttachMetadata(ServerPlayer player, ServerMediaPayloads.C2SAttachMetadata payload) {
+        try {
+            StructuredAttachment descriptor = new StructuredAttachment(
+                    payload.schemaVersion(),
+                    normalizeOptional(payload.attachmentId()),
+                    normalizeOptional(payload.mediaId()),
+                    payload.typeWire(),
+                    payload.displayName(),
+                    normalizeOptional(payload.fallbackUrl()));
+            if (descriptor.hasMedia() && ServerMediaService.get(descriptor.mediaId()).isEmpty()) {
+                sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "media_not_found");
+                return;
+            }
+            sendAttachmentAck(player, payload.requestId(), ServerAttachmentService.put(descriptor));
+        } catch (IllegalArgumentException ex) {
+            sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "invalid_metadata");
+        }
+    }
+
+    private static void handleRequestAttachmentMeta(
+            ServerPlayer player,
+            ServerMediaPayloads.C2SRequestAttachmentMeta payload) {
+        Optional<StoredAttachment> attachmentOpt = ServerAttachmentService.get(payload.attachmentId());
+        if (attachmentOpt.isEmpty()) {
+            attachmentOpt = ServerAttachmentService.findByMediaId(payload.mediaId());
+        }
+        if (attachmentOpt.isEmpty()) {
+            sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "not_found");
+            return;
+        }
+        sendAttachmentMeta(player, payload.requestId(), attachmentOpt.get());
+    }
+
+    private static void sendAttachmentAck(ServerPlayer player, long requestId, StoredAttachment attachment) {
+        ServerPlayNetworking.send(player, new ServerMediaPayloads.S2CAttachmentAck(
+                requestId,
+                attachment.schemaVersion(),
+                attachment.attachmentId(),
+                attachment.mediaId(),
+                attachment.typeWire(),
+                attachment.displayName(),
+                attachment.fallbackUrl()));
+    }
+
+    private static void sendAttachmentMeta(ServerPlayer player, long requestId, StoredAttachment attachment) {
+        ServerPlayNetworking.send(player, new ServerMediaPayloads.S2CAttachmentMeta(
+                requestId,
+                attachment.schemaVersion(),
+                attachment.attachmentId(),
+                attachment.mediaId(),
+                attachment.typeWire(),
+                attachment.displayName(),
+                attachment.fallbackUrl()));
+    }
+
+    private static void sendAttachmentError(
+            ServerPlayer player,
+            long requestId,
+            String attachmentId,
+            String mediaId,
+            String message) {
+        ServerPlayNetworking.send(player, new ServerMediaPayloads.S2CAttachmentError(
+                requestId,
+                attachmentId,
+                mediaId,
+                message == null ? "error" : message));
+        ChatUpgrade.LOGGER.warn("chat-upgrade: server attachment error attachmentId={} mediaId={} msg={}",
+                attachmentId, mediaId, message);
     }
 
     private static void sendMedia(ServerPlayer player, com.chat.upgrade.server.store.StoredMedia media) {
@@ -133,6 +223,14 @@ public final class ServerMediaServerNetworking {
                 mediaId == null ? "" : mediaId,
                 message == null ? "error" : message));
         ChatUpgrade.LOGGER.warn("chat-upgrade: server media error mediaId={} msg={}", mediaId, message);
+    }
+
+    private static String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }
 

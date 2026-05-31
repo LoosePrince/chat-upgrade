@@ -11,6 +11,7 @@ import org.jetbrains.annotations.Nullable;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.net.ServerMediaPayloads;
+import com.chat.upgrade.net.StructuredAttachment;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -20,6 +21,7 @@ import net.minecraft.network.chat.Component;
 public final class ServerMediaNetworking {
     private static final ConcurrentHashMap<String, IncomingMediaAssembly> INCOMING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Long, CompletableFuture<Optional<String>>> UPLOADS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Long, CompletableFuture<Optional<StructuredAttachment>>> ATTACHMENTS = new ConcurrentHashMap<>();
     private static final SecureRandom RNG = new SecureRandom();
     private static volatile boolean capabilityAnnounced = false;
 
@@ -29,6 +31,10 @@ public final class ServerMediaNetworking {
     public static void initClient() {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             INCOMING.clear();
+            UPLOADS.forEach((id, fut) -> fut.complete(Optional.empty()));
+            UPLOADS.clear();
+            ATTACHMENTS.forEach((id, fut) -> fut.complete(Optional.empty()));
+            ATTACHMENTS.clear();
             ServerMediaClient.clearRuntimeState();
             capabilityAnnounced = false;
         });
@@ -40,7 +46,7 @@ public final class ServerMediaNetworking {
             context.client().execute(() -> {
                 ServerMediaClient.setCapability(
                         new ServerMediaCapability(payload.enabled(), payload.maxSingleBytes(), payload.maxChunkBytes(), mode,
-                                payload.ttlSeconds()));
+                                payload.ttlSeconds(), false, 0));
                 boolean uploadReady = payload.enabled() && payload.maxSingleBytes() > 0 && payload.maxChunkBytes() > 0;
                 if (uploadReady && !capabilityAnnounced) {
                     capabilityAnnounced = true;
@@ -50,6 +56,12 @@ public final class ServerMediaNetworking {
                     }
                 }
             });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CAttachmentCapability.TYPE, (payload, context) -> {
+            context.client().execute(() -> ServerMediaClient.setAttachmentCapability(
+                    payload.enabled(),
+                    payload.schemaVersion()));
         });
 
         ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) -> {
@@ -94,6 +106,35 @@ public final class ServerMediaNetworking {
                 fut.complete(Optional.ofNullable(payload.specialUrl()).filter(s -> !s.isBlank()));
             }
         });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CAttachmentAck.TYPE, (payload, context) -> {
+            completeAttachment(payload.requestId(), toStructuredAttachment(
+                    payload.schemaVersion(),
+                    payload.attachmentId(),
+                    payload.mediaId(),
+                    payload.typeWire(),
+                    payload.displayName(),
+                    payload.fallbackUrl()));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CAttachmentMeta.TYPE, (payload, context) -> {
+            completeAttachment(payload.requestId(), toStructuredAttachment(
+                    payload.schemaVersion(),
+                    payload.attachmentId(),
+                    payload.mediaId(),
+                    payload.typeWire(),
+                    payload.displayName(),
+                    payload.fallbackUrl()));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CAttachmentError.TYPE, (payload, context) -> {
+            CompletableFuture<Optional<StructuredAttachment>> fut = ATTACHMENTS.remove(payload.requestId());
+            if (fut != null) {
+                fut.complete(Optional.empty());
+            }
+            ChatUpgrade.LOGGER.warn("chat-upgrade: server attachment error attachmentId={} mediaId={} msg={}",
+                    payload.attachmentId(), payload.mediaId(), payload.message());
+        });
     }
 
     public static void sendRequest(String mediaId) {
@@ -101,6 +142,43 @@ public final class ServerMediaNetworking {
             return;
         }
         ClientPlayNetworking.send(new ServerMediaPayloads.C2SRequestMedia(mediaId));
+    }
+
+    public static CompletableFuture<Optional<StructuredAttachment>> submitAttachment(StructuredAttachment attachment) {
+        if (attachment == null || !ServerMediaClient.capability().attachmentMetadataEnabled()) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        long requestId = nextUploadId();
+        CompletableFuture<Optional<StructuredAttachment>> fut = new CompletableFuture<>();
+        ATTACHMENTS.put(requestId, fut);
+        ClientPlayNetworking.send(new ServerMediaPayloads.C2SAttachMetadata(
+                requestId,
+                attachment.schemaVersion(),
+                wire(attachment.attachmentId()),
+                wire(attachment.mediaId()),
+                attachment.typeWire(),
+                attachment.displayName(),
+                wire(attachment.fallbackUrl())));
+        return fut;
+    }
+
+    public static CompletableFuture<Optional<StructuredAttachment>> requestAttachment(
+            @Nullable String attachmentId,
+            @Nullable String mediaId) {
+        if (!ServerMediaClient.capability().attachmentMetadataEnabled()) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        if ((attachmentId == null || attachmentId.isBlank()) && (mediaId == null || mediaId.isBlank())) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        long requestId = nextUploadId();
+        CompletableFuture<Optional<StructuredAttachment>> fut = new CompletableFuture<>();
+        ATTACHMENTS.put(requestId, fut);
+        ClientPlayNetworking.send(new ServerMediaPayloads.C2SRequestAttachmentMeta(
+                requestId,
+                wire(attachmentId),
+                wire(mediaId)));
+        return fut;
     }
 
     public static CompletableFuture<Optional<String>> uploadBytes(
@@ -151,6 +229,46 @@ public final class ServerMediaNetworking {
             v = RNG.nextLong();
         }
         return v;
+    }
+
+    private static void completeAttachment(long requestId, Optional<StructuredAttachment> attachmentOpt) {
+        CompletableFuture<Optional<StructuredAttachment>> fut = ATTACHMENTS.remove(requestId);
+        if (fut != null) {
+            fut.complete(attachmentOpt);
+        }
+    }
+
+    private static Optional<StructuredAttachment> toStructuredAttachment(
+            int schemaVersion,
+            String attachmentId,
+            String mediaId,
+            String typeWire,
+            String displayName,
+            String fallbackUrl) {
+        try {
+            return Optional.of(new StructuredAttachment(
+                    schemaVersion,
+                    normalizeOptional(attachmentId),
+                    normalizeOptional(mediaId),
+                    typeWire,
+                    displayName,
+                    normalizeOptional(fallbackUrl)));
+        } catch (IllegalArgumentException ex) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: invalid attachment metadata from server: {}", ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static String wire(@Nullable String value) {
+        return value == null ? "" : value;
+    }
+
+    private static @Nullable String normalizeOptional(@Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private static final class IncomingMediaAssembly {

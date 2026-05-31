@@ -32,9 +32,15 @@ public final class ServerMediaPayloads {
         registerPayload(c2s, C2SUploadInit.TYPE, C2SUploadInit.CODEC);
         registerPayload(c2s, C2SUploadChunk.TYPE, C2SUploadChunk.CODEC);
         registerPayload(c2s, C2SRequestMedia.TYPE, C2SRequestMedia.CODEC);
+        registerPayload(c2s, C2SAttachMetadata.TYPE, C2SAttachMetadata.CODEC);
+        registerPayload(c2s, C2SRequestAttachmentMeta.TYPE, C2SRequestAttachmentMeta.CODEC);
 
         registerPayload(s2c, S2CCapability.TYPE, S2CCapability.CODEC);
+        registerPayload(s2c, S2CAttachmentCapability.TYPE, S2CAttachmentCapability.CODEC);
         registerPayload(s2c, S2CUploadAck.TYPE, S2CUploadAck.CODEC);
+        registerPayload(s2c, S2CAttachmentAck.TYPE, S2CAttachmentAck.CODEC);
+        registerPayload(s2c, S2CAttachmentMeta.TYPE, S2CAttachmentMeta.CODEC);
+        registerPayload(s2c, S2CAttachmentError.TYPE, S2CAttachmentError.CODEC);
         registerPayload(s2c, S2CMediaInit.TYPE, S2CMediaInit.CODEC);
         registerPayload(s2c, S2CMediaChunk.TYPE, S2CMediaChunk.CODEC);
         registerPayload(s2c, S2CMediaError.TYPE, S2CMediaError.CODEC);
@@ -173,10 +179,69 @@ public final class ServerMediaPayloads {
     }
 
     public record C2SRequestMedia(String mediaId) implements CustomPacketPayload {
+        public C2SRequestMedia {
+            mediaId = safeWire(mediaId);
+        }
+
         public static final Type<C2SRequestMedia> TYPE = payloadType("c2s_request_media");
         public static final StreamCodec<RegistryFriendlyByteBuf, C2SRequestMedia> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, C2SRequestMedia::mediaId,
                 C2SRequestMedia::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record C2SAttachMetadata(
+            long requestId,
+            int schemaVersion,
+            String attachmentId,
+            String mediaId,
+            String typeWire,
+            String displayName,
+            String fallbackUrl) implements CustomPacketPayload {
+        public C2SAttachMetadata {
+            attachmentId = safeWire(attachmentId);
+            mediaId = safeWire(mediaId);
+            typeWire = safeWire(typeWire);
+            displayName = safeWire(displayName);
+            fallbackUrl = safeWire(fallbackUrl);
+        }
+
+        public static final Type<C2SAttachMetadata> TYPE = payloadType("c2s_attach_metadata");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SAttachMetadata> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_LONG, C2SAttachMetadata::requestId,
+                ByteBufCodecs.VAR_INT, C2SAttachMetadata::schemaVersion,
+                ByteBufCodecs.STRING_UTF8, C2SAttachMetadata::attachmentId,
+                ByteBufCodecs.STRING_UTF8, C2SAttachMetadata::mediaId,
+                ByteBufCodecs.STRING_UTF8, C2SAttachMetadata::typeWire,
+                ByteBufCodecs.STRING_UTF8, C2SAttachMetadata::displayName,
+                ByteBufCodecs.STRING_UTF8, C2SAttachMetadata::fallbackUrl,
+                C2SAttachMetadata::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record C2SRequestAttachmentMeta(
+            long requestId,
+            String attachmentId,
+            String mediaId) implements CustomPacketPayload {
+        public C2SRequestAttachmentMeta {
+            attachmentId = safeWire(attachmentId);
+            mediaId = safeWire(mediaId);
+        }
+
+        public static final Type<C2SRequestAttachmentMeta> TYPE = payloadType("c2s_request_attachment_meta");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SRequestAttachmentMeta> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_LONG, C2SRequestAttachmentMeta::requestId,
+                ByteBufCodecs.STRING_UTF8, C2SRequestAttachmentMeta::attachmentId,
+                ByteBufCodecs.STRING_UTF8, C2SRequestAttachmentMeta::mediaId,
+                C2SRequestAttachmentMeta::new);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {
@@ -205,11 +270,34 @@ public final class ServerMediaPayloads {
         }
     }
 
+    public record S2CAttachmentCapability(
+            boolean enabled,
+            int schemaVersion,
+            int ttlSeconds) implements CustomPacketPayload {
+        public static final Type<S2CAttachmentCapability> TYPE = payloadType("s2c_attachment_capability");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CAttachmentCapability> CODEC = StreamCodec.composite(
+                ByteBufCodecs.BOOL, S2CAttachmentCapability::enabled,
+                ByteBufCodecs.VAR_INT, S2CAttachmentCapability::schemaVersion,
+                ByteBufCodecs.VAR_INT, S2CAttachmentCapability::ttlSeconds,
+                S2CAttachmentCapability::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     public record S2CUploadAck(
             long uploadId,
             String mediaId,
             String typeWire,
             String specialUrl) implements CustomPacketPayload {
+        public S2CUploadAck {
+            mediaId = safeWire(mediaId);
+            typeWire = safeWire(typeWire);
+            specialUrl = safeWire(specialUrl);
+        }
+
         public static final Type<S2CUploadAck> TYPE = payloadType("s2c_upload_ack");
         public static final StreamCodec<RegistryFriendlyByteBuf, S2CUploadAck> CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_LONG, S2CUploadAck::uploadId,
@@ -217,6 +305,97 @@ public final class ServerMediaPayloads {
                 ByteBufCodecs.STRING_UTF8, S2CUploadAck::typeWire,
                 ByteBufCodecs.STRING_UTF8, S2CUploadAck::specialUrl,
                 S2CUploadAck::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CAttachmentAck(
+            long requestId,
+            int schemaVersion,
+            String attachmentId,
+            String mediaId,
+            String typeWire,
+            String displayName,
+            String fallbackUrl) implements CustomPacketPayload {
+        public S2CAttachmentAck {
+            attachmentId = safeWire(attachmentId);
+            mediaId = safeWire(mediaId);
+            typeWire = safeWire(typeWire);
+            displayName = safeWire(displayName);
+            fallbackUrl = safeWire(fallbackUrl);
+        }
+
+        public static final Type<S2CAttachmentAck> TYPE = payloadType("s2c_attachment_ack");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CAttachmentAck> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_LONG, S2CAttachmentAck::requestId,
+                ByteBufCodecs.VAR_INT, S2CAttachmentAck::schemaVersion,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentAck::attachmentId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentAck::mediaId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentAck::typeWire,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentAck::displayName,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentAck::fallbackUrl,
+                S2CAttachmentAck::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CAttachmentMeta(
+            long requestId,
+            int schemaVersion,
+            String attachmentId,
+            String mediaId,
+            String typeWire,
+            String displayName,
+            String fallbackUrl) implements CustomPacketPayload {
+        public S2CAttachmentMeta {
+            attachmentId = safeWire(attachmentId);
+            mediaId = safeWire(mediaId);
+            typeWire = safeWire(typeWire);
+            displayName = safeWire(displayName);
+            fallbackUrl = safeWire(fallbackUrl);
+        }
+
+        public static final Type<S2CAttachmentMeta> TYPE = payloadType("s2c_attachment_meta");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CAttachmentMeta> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_LONG, S2CAttachmentMeta::requestId,
+                ByteBufCodecs.VAR_INT, S2CAttachmentMeta::schemaVersion,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentMeta::attachmentId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentMeta::mediaId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentMeta::typeWire,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentMeta::displayName,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentMeta::fallbackUrl,
+                S2CAttachmentMeta::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CAttachmentError(
+            long requestId,
+            String attachmentId,
+            String mediaId,
+            String message) implements CustomPacketPayload {
+        public S2CAttachmentError {
+            attachmentId = safeWire(attachmentId);
+            mediaId = safeWire(mediaId);
+            message = safeWire(message);
+        }
+
+        public static final Type<S2CAttachmentError> TYPE = payloadType("s2c_attachment_error");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CAttachmentError> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_LONG, S2CAttachmentError::requestId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentError::attachmentId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentError::mediaId,
+                ByteBufCodecs.STRING_UTF8, S2CAttachmentError::message,
+                S2CAttachmentError::new);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {
@@ -267,6 +446,11 @@ public final class ServerMediaPayloads {
     public record S2CMediaError(
             String mediaId,
             String message) implements CustomPacketPayload {
+        public S2CMediaError {
+            mediaId = safeWire(mediaId);
+            message = safeWire(message);
+        }
+
         public static final Type<S2CMediaError> TYPE = payloadType("s2c_media_error");
         public static final StreamCodec<RegistryFriendlyByteBuf, S2CMediaError> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, S2CMediaError::mediaId,
@@ -277,5 +461,9 @@ public final class ServerMediaPayloads {
         public Type<? extends CustomPacketPayload> type() {
             return TYPE;
         }
+    }
+
+    private static String safeWire(String value) {
+        return value == null ? "" : value;
     }
 }
