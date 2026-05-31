@@ -210,6 +210,15 @@ public class ChatUpgradeClient implements ClientModInitializer {
                                                 .executes(ctx -> setUploadMode(
                                                         ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "mode")))))
+                                .then(ClientCommands.literal("inputmode")
+                                        .then(ClientCommands.literal("takeover")
+                                                .executes(ctx -> setChatInputMode(
+                                                        ctx.getSource(),
+                                                        ChatUpgradeConfig.ChatInputMode.TAKEOVER)))
+                                        .then(ClientCommands.literal("compat")
+                                                .executes(ctx -> setChatInputMode(
+                                                        ctx.getSource(),
+                                                        ChatUpgradeConfig.ChatInputMode.COMPAT_TEXT_VANILLA))))
                                 .then(ClientCommands.literal("ci")
                                         .then(ClientCommands.argument("enabled", BoolArgumentType.bool())
                                                 .executes(ctx -> setCiCompatibility(
@@ -420,6 +429,27 @@ public class ChatUpgradeClient implements ClientModInitializer {
         }
     }
 
+    private static int setChatInputMode(FabricClientCommandSource source, ChatUpgradeConfig.ChatInputMode mode) {
+        try {
+            ChatUpgradeConfig.setChatInputModeAndSave(mode);
+            source.sendFeedback(Component.translatable(
+                    "chatupgrade.config.input_mode.updated",
+                    chatInputModeLabel(mode))
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            source.sendError(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static Component chatInputModeLabel(ChatUpgradeConfig.ChatInputMode mode) {
+        return switch (mode) {
+            case TAKEOVER -> Component.translatable("chatupgrade.config.input_mode.takeover");
+            case COMPAT_TEXT_VANILLA -> Component.translatable("chatupgrade.config.input_mode.compat");
+        };
+    }
+
     private static @Nullable ChatUpgradeConfig.UploadMode parseUploadMode(String raw) {
         if (raw == null) {
             return null;
@@ -452,7 +482,8 @@ public class ChatUpgradeClient implements ClientModInitializer {
                 cfg.audioVolumePercent,
                 cfg.videoVolumePercent,
                 ChatUpgradeConfig.formatBytesHuman(cfg.maxReceiveBytes),
-                ChatUpgradeConfig.formatBytesHuman(cfg.maxUploadBytes))
+                ChatUpgradeConfig.formatBytesHuman(cfg.maxUploadBytes),
+                chatInputModeLabel(cfg.chatInputMode))
                 .withStyle(ChatFormatting.GREEN));
         return 1;
     }

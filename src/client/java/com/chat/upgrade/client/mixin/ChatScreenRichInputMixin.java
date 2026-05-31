@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.ui.chat.input.AttachmentComposerState;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
@@ -119,7 +120,7 @@ public abstract class ChatScreenRichInputMixin extends Screen {
                     target = "Lnet/minecraft/client/input/KeyEvent;isConfirmation()Z"),
             cancellable = true)
     private void chatupgrade$sendAttachmentOnEnter(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (!event.isConfirmation() || !chatupgrade$attachmentState.hasDraft()) {
+        if (!event.isConfirmation() || !chatupgrade$shouldHandleSubmitInCurrentMode()) {
             return;
         }
         AttachmentSendController.SendStartResult result = AttachmentSendController.sendCurrentDraft(
@@ -172,6 +173,18 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         }
         int textColor = draft.status() == AttachmentDraft.Status.FAILED ? 0xFFFFBBBB : 0xFFE6E6E6;
         graphics.text(this.font, label, x + 4, y + 4, textColor, false);
+    }
+
+    @Unique
+    private boolean chatupgrade$shouldHandleSubmitInCurrentMode() {
+        if (!chatupgrade$attachmentState.hasDraft()) {
+            return false;
+        }
+        ChatUpgradeConfig.ChatInputMode mode = ChatUpgradeConfig.get().chatInputMode;
+        if (mode == ChatUpgradeConfig.ChatInputMode.COMPAT_TEXT_VANILLA) {
+            return true;
+        }
+        return true;
     }
 
     @Unique

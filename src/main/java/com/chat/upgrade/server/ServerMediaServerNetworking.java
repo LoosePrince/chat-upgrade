@@ -117,6 +117,10 @@ public final class ServerMediaServerNetworking {
             }
             context.server().execute(() -> handleRequestAttachmentMeta(context.player(), payload));
         });
+
+        ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SStructuredChatMessage.TYPE, (payload, context) -> {
+            context.server().execute(() -> ServerChatRouteService.routeStructured(context.player(), payload.toMessage()));
+        });
     }
 
     private static void sendCapability(ServerPlayer player) {

@@ -34,10 +34,12 @@ public final class ServerMediaPayloads {
         registerPayload(c2s, C2SRequestMedia.TYPE, C2SRequestMedia.CODEC);
         registerPayload(c2s, C2SAttachMetadata.TYPE, C2SAttachMetadata.CODEC);
         registerPayload(c2s, C2SRequestAttachmentMeta.TYPE, C2SRequestAttachmentMeta.CODEC);
+        registerPayload(c2s, C2SStructuredChatMessage.TYPE, C2SStructuredChatMessage.CODEC);
 
         registerPayload(s2c, S2CCapability.TYPE, S2CCapability.CODEC);
         registerPayload(s2c, S2CAttachmentCapability.TYPE, S2CAttachmentCapability.CODEC);
         registerPayload(s2c, S2CStructuredChatAttachment.TYPE, S2CStructuredChatAttachment.CODEC);
+        registerPayload(s2c, S2CStructuredChatMessage.TYPE, S2CStructuredChatMessage.CODEC);
         registerPayload(s2c, S2CUploadAck.TYPE, S2CUploadAck.CODEC);
         registerPayload(s2c, S2CAttachmentAck.TYPE, S2CAttachmentAck.CODEC);
         registerPayload(s2c, S2CAttachmentMeta.TYPE, S2CAttachmentMeta.CODEC);
@@ -250,6 +252,65 @@ public final class ServerMediaPayloads {
         }
     }
 
+    public record C2SStructuredChatMessage(
+            int schemaVersion,
+            String clientNonce,
+            String plainText,
+            String segmentsJson,
+            String attachmentsJson,
+            String fallbackText,
+            int compatFlags) implements CustomPacketPayload {
+        public C2SStructuredChatMessage {
+            clientNonce = safeWire(clientNonce);
+            plainText = safeWire(plainText);
+            segmentsJson = safeWire(segmentsJson);
+            attachmentsJson = safeWire(attachmentsJson);
+            fallbackText = safeWire(fallbackText);
+        }
+
+        public static final Type<C2SStructuredChatMessage> TYPE = payloadType("c2s_structured_chat_message");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SStructuredChatMessage> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, C2SStructuredChatMessage::schemaVersion,
+                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::clientNonce,
+                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::plainText,
+                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::segmentsJson,
+                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::attachmentsJson,
+                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::fallbackText,
+                ByteBufCodecs.VAR_INT, C2SStructuredChatMessage::compatFlags,
+                C2SStructuredChatMessage::new);
+
+        public static C2SStructuredChatMessage fromMessage(StructuredChatMessage message) {
+            if (message == null) {
+                throw new IllegalArgumentException("message must not be null");
+            }
+            return new C2SStructuredChatMessage(
+                    message.schemaVersion(),
+                    message.clientNonce(),
+                    message.plainText(),
+                    StructuredChatWireCodec.encodeSegments(message.segments()),
+                    StructuredChatWireCodec.encodeAttachments(message.attachments()),
+                    message.fallbackText(),
+                    message.compatFlags());
+        }
+
+        public StructuredChatMessage toMessage() {
+            return new StructuredChatMessage(
+                    schemaVersion,
+                    clientNonce,
+                    "",
+                    plainText,
+                    StructuredChatWireCodec.decodeSegments(segmentsJson),
+                    StructuredChatWireCodec.decodeAttachments(attachmentsJson),
+                    fallbackText,
+                    compatFlags);
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     public record S2CCapability(
             boolean enabled,
             int maxSingleBytes,
@@ -318,6 +379,69 @@ public final class ServerMediaPayloads {
                 ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::displayName,
                 ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::fallbackUrl,
                 S2CStructuredChatAttachment::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CStructuredChatMessage(
+            int schemaVersion,
+            String clientNonce,
+            String senderName,
+            String plainText,
+            String segmentsJson,
+            String attachmentsJson,
+            String fallbackText,
+            int compatFlags) implements CustomPacketPayload {
+        public S2CStructuredChatMessage {
+            clientNonce = safeWire(clientNonce);
+            senderName = safeWire(senderName);
+            plainText = safeWire(plainText);
+            segmentsJson = safeWire(segmentsJson);
+            attachmentsJson = safeWire(attachmentsJson);
+            fallbackText = safeWire(fallbackText);
+        }
+
+        public static final Type<S2CStructuredChatMessage> TYPE = payloadType("s2c_structured_chat_message");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CStructuredChatMessage> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, S2CStructuredChatMessage::schemaVersion,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::clientNonce,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::senderName,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::plainText,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::segmentsJson,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::attachmentsJson,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::fallbackText,
+                ByteBufCodecs.VAR_INT, S2CStructuredChatMessage::compatFlags,
+                S2CStructuredChatMessage::new);
+
+        public static S2CStructuredChatMessage fromMessage(StructuredChatMessage message) {
+            if (message == null) {
+                throw new IllegalArgumentException("message must not be null");
+            }
+            return new S2CStructuredChatMessage(
+                    message.schemaVersion(),
+                    message.clientNonce(),
+                    message.senderName(),
+                    message.plainText(),
+                    StructuredChatWireCodec.encodeSegments(message.segments()),
+                    StructuredChatWireCodec.encodeAttachments(message.attachments()),
+                    message.fallbackText(),
+                    message.compatFlags());
+        }
+
+        public StructuredChatMessage toMessage() {
+            return new StructuredChatMessage(
+                    schemaVersion,
+                    clientNonce,
+                    senderName,
+                    plainText,
+                    StructuredChatWireCodec.decodeSegments(segmentsJson),
+                    StructuredChatWireCodec.decodeAttachments(attachmentsJson),
+                    fallbackText,
+                    compatFlags);
+        }
 
         @Override
         public Type<? extends CustomPacketPayload> type() {

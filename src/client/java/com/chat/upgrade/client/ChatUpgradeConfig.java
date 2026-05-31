@@ -45,6 +45,8 @@ public final class ChatUpgradeConfig {
      */
     public boolean ciCompatibility;
 
+    public ChatInputMode chatInputMode = ChatInputMode.TAKEOVER;
+
     /**
      * When true, incoming image URLs are not fetched until the player clicks the
      * aqua {@code [图片: …]} placeholder
@@ -86,6 +88,11 @@ public final class ChatUpgradeConfig {
         THIRD_PARTY
     }
 
+    public enum ChatInputMode {
+        TAKEOVER,
+        COMPAT_TEXT_VANILLA
+    }
+
     private static ChatUpgradeConfig defaults() {
         ChatUpgradeConfig c = new ChatUpgradeConfig();
         c.ciCompatibility = false;
@@ -98,6 +105,7 @@ public final class ChatUpgradeConfig {
         c.audioVolumePercent = 100;
         c.videoVolumePercent = 100;
         c.uploadMode = UploadMode.AUTO;
+        c.chatInputMode = ChatInputMode.TAKEOVER;
         c.normalizeLimits();
         return c;
     }
@@ -114,6 +122,7 @@ public final class ChatUpgradeConfig {
         int beforeAudioVolume = audioVolumePercent;
         int beforeVideoVolume = videoVolumePercent;
         Boolean beforeSmoothScroll = smoothScrollEnabled;
+        ChatInputMode beforeChatInputMode = chatInputMode;
         if (maxReceiveBytes <= 0) {
             maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         }
@@ -130,11 +139,15 @@ public final class ChatUpgradeConfig {
         if (smoothScrollEnabled == null) {
             smoothScrollEnabled = true;
         }
+        if (chatInputMode == null) {
+            chatInputMode = ChatInputMode.TAKEOVER;
+        }
         return beforeReceive != maxReceiveBytes
                 || beforeUpload != maxUploadBytes
                 || beforeAudioVolume != audioVolumePercent
                 || beforeVideoVolume != videoVolumePercent
-                || beforeSmoothScroll != smoothScrollEnabled;
+                || beforeSmoothScroll != smoothScrollEnabled
+                || beforeChatInputMode != chatInputMode;
     }
 
     public static ChatUpgradeConfig get() {
@@ -277,6 +290,17 @@ public final class ChatUpgradeConfig {
             instance.uploadMode = mode == null ? UploadMode.AUTO : mode;
             writeConfigFile();
         }
+    }
+
+    public static void setChatInputModeAndSave(ChatInputMode mode) throws IOException {
+        synchronized (LOCK) {
+            instance.chatInputMode = mode == null ? ChatInputMode.TAKEOVER : mode;
+            writeConfigFile();
+        }
+    }
+
+    public static boolean isCompatTextVanillaInputMode() {
+        return instance.chatInputMode == ChatInputMode.COMPAT_TEXT_VANILLA;
     }
 
     /** Short human-readable size for chat / commands (e.g. {@code 2.0 MiB}). */
