@@ -37,6 +37,7 @@ public final class ServerMediaPayloads {
 
         registerPayload(s2c, S2CCapability.TYPE, S2CCapability.CODEC);
         registerPayload(s2c, S2CAttachmentCapability.TYPE, S2CAttachmentCapability.CODEC);
+        registerPayload(s2c, S2CStructuredChatAttachment.TYPE, S2CStructuredChatAttachment.CODEC);
         registerPayload(s2c, S2CUploadAck.TYPE, S2CUploadAck.CODEC);
         registerPayload(s2c, S2CAttachmentAck.TYPE, S2CAttachmentAck.CODEC);
         registerPayload(s2c, S2CAttachmentMeta.TYPE, S2CAttachmentMeta.CODEC);
@@ -280,6 +281,43 @@ public final class ServerMediaPayloads {
                 ByteBufCodecs.VAR_INT, S2CAttachmentCapability::schemaVersion,
                 ByteBufCodecs.VAR_INT, S2CAttachmentCapability::ttlSeconds,
                 S2CAttachmentCapability::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CStructuredChatAttachment(
+            int schemaVersion,
+            String senderName,
+            String text,
+            String attachmentId,
+            String mediaId,
+            String typeWire,
+            String displayName,
+            String fallbackUrl) implements CustomPacketPayload {
+        public S2CStructuredChatAttachment {
+            senderName = safeWire(senderName);
+            text = safeWire(text);
+            attachmentId = safeWire(attachmentId);
+            mediaId = safeWire(mediaId);
+            typeWire = safeWire(typeWire);
+            displayName = safeWire(displayName);
+            fallbackUrl = safeWire(fallbackUrl);
+        }
+
+        public static final Type<S2CStructuredChatAttachment> TYPE = payloadType("s2c_structured_chat_attachment");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CStructuredChatAttachment> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, S2CStructuredChatAttachment::schemaVersion,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::senderName,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::text,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::attachmentId,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::mediaId,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::typeWire,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::displayName,
+                ByteBufCodecs.STRING_UTF8, S2CStructuredChatAttachment::fallbackUrl,
+                S2CStructuredChatAttachment::new);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {

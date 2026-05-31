@@ -52,9 +52,11 @@ public abstract class ServerGamePacketListenerImplMixin {
         String sender = player.getName().getString();
         for (ServerPlayer target : playerList.getPlayers()) {
             ReceiverRoute route = chatupgrade$routeFor(target);
+            if (route == ReceiverRoute.STRUCTURED_ATTACHMENT && chatupgrade$sendStructuredAttachment(target, sender, descriptor)) {
+                continue;
+            }
             Component out = switch (route) {
-                case STRUCTURED_ATTACHMENT -> chatupgrade$buildStructuredCompatibleMessage(sender, descriptor);
-                case LEGACY_MOD -> chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
+                case STRUCTURED_ATTACHMENT, LEGACY_MOD -> chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
                 case VANILLA -> chatupgrade$buildVanillaMessage(sender, descriptor);
             };
             target.sendSystemMessage(out, false);
@@ -74,11 +76,25 @@ public abstract class ServerGamePacketListenerImplMixin {
     }
 
     @Unique
-    private static Component chatupgrade$buildStructuredCompatibleMessage(
+    private static boolean chatupgrade$sendStructuredAttachment(
+            ServerPlayer target,
             String sender,
             AttachmentRouteDescriptor descriptor) {
-        descriptor.structuredAttachment();
-        return chatupgrade$buildLegacyModMessage(sender, descriptor.legacyMessage());
+        Optional<StructuredAttachment> structuredOpt = descriptor.structuredAttachment();
+        if (structuredOpt.isEmpty()) {
+            return false;
+        }
+        StructuredAttachment attachment = structuredOpt.get();
+        ServerPlayNetworking.send(target, new ServerMediaPayloads.S2CStructuredChatAttachment(
+                attachment.schemaVersion(),
+                sender,
+                descriptor.visibleText(),
+                attachment.attachmentId() == null ? "" : attachment.attachmentId(),
+                attachment.mediaId() == null ? "" : attachment.mediaId(),
+                attachment.typeWire(),
+                attachment.displayName(),
+                attachment.fallbackUrl() == null ? "" : attachment.fallbackUrl()));
+        return true;
     }
 
     @Unique
@@ -125,7 +141,17 @@ public abstract class ServerGamePacketListenerImplMixin {
             }
         }
         String normalizedType = chatupgrade$normalizeType(type);
-        return new AttachmentRouteDescriptor(raw, normalizedType, chatupgrade$typeLabel(normalizedType), name, url);
+        String visibleText = chatupgrade$stripPayload(raw, matcher.start(), matcher.end()).trim();
+        return new AttachmentRouteDescriptor(raw, visibleText, normalizedType, chatupgrade$typeLabel(normalizedType), name, url);
+    }
+
+    @Unique
+    private static String chatupgrade$stripPayload(String raw, int start, int end) {
+        if (raw == null || start < 0 || end < start || end > raw.length()) {
+            return "";
+        }
+        String stripped = (raw.substring(0, start) + raw.substring(end)).trim();
+        return stripped.replaceAll("\\s+", " ");
     }
 
     @Unique
@@ -236,7 +262,13 @@ public abstract class ServerGamePacketListenerImplMixin {
     }
 
     @Unique
-    private record AttachmentRouteDescriptor(String legacyMessage, String typeWire, String typeLabel, String name, String url) {
+    private record AttachmentRouteDescriptor(
+            String legacyMessage,
+            String visibleText,
+            String typeWire,
+            String typeLabel,
+            String name,
+            String url) {
         Optional<StructuredAttachment> structuredAttachment() {
             if (url.isBlank()) {
                 return Optional.empty();

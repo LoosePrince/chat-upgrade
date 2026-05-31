@@ -9,13 +9,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
+import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.media.audio.AudioLoader;
+import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.media.video.VideoLoader;
+import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
+import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.StructuredAttachment;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 public final class ServerMediaNetworking {
@@ -62,6 +70,10 @@ public final class ServerMediaNetworking {
             context.client().execute(() -> ServerMediaClient.setAttachmentCapability(
                     payload.enabled(),
                     payload.schemaVersion()));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CStructuredChatAttachment.TYPE, (payload, context) -> {
+            context.client().execute(() -> handleStructuredChatAttachment(payload));
         });
 
         ClientPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) -> {
@@ -142,6 +154,67 @@ public final class ServerMediaNetworking {
             return;
         }
         ClientPlayNetworking.send(new ServerMediaPayloads.C2SRequestMedia(mediaId));
+    }
+
+    private static void handleStructuredChatAttachment(ServerMediaPayloads.S2CStructuredChatAttachment payload) {
+        Optional<StructuredAttachment> structuredOpt = toStructuredAttachment(
+                payload.schemaVersion(),
+                payload.attachmentId(),
+                payload.mediaId(),
+                payload.typeWire(),
+                payload.displayName(),
+                payload.fallbackUrl());
+        if (structuredOpt.isEmpty()) {
+            return;
+        }
+        StructuredAttachment structured = structuredOpt.get();
+        ServerMediaClient.rememberAttachment(structured);
+        RichAttachment attachment = RichAttachment.fromStructured(structured);
+        if (!attachment.hasRenderableUrl()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.gui == null) {
+            return;
+        }
+        Component message = buildStructuredChatMessage(payload.senderName(), payload.text(), attachment);
+        beginStructuredAttachmentRender(attachment);
+        minecraft.gui.getChat().addServerSystemMessage(message);
+    }
+
+    private static void beginStructuredAttachmentRender(RichAttachment attachment) {
+        String url = attachment.requireRenderableUrl();
+        UpgradePhantomCoordinator.setPendingDecoded(attachment);
+        switch (attachment.type()) {
+            case IMAGE -> {
+                if (!ChatUpgradeConfig.get().manualImageReveal) {
+                    ImageLoader.getOrLoad(url);
+                }
+            }
+            case AUDIO -> {
+                if (!ChatUpgradeConfig.get().manualAudioReveal) {
+                    AudioLoader.getOrLoad(url);
+                }
+            }
+            case VIDEO -> {
+                if (!ChatUpgradeConfig.get().manualVideoReveal) {
+                    VideoLoader.getOrLoad(url);
+                }
+            }
+        }
+    }
+
+    private static Component buildStructuredChatMessage(String senderName, String text, RichAttachment attachment) {
+        Component attachmentComponent = UpgradeBracketCodec.buildPlaceholderComponent(
+                attachment.type(),
+                attachment.displayName(),
+                attachment.requireRenderableUrl());
+        String prefix = "<" + (senderName == null || senderName.isBlank() ? "?" : senderName) + "> ";
+        String body = text == null ? "" : text.trim();
+        if (body.isEmpty()) {
+            return Component.literal(prefix).append(attachmentComponent);
+        }
+        return Component.literal(prefix + body + " ").append(attachmentComponent);
     }
 
     public static CompletableFuture<Optional<StructuredAttachment>> submitAttachment(StructuredAttachment attachment) {

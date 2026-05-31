@@ -180,7 +180,7 @@ public final class ServerMediaClient {
         }
     }
 
-    private static void rememberAttachment(StructuredAttachment attachment) {
+    static void rememberAttachment(StructuredAttachment attachment) {
         String attachmentId = normalizeOptional(attachment.attachmentId());
         if (attachmentId != null) {
             ATTACHMENTS_BY_ID.put(attachmentId, attachment);
