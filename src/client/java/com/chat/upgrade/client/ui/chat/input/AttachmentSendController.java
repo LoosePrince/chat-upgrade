@@ -4,6 +4,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.media.model.RichMessageDraft;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.upload.UploadRouter;
@@ -91,8 +93,17 @@ public final class AttachmentSendController {
     }
 
     public static String buildLegacyFallbackMessage(AttachmentDraft draft, String uploadedUrl, String typedMessage) {
-        String payload = UpgradeBracketCodec.buildSendPayload(uploadedUrl, draft.displayName(), draft.type());
-        String prefix = normalizeTypedMessage(typedMessage);
+        RichAttachment attachment = RichAttachment.localDraft(uploadedUrl, draft.displayName(), draft.type());
+        return buildLegacyFallbackMessage(RichMessageDraft.withAttachment(typedMessage, attachment));
+    }
+
+    public static String buildLegacyFallbackMessage(RichMessageDraft messageDraft) {
+        RichAttachment attachment = messageDraft.attachment().orElseThrow();
+        String payload = UpgradeBracketCodec.buildSendPayload(
+                attachment.requireRenderableUrl(),
+                attachment.displayName(),
+                attachment.type());
+        String prefix = normalizeTypedMessage(messageDraft.text());
         return prefix.isEmpty() ? payload : prefix + " " + payload;
     }
 

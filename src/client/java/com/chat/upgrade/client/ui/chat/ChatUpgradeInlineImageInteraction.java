@@ -19,6 +19,7 @@ import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
@@ -66,15 +67,18 @@ public final class ChatUpgradeInlineImageInteraction {
             return;
         }
         tryEmojiInteractionAndHover(graphics, line, attachable, textTop, textOpacity, lineHeight);
-        String url = attachable.chatupgrade$getImageUrl();
+        RichAttachment attachment = attachable.chatupgrade$getAttachment();
+        String url = attachment == null ? attachable.chatupgrade$getImageUrl() : attachment.urlOrNull();
         if (url == null) {
             return;
         }
+        InlineResourceType resourceType = attachment == null ? attachable.chatupgrade$getResourceType() : attachment.type();
+        String resourceName = attachment == null ? attachable.chatupgrade$getResourceName() : attachment.displayName();
         int drawW;
         int drawH;
         int rawW = 0;
         int rawH = 0;
-        if (attachable.chatupgrade$getResourceType() == InlineResourceType.AUDIO) {
+        if (resourceType == InlineResourceType.AUDIO) {
             AudioEntry entry = AudioLoader.getIfPresent(url);
             if (entry == null || entry.getState() == AudioEntry.State.FAILED) {
                 return;
@@ -82,7 +86,7 @@ public final class ChatUpgradeInlineImageInteraction {
             drawW = UpgradeHudInlinePaint.AUDIO_WIDTH;
             drawH = UpgradeHudInlinePaint.AUDIO_HEIGHT;
             tryAudioTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
-        } else if (attachable.chatupgrade$getResourceType() == InlineResourceType.VIDEO) {
+        } else if (resourceType == InlineResourceType.VIDEO) {
             VideoEntry entry = VideoLoader.getIfPresent(url);
             if (entry == null || entry.getState() == VideoEntry.State.FAILED) {
                 return;
@@ -140,9 +144,9 @@ public final class ChatUpgradeInlineImageInteraction {
                 localRight,
                 localBottom,
                 url,
-                attachable.chatupgrade$getResourceName(),
+                resourceName,
                 parent,
-                attachable.chatupgrade$getResourceType(),
+                resourceType,
                 rawW,
                 rawH));
     }

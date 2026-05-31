@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
@@ -29,6 +30,8 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     public abstract boolean endOfEntry();
 
     @Unique
+    private @Nullable RichAttachment chatupgrade$attachment;
+    @Unique
     private @Nullable String chatupgrade$imageUrl;
     @Unique
     private @Nullable String chatupgrade$resourceName;
@@ -43,6 +46,7 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Inject(method = "<init>", at = @At("TAIL"))
     private void chatupgrade$captureImageData(CallbackInfo ci) {
         UpgradePhantomCoordinator.PhantomLineHints hints = UpgradePhantomCoordinator.consumePhantomLineHints();
+        this.chatupgrade$attachment = hints.attachment();
         this.chatupgrade$resourceType = hints.topType();
         this.chatupgrade$resourceName = hints.topName();
         this.chatupgrade$imageUrl = hints.topUrl();
@@ -58,6 +62,11 @@ public abstract class GuiMessageLineMixin implements ImageAttachable, GuiMessage
     @Override
     public boolean chatupgrade$endOfEntry() {
         return endOfEntry();
+    }
+
+    @Override
+    public @Nullable RichAttachment chatupgrade$getAttachment() {
+        return chatupgrade$attachment;
     }
 
     @Override

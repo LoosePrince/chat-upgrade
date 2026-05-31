@@ -20,6 +20,7 @@ import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
@@ -79,24 +80,34 @@ public final class UpgradeBracketCodec {
 
     public record DecodedBracket(
             Component modified,
-            @Nullable String url,
-            @Nullable String name,
-            InlineResourceType resourceType) {
+            Optional<RichAttachment> attachment) {
         public boolean hasUrl() {
-            return url != null;
+            return attachment.isPresent() && attachment.get().hasRenderableUrl();
+        }
+
+        public @Nullable String url() {
+            return attachment.map(RichAttachment::urlOrNull).orElse(null);
+        }
+
+        public @Nullable String name() {
+            return attachment.map(RichAttachment::displayName).orElse(null);
+        }
+
+        public InlineResourceType resourceType() {
+            return attachment.map(RichAttachment::type).orElse(InlineResourceType.IMAGE);
         }
     }
 
     public static DecodedBracket decodeIncoming(Component original) {
         Matcher m = BRACKET_PAYLOAD.matcher(buildFullText(original));
         if (!m.find()) {
-            return new DecodedBracket(original, null, null, InlineResourceType.IMAGE);
+            return new DecodedBracket(original, Optional.empty());
         }
         String attrs = m.group(2);
         Map<String, String> kv = parsePayloadAttributes(attrs);
         String url = kv.getOrDefault("url", "").trim();
         if (url.isBlank()) {
-            return new DecodedBracket(original, null, null, InlineResourceType.IMAGE);
+            return new DecodedBracket(original, Optional.empty());
         }
         InlineResourceType type = InlineResourceType.fromWire(kv.get("type"));
         String defaultName = switch (type) {
@@ -107,16 +118,18 @@ public final class UpgradeBracketCodec {
         String name = kv.getOrDefault("name", defaultName).trim();
         String matched = m.group(0);
 
-        Component modified = replaceMatchedPayload(original, matched, name, url, type);
-        return new DecodedBracket(modified, url, name, type);
+        RichAttachment attachment = RichAttachment.legacyBracket(url, name, type);
+        Component modified = replaceMatchedPayload(original, matched, attachment);
+        return new DecodedBracket(modified, Optional.of(attachment));
     }
 
     private static Component replaceMatchedPayload(
             Component component,
             String exactPayload,
-            String name,
-            String url,
-            InlineResourceType type) {
+            RichAttachment attachment) {
+        String name = attachment.displayName();
+        String url = attachment.urlOrNull();
+        InlineResourceType type = attachment.type();
         String probe = buildFullText(component);
         if (!probe.contains("[[" + WIRE_TAG_NATIVE) && !probe.contains("[[" + WIRE_TAG_LEGACY)) {
             return component;

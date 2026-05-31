@@ -17,6 +17,7 @@ import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
@@ -81,19 +82,21 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             InlineEmojiCoordinator.clearPendingSlots();
         }
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(emojiDecoded.modified());
-        if (decoded.hasUrl()) {
-            UpgradePhantomCoordinator.setPendingDecoded(decoded.url(), decoded.name(), decoded.resourceType());
-            if (decoded.resourceType() == InlineResourceType.IMAGE) {
+        if (decoded.attachment().isPresent() && decoded.attachment().get().hasRenderableUrl()) {
+            RichAttachment attachment = decoded.attachment().get();
+            String url = attachment.requireRenderableUrl();
+            UpgradePhantomCoordinator.setPendingDecoded(attachment);
+            if (attachment.type() == InlineResourceType.IMAGE) {
                 if (!ChatUpgradeConfig.get().manualImageReveal) {
-                    ImageLoader.getOrLoad(decoded.url());
+                    ImageLoader.getOrLoad(url);
                 }
-            } else if (decoded.resourceType() == InlineResourceType.AUDIO) {
+            } else if (attachment.type() == InlineResourceType.AUDIO) {
                 if (!ChatUpgradeConfig.get().manualAudioReveal) {
-                    AudioLoader.getOrLoad(decoded.url());
+                    AudioLoader.getOrLoad(url);
                 }
             } else {
                 if (!ChatUpgradeConfig.get().manualVideoReveal) {
-                    VideoLoader.getOrLoad(decoded.url());
+                    VideoLoader.getOrLoad(url);
                 }
             }
             return decoded.modified();
@@ -193,17 +196,17 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Unique
     private void chatupgrade$insertPhantoms() {
         UpgradePhantomCoordinator.PendingDecoded pending = UpgradePhantomCoordinator.consumePendingDecoded();
+        RichAttachment attachment = pending.attachment();
         String url = pending.url();
-        String name = pending.name();
         InlineResourceType type = pending.type();
-        if (url == null) {
+        if (attachment == null || url == null) {
             return;
         }
         int linesAdded = trimmedMessages.size() - chatupgrade$sizeBeforeAdd;
         if (linesAdded <= 0) {
             return;
         }
-        UpgradePhantomCoordinator.prepareNextPhantomTop(type, name, null);
+        UpgradePhantomCoordinator.prepareNextPhantomTop(attachment);
         GuiMessage parentMessage = trimmedMessages.get(0).parent();
         switch (type) {
             case AUDIO -> UpgradePhantomHudLayout.onAudioMessageCommitted(url, parentMessage, trimmedMessages);

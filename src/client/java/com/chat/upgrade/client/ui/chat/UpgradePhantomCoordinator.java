@@ -3,6 +3,7 @@ package com.chat.upgrade.client.ui.chat;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 
 /**
  * Cross-mixin coordination for extra chat rows: pending URL attachment while
@@ -15,42 +16,64 @@ public final class UpgradePhantomCoordinator {
     private UpgradePhantomCoordinator() {
     }
 
-    private static @Nullable String pendingDecodedUrl;
-    private static @Nullable String pendingDecodedName;
-    private static InlineResourceType pendingDecodedType = InlineResourceType.IMAGE;
-    private static @Nullable String nextPhantomTopUrl;
-    private static @Nullable String nextPhantomTopName;
+    private static @Nullable RichAttachment pendingDecodedAttachment;
+    private static @Nullable RichAttachment nextPhantomTopAttachment;
     private static InlineResourceType nextPhantomTopType = InlineResourceType.IMAGE;
     private static boolean nextPhantomContinuation;
 
-    public record PendingDecoded(@Nullable String url, @Nullable String name, InlineResourceType type) {
+    public record PendingDecoded(@Nullable RichAttachment attachment) {
+        public @Nullable String url() {
+            return attachment == null ? null : attachment.urlOrNull();
+        }
+
+        public @Nullable String name() {
+            return attachment == null ? null : attachment.displayName();
+        }
+
+        public InlineResourceType type() {
+            return attachment == null ? InlineResourceType.IMAGE : attachment.type();
+        }
     }
 
     public record PhantomLineHints(
-            @Nullable String topUrl,
-            @Nullable String topName,
-            InlineResourceType topType,
+            @Nullable RichAttachment attachment,
+            InlineResourceType fallbackType,
             boolean continuation) {
+        public @Nullable String topUrl() {
+            return continuation || attachment == null ? null : attachment.urlOrNull();
+        }
+
+        public @Nullable String topName() {
+            return continuation || attachment == null ? null : attachment.displayName();
+        }
+
+        public InlineResourceType topType() {
+            return attachment == null ? fallbackType : attachment.type();
+        }
+    }
+
+    public static void setPendingDecoded(RichAttachment attachment) {
+        pendingDecodedAttachment = attachment;
     }
 
     public static void setPendingDecoded(@Nullable String url, @Nullable String name, InlineResourceType type) {
-        pendingDecodedUrl = url;
-        pendingDecodedName = name;
-        pendingDecodedType = type;
+        pendingDecodedAttachment = url == null ? null : RichAttachment.legacyBracket(url, name, type);
     }
 
     public static PendingDecoded consumePendingDecoded() {
-        PendingDecoded pending = new PendingDecoded(pendingDecodedUrl, pendingDecodedName, pendingDecodedType);
-        pendingDecodedUrl = null;
-        pendingDecodedName = null;
-        pendingDecodedType = InlineResourceType.IMAGE;
+        PendingDecoded pending = new PendingDecoded(pendingDecodedAttachment);
+        pendingDecodedAttachment = null;
         return pending;
     }
 
+    public static void prepareNextPhantomTop(RichAttachment attachment) {
+        nextPhantomTopAttachment = attachment;
+        nextPhantomTopType = attachment.type();
+    }
+
     public static void prepareNextPhantomTop(InlineResourceType type, @Nullable String name, @Nullable String url) {
+        nextPhantomTopAttachment = url == null ? null : RichAttachment.legacyBracket(url, name, type);
         nextPhantomTopType = type;
-        nextPhantomTopName = name;
-        nextPhantomTopUrl = url;
     }
 
     public static void prepareNextPhantomType(InlineResourceType type) {
@@ -58,7 +81,13 @@ public final class UpgradePhantomCoordinator {
     }
 
     public static void prepareNextPhantomTopUrl(@Nullable String url) {
-        nextPhantomTopUrl = url;
+        if (url == null) {
+            nextPhantomTopAttachment = null;
+            return;
+        }
+        if (nextPhantomTopAttachment == null) {
+            nextPhantomTopAttachment = RichAttachment.legacyBracket(url, null, nextPhantomTopType);
+        }
     }
 
     public static void prepareNextPhantomContinuation() {
@@ -66,14 +95,13 @@ public final class UpgradePhantomCoordinator {
     }
 
     public static PhantomLineHints consumePhantomLineHints() {
+        RichAttachment attachment = nextPhantomContinuation ? null : nextPhantomTopAttachment;
         PhantomLineHints hints = new PhantomLineHints(
-                nextPhantomTopUrl,
-                nextPhantomTopName,
+                attachment,
                 nextPhantomTopType,
                 nextPhantomContinuation);
-        if (nextPhantomTopUrl != null) {
-            nextPhantomTopUrl = null;
-            nextPhantomTopName = null;
+        if (!nextPhantomContinuation && nextPhantomTopAttachment != null) {
+            nextPhantomTopAttachment = null;
             nextPhantomTopType = InlineResourceType.IMAGE;
         }
         nextPhantomContinuation = false;
