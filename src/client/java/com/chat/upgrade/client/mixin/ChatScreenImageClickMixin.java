@@ -1,5 +1,6 @@
 package com.chat.upgrade.client.mixin;
 
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -29,6 +30,9 @@ public abstract class ChatScreenImageClickMixin {
         Style base = original.call(instance);
         if (base != null) {
             return base;
+        }
+        if (!ChatUpgradeChatPipelineGate.shouldResolveInlineChatClick()) {
+            return null;
         }
         return ChatUpgradeInlineImageInteraction.styleForScreenClick((int) event.x(), (int) event.y());
     }

@@ -34,6 +34,7 @@ public final class ServerMediaPayloads {
         registerPayload(c2s, C2SRequestMedia.TYPE, C2SRequestMedia.CODEC);
         registerPayload(c2s, C2SAttachMetadata.TYPE, C2SAttachMetadata.CODEC);
         registerPayload(c2s, C2SRequestAttachmentMeta.TYPE, C2SRequestAttachmentMeta.CODEC);
+        registerPayload(c2s, C2SChatInputMode.TYPE, C2SChatInputMode.CODEC);
         registerPayload(c2s, C2SStructuredChatMessage.TYPE, C2SStructuredChatMessage.CODEC);
 
         registerPayload(s2c, S2CCapability.TYPE, S2CCapability.CODEC);
@@ -245,6 +246,22 @@ public final class ServerMediaPayloads {
                 ByteBufCodecs.STRING_UTF8, C2SRequestAttachmentMeta::attachmentId,
                 ByteBufCodecs.STRING_UTF8, C2SRequestAttachmentMeta::mediaId,
                 C2SRequestAttachmentMeta::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record C2SChatInputMode(String mode) implements CustomPacketPayload {
+        public C2SChatInputMode {
+            mode = safeWire(mode);
+        }
+
+        public static final Type<C2SChatInputMode> TYPE = payloadType("c2s_chat_input_mode");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SChatInputMode> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, C2SChatInputMode::mode,
+                C2SChatInputMode::new);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {

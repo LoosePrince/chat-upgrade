@@ -1,5 +1,6 @@
 package com.chat.upgrade.client.mixin;
 
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
 import net.minecraft.client.gui.components.ChatComponent;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,6 +16,9 @@ public abstract class ChatComponentInlineImageExtractMixin {
             at = @At("HEAD")
     )
     private void chatupgrade$clearInlineImageHits(CallbackInfo ci) {
+        if (!ChatUpgradeChatPipelineGate.shouldResolveInlineChatClick()) {
+            return;
+        }
         ChatUpgradeInlineImageInteraction.clearForExtractPass();
     }
 }

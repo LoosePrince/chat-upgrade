@@ -3,6 +3,7 @@ package com.chat.upgrade.client.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
 import com.chat.upgrade.client.ui.chat.InlineEmojiHudPaint;
@@ -32,7 +33,12 @@ public abstract class ChatComponentInnerMixin {
             Operation<Boolean> original,
             @Local(argsOnly = true, ordinal = 0) GuiMessage.Line line
     ) {
-        float smoothOffset = ChatUpgradeChatRenderState.smoothOffsetPx();
+        if (!ChatUpgradeChatPipelineGate.shouldRenderLineEnhancements(line)) {
+            return original.call(graphics, y, opacity, text);
+        }
+        float smoothOffset = ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()
+                ? ChatUpgradeChatRenderState.smoothOffsetPx()
+                : 0.0F;
         int lineHeight = chatupgrade$lineHeight();
         graphics.updatePose(pose -> pose.translate(0.0F, smoothOffset));
         try {

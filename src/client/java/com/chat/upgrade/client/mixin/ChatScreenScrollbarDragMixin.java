@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.input.MouseButtonEvent;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,6 +23,10 @@ public abstract class ChatScreenScrollbarDragMixin {
 
     @Inject(method = "mouseClicked(Lnet/minecraft/client/input/MouseButtonEvent;Z)Z", at = @At("HEAD"), cancellable = true)
     private void chatupgrade$beginScrollbarDrag(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
+        if (!ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
+            chatupgrade$draggingScrollbar = false;
+            return;
+        }
         if (event.button() != 0) {
             return;
         }
@@ -63,6 +68,10 @@ public abstract class ChatScreenScrollbarDragMixin {
             int mouseY,
             float a,
             CallbackInfo ci) {
+        if (!ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
+            chatupgrade$draggingScrollbar = false;
+            return;
+        }
         if (!chatupgrade$draggingScrollbar) {
             return;
         }

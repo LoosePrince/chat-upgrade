@@ -432,6 +432,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
     private static int setChatInputMode(FabricClientCommandSource source, ChatUpgradeConfig.ChatInputMode mode) {
         try {
             ChatUpgradeConfig.setChatInputModeAndSave(mode);
+            ServerMediaNetworking.sendChatInputMode();
             source.sendFeedback(Component.translatable(
                     "chatupgrade.config.input_mode.updated",
                     chatInputModeLabel(mode))
@@ -473,6 +474,7 @@ public class ChatUpgradeClient implements ClientModInitializer {
         boolean manualVideo = cfg.manualVideoReveal;
         AudioPlayerService.setGlobalVolumePercent(cfg.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(cfg.videoVolumePercent);
+        ServerMediaNetworking.sendChatInputMode();
         source.sendFeedback(Component.translatable(
                 "chatupgrade.config.reload.done",
                 ci ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),

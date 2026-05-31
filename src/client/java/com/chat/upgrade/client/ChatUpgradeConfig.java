@@ -123,6 +123,7 @@ public final class ChatUpgradeConfig {
         int beforeVideoVolume = videoVolumePercent;
         Boolean beforeSmoothScroll = smoothScrollEnabled;
         ChatInputMode beforeChatInputMode = chatInputMode;
+        boolean chatInputModeMissing = beforeChatInputMode == null;
         if (maxReceiveBytes <= 0) {
             maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         }
@@ -147,6 +148,7 @@ public final class ChatUpgradeConfig {
                 || beforeAudioVolume != audioVolumePercent
                 || beforeVideoVolume != videoVolumePercent
                 || beforeSmoothScroll != smoothScrollEnabled
+                || chatInputModeMissing
                 || beforeChatInputMode != chatInputMode;
     }
 

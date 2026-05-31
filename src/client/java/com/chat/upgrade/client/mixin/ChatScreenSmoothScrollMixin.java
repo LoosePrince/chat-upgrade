@@ -1,9 +1,9 @@
 package com.chat.upgrade.client.mixin;
 
-import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -25,7 +25,7 @@ public abstract class ChatScreenSmoothScrollMixin {
             Operation<Void> original,
             @Local(name = "scrollY") double scaledScrollY
     ) {
-        if (!ChatUpgradeConfig.isSmoothScrollEnabled()) {
+        if (!ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
             ChatUpgradeChatRenderState.cancelWheelOverscroll();
             original.call(chatComponent, ignoredIntScroll);
             return;

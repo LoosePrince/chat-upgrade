@@ -1,6 +1,10 @@
 package com.chat.upgrade.server;
 
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.net.ServerMediaUrl;
@@ -15,6 +19,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 public final class ServerMediaServerNetworking {
     private static final int CLEANUP_INTERVAL_TICKS = 20 * 10;
+    private static final Set<UUID> COMPAT_TEXT_VANILLA_PLAYERS = ConcurrentHashMap.newKeySet();
     private static int ticks = 0;
 
     private ServerMediaServerNetworking() {
@@ -34,8 +39,11 @@ public final class ServerMediaServerNetworking {
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.player;
+            COMPAT_TEXT_VANILLA_PLAYERS.remove(player.getUUID());
             sendCapability(player);
         });
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                COMPAT_TEXT_VANILLA_PLAYERS.remove(handler.player.getUUID()));
 
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SUploadInit.TYPE, (payload, context) -> {
             if (!ServerMediaServerConfig.get().enabled) {
@@ -118,9 +126,29 @@ public final class ServerMediaServerNetworking {
             context.server().execute(() -> handleRequestAttachmentMeta(context.player(), payload));
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SChatInputMode.TYPE, (payload, context) -> {
+            context.server().execute(() -> updateChatInputMode(context.player(), payload.mode()));
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SStructuredChatMessage.TYPE, (payload, context) -> {
             context.server().execute(() -> ServerChatRouteService.routeStructured(context.player(), payload.toMessage()));
         });
+    }
+
+    public static boolean isCompatTextVanillaPlayer(ServerPlayer player) {
+        return player != null && COMPAT_TEXT_VANILLA_PLAYERS.contains(player.getUUID());
+    }
+
+    private static void updateChatInputMode(ServerPlayer player, String mode) {
+        if (player == null) {
+            return;
+        }
+        String normalized = mode == null ? "" : mode.trim().toUpperCase(Locale.ROOT);
+        if ("COMPAT_TEXT_VANILLA".equals(normalized)) {
+            COMPAT_TEXT_VANILLA_PLAYERS.add(player.getUUID());
+        } else {
+            COMPAT_TEXT_VANILLA_PLAYERS.remove(player.getUUID());
+        }
     }
 
     private static void sendCapability(ServerPlayer player) {

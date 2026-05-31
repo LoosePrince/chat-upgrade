@@ -22,6 +22,7 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CommandSuggestions;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -42,6 +43,12 @@ public abstract class ChatScreenRichInputMixin extends Screen {
 
     @Shadow
     private boolean closeOnSubmit;
+
+    @Shadow
+    private CommandSuggestions commandSuggestions;
+
+    @Shadow
+    public abstract String normalizeChatMessage(String message);
 
     @Unique
     private final AttachmentComposerState chatupgrade$attachmentState = new AttachmentComposerState();
@@ -120,7 +127,28 @@ public abstract class ChatScreenRichInputMixin extends Screen {
                     target = "Lnet/minecraft/client/input/KeyEvent;isConfirmation()Z"),
             cancellable = true)
     private void chatupgrade$sendAttachmentOnEnter(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (!event.isConfirmation() || !chatupgrade$shouldHandleSubmitInCurrentMode()) {
+        if (!event.isConfirmation()) {
+            return;
+        }
+        if (chatupgrade$shouldSendPlainTextTakeover()) {
+            if (!commandSuggestions.hasAllowedInput()) {
+                cir.setReturnValue(true);
+                return;
+            }
+            String normalizedMessage = normalizeChatMessage(input.getValue());
+            if (AttachmentSendController.sendTextOnlyTakeover(normalizedMessage)) {
+                chatupgrade$finishSuccessfulSubmit(normalizedMessage);
+            } else {
+                chatupgrade$systemMessage(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED));
+            }
+            cir.setReturnValue(true);
+            return;
+        }
+        if (!chatupgrade$shouldHandleSubmitInCurrentMode()) {
+            return;
+        }
+        if (!commandSuggestions.hasAllowedInput()) {
+            cir.setReturnValue(true);
             return;
         }
         AttachmentSendController.SendStartResult result = AttachmentSendController.sendCurrentDraft(
@@ -130,7 +158,7 @@ public abstract class ChatScreenRichInputMixin extends Screen {
                     message.ifPresent(this::chatupgrade$systemMessage);
                     chatupgrade$refreshControls();
                     if (finish == AttachmentSendController.SendFinishResult.SENT) {
-                        chatupgrade$finishAttachmentSend();
+                        chatupgrade$finishSuccessfulSubmit(input.getValue());
                     }
                 });
         chatupgrade$handleSendStartResult(result);
@@ -173,6 +201,18 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         }
         int textColor = draft.status() == AttachmentDraft.Status.FAILED ? 0xFFFFBBBB : 0xFFE6E6E6;
         graphics.text(this.font, label, x + 4, y + 4, textColor, false);
+    }
+
+    @Unique
+    private boolean chatupgrade$shouldSendPlainTextTakeover() {
+        if (chatupgrade$attachmentState.hasDraft()) {
+            return false;
+        }
+        if (ChatUpgradeConfig.get().chatInputMode != ChatUpgradeConfig.ChatInputMode.TAKEOVER) {
+            return false;
+        }
+        String value = input == null ? "" : input.getValue().trim();
+        return !value.isEmpty() && !value.startsWith("/");
     }
 
     @Unique
@@ -248,7 +288,11 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     }
 
     @Unique
-    private void chatupgrade$finishAttachmentSend() {
+    private void chatupgrade$finishSuccessfulSubmit(String recentMessage) {
+        String normalized = recentMessage == null ? "" : normalizeChatMessage(recentMessage);
+        if (!normalized.isEmpty()) {
+            this.minecraft.gui.getChat().addRecentChat(normalized);
+        }
         this.initial = "";
         this.input.setValue("");
         this.isDraft = false;

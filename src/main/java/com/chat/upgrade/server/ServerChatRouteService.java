@@ -49,7 +49,9 @@ public final class ServerChatRouteService {
         PlayerList playerList = server.getPlayerList();
         for (ServerPlayer target : playerList.getPlayers()) {
             int route = routeFor(target);
-            if (route == ROUTE_STRUCTURED_MESSAGE && sendStructuredMessage(target, structuredFromDescriptor(sender, descriptor))) {
+            if (route == ROUTE_STRUCTURED_MESSAGE
+                    && !shouldKeepVanillaPlainText(target, descriptor)
+                    && sendStructuredMessage(target, structuredFromDescriptor(sender, descriptor))) {
                 continue;
             }
             if ((route == ROUTE_STRUCTURED_MESSAGE || route == ROUTE_STRUCTURED_ATTACHMENT)
@@ -77,7 +79,9 @@ public final class ServerChatRouteService {
         PlayerList playerList = server.getPlayerList();
         for (ServerPlayer target : playerList.getPlayers()) {
             int route = routeFor(target);
-            if (route == ROUTE_STRUCTURED_MESSAGE && sendStructuredMessage(target, routedMessage)) {
+            if (route == ROUTE_STRUCTURED_MESSAGE
+                    && !shouldKeepVanillaPlainText(target, routedMessage)
+                    && sendStructuredMessage(target, routedMessage)) {
                 continue;
             }
             if (firstAttachment != null
@@ -108,6 +112,15 @@ public final class ServerChatRouteService {
             return ROUTE_LEGACY_MOD;
         }
         return ROUTE_VANILLA;
+    }
+
+    private static boolean shouldKeepVanillaPlainText(ServerPlayer target, StructuredChatMessage message) {
+        return ServerMediaServerNetworking.isCompatTextVanillaPlayer(target) && !message.hasAttachments();
+    }
+
+    private static boolean shouldKeepVanillaPlainText(ServerPlayer target, AttachmentRouteDescriptor descriptor) {
+        return ServerMediaServerNetworking.isCompatTextVanillaPlayer(target)
+                && descriptor.structuredAttachment().isEmpty();
     }
 
     private static boolean sendStructuredMessage(ServerPlayer target, StructuredChatMessage message) {

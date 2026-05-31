@@ -67,6 +67,10 @@ public final class UpgradePhantomCoordinator {
         return pending;
     }
 
+    public static boolean hasPendingDecoded() {
+        return pendingDecodedAttachment != null;
+    }
+
     public static void prepareNextPhantomTop(RichAttachment attachment) {
         nextPhantomTopAttachment = attachment;
         nextPhantomTopType = attachment.type();
