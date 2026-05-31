@@ -5,6 +5,8 @@ import java.util.Optional;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.chat.upgrade.net.StructuredAttachment;
+
 public final class RichAttachment {
     public static final int CURRENT_SCHEMA_VERSION = 1;
 
@@ -75,6 +77,28 @@ public final class RichAttachment {
                 url,
                 mediaId,
                 attachmentId);
+    }
+
+    public static RichAttachment fromStructured(StructuredAttachment attachment) {
+        Objects.requireNonNull(attachment, "attachment");
+        return new RichAttachment(
+                attachment.schemaVersion(),
+                InlineResourceType.fromWire(attachment.typeWire()),
+                attachment.displayName(),
+                Source.STRUCTURED_PACKET,
+                attachment.fallbackUrl(),
+                attachment.mediaId(),
+                attachment.attachmentId());
+    }
+
+    public StructuredAttachment toStructured() {
+        return new StructuredAttachment(
+                schemaVersion,
+                attachmentId,
+                mediaId,
+                type.toWire(),
+                displayName,
+                url);
     }
 
     public int schemaVersion() {

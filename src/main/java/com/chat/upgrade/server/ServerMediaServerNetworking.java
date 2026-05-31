@@ -26,6 +26,7 @@ public final class ServerMediaServerNetworking {
             ticks++;
             if (ticks % CLEANUP_INTERVAL_TICKS == 0) {
                 ServerMediaService.cleanup();
+                ServerAttachmentService.cleanup();
             }
         });
 

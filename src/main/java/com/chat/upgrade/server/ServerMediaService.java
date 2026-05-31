@@ -46,6 +46,7 @@ public final class ServerMediaService {
     public static void clearAll() {
         UPLOADS.clear();
         store = new InMemoryMediaStore();
+        ServerAttachmentService.clearAll();
     }
 
     public static void beginUpload(long uploadId, String typeWire, String contentType,
