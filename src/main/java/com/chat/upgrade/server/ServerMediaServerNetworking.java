@@ -39,6 +39,7 @@ public final class ServerMediaServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SUploadInit.TYPE, (payload, context) -> {
             if (!ServerMediaServerConfig.get().enabled) {
+                context.server().execute(() -> sendUploadError(context.player(), payload.uploadId(), "server_media_disabled"));
                 return;
             }
             context.server().execute(() -> ServerMediaService.beginUpload(
@@ -51,6 +52,7 @@ public final class ServerMediaServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SUploadChunk.TYPE, (payload, context) -> {
             if (!ServerMediaServerConfig.get().enabled) {
+                context.server().execute(() -> sendUploadError(context.player(), payload.uploadId(), "server_media_disabled"));
                 return;
             }
             int maxSingle = ServerMediaServerConfig.get().maxSingleBytes;
@@ -62,7 +64,7 @@ public final class ServerMediaServerNetworking {
                 }
                 ServerMediaService.UploadCompleted completed = completedOpt.get();
                 if (completed.mediaId() == null) {
-                    sendMediaError(context.player(), "upload:" + payload.uploadId(),
+                    sendUploadError(context.player(), payload.uploadId(),
                             completed.error() == null ? "upload_failed" : completed.error());
                     return;
                 }
@@ -77,6 +79,7 @@ public final class ServerMediaServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SRequestMedia.TYPE, (payload, context) -> {
             if (!ServerMediaServerConfig.get().enabled) {
+                context.server().execute(() -> sendMediaError(context.player(), payload.mediaId(), "server_media_disabled"));
                 return;
             }
             context.server().execute(() -> {
@@ -91,6 +94,12 @@ public final class ServerMediaServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SAttachMetadata.TYPE, (payload, context) -> {
             if (!ServerMediaServerConfig.get().enabled) {
+                context.server().execute(() -> sendAttachmentError(
+                        context.player(),
+                        payload.requestId(),
+                        payload.attachmentId(),
+                        payload.mediaId(),
+                        "server_media_disabled"));
                 return;
             }
             context.server().execute(() -> handleAttachMetadata(context.player(), payload));
@@ -98,6 +107,12 @@ public final class ServerMediaServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(ServerMediaPayloads.C2SRequestAttachmentMeta.TYPE, (payload, context) -> {
             if (!ServerMediaServerConfig.get().enabled) {
+                context.server().execute(() -> sendAttachmentError(
+                        context.player(),
+                        payload.requestId(),
+                        payload.attachmentId(),
+                        payload.mediaId(),
+                        "server_media_disabled"));
                 return;
             }
             context.server().execute(() -> handleRequestAttachmentMeta(context.player(), payload));
@@ -122,6 +137,15 @@ public final class ServerMediaServerNetworking {
                 mediaId,
                 safeType,
                 ServerMediaUrl.format(mediaId, safeType)));
+    }
+
+    private static void sendUploadError(ServerPlayer player, long uploadId, String message) {
+        ServerPlayNetworking.send(player, new ServerMediaPayloads.S2CUploadAck(
+                uploadId,
+                "",
+                "",
+                ""));
+        ChatUpgrade.LOGGER.warn("chat-upgrade: server upload error uploadId={} msg={}", uploadId, message);
     }
 
     private static void handleAttachMetadata(ServerPlayer player, ServerMediaPayloads.C2SAttachMetadata payload) {

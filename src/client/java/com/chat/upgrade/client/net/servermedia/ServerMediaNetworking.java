@@ -151,14 +151,20 @@ public final class ServerMediaNetworking {
         long requestId = nextUploadId();
         CompletableFuture<Optional<StructuredAttachment>> fut = new CompletableFuture<>();
         ATTACHMENTS.put(requestId, fut);
-        ClientPlayNetworking.send(new ServerMediaPayloads.C2SAttachMetadata(
-                requestId,
-                attachment.schemaVersion(),
-                wire(attachment.attachmentId()),
-                wire(attachment.mediaId()),
-                attachment.typeWire(),
-                attachment.displayName(),
-                wire(attachment.fallbackUrl())));
+        try {
+            ClientPlayNetworking.send(new ServerMediaPayloads.C2SAttachMetadata(
+                    requestId,
+                    attachment.schemaVersion(),
+                    wire(attachment.attachmentId()),
+                    wire(attachment.mediaId()),
+                    attachment.typeWire(),
+                    attachment.displayName(),
+                    wire(attachment.fallbackUrl())));
+        } catch (Exception ex) {
+            ATTACHMENTS.remove(requestId);
+            fut.complete(Optional.empty());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to send attachment metadata: {}", ex.getMessage());
+        }
         return fut;
     }
 
@@ -174,10 +180,16 @@ public final class ServerMediaNetworking {
         long requestId = nextUploadId();
         CompletableFuture<Optional<StructuredAttachment>> fut = new CompletableFuture<>();
         ATTACHMENTS.put(requestId, fut);
-        ClientPlayNetworking.send(new ServerMediaPayloads.C2SRequestAttachmentMeta(
-                requestId,
-                wire(attachmentId),
-                wire(mediaId)));
+        try {
+            ClientPlayNetworking.send(new ServerMediaPayloads.C2SRequestAttachmentMeta(
+                    requestId,
+                    wire(attachmentId),
+                    wire(mediaId)));
+        } catch (Exception ex) {
+            ATTACHMENTS.remove(requestId);
+            fut.complete(Optional.empty());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to request attachment metadata: {}", ex.getMessage());
+        }
         return fut;
     }
 
@@ -204,20 +216,26 @@ public final class ServerMediaNetworking {
         CompletableFuture<Optional<String>> fut = new CompletableFuture<>();
         UPLOADS.put(uploadId, fut);
 
-        ClientPlayNetworking.send(new ServerMediaPayloads.C2SUploadInit(
-                uploadId,
-                type.toWire(),
-                fileName == null ? "" : fileName,
-                contentType == null ? "application/octet-stream" : contentType,
-                body.length,
-                totalChunks));
+        try {
+            ClientPlayNetworking.send(new ServerMediaPayloads.C2SUploadInit(
+                    uploadId,
+                    type.toWire(),
+                    fileName == null ? "" : fileName,
+                    contentType == null ? "application/octet-stream" : contentType,
+                    body.length,
+                    totalChunks));
 
-        for (int i = 0; i < totalChunks; i++) {
-            int from = i * chunkSize;
-            int to = Math.min(body.length, from + chunkSize);
-            byte[] chunk = new byte[to - from];
-            System.arraycopy(body, from, chunk, 0, chunk.length);
-            ClientPlayNetworking.send(new ServerMediaPayloads.C2SUploadChunk(uploadId, i, chunk));
+            for (int i = 0; i < totalChunks; i++) {
+                int from = i * chunkSize;
+                int to = Math.min(body.length, from + chunkSize);
+                byte[] chunk = new byte[to - from];
+                System.arraycopy(body, from, chunk, 0, chunk.length);
+                ClientPlayNetworking.send(new ServerMediaPayloads.C2SUploadChunk(uploadId, i, chunk));
+            }
+        } catch (Exception ex) {
+            UPLOADS.remove(uploadId);
+            fut.complete(Optional.empty());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to upload server media: {}", ex.getMessage());
         }
 
         return fut;
