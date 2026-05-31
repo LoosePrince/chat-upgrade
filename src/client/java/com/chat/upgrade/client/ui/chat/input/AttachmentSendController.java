@@ -3,12 +3,15 @@ package com.chat.upgrade.client.ui.chat.input;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.model.RichMessageDraft;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.upload.UploadRouter;
+import com.chat.upgrade.net.ServerMediaUrl;
+import com.chat.upgrade.net.StructuredAttachment;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -145,6 +148,7 @@ public final class AttachmentSendController {
                 return;
             }
             if (sendChat(buildLegacyFallbackMessage(draft, url, typedMessage))) {
+                submitMetadataIfAvailable(draft, url);
                 state.clearIfCurrent(draft);
                 resultSink.accept(SendFinishResult.SENT, Optional.empty());
                 return;
@@ -178,8 +182,42 @@ public final class AttachmentSendController {
                     Optional.of(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED)));
             return;
         }
+        submitMetadataIfAvailable(uploadedDraft, urlOpt.get());
         state.clearIfCurrent(uploadingDraft);
         resultSink.accept(SendFinishResult.SENT, Optional.empty());
+    }
+
+    private static void submitMetadataIfAvailable(AttachmentDraft draft, String uploadedUrl) {
+        if (!ServerMediaClient.capability().attachmentMetadataEnabled()) {
+            return;
+        }
+        try {
+            StructuredAttachment attachment = buildStructuredAttachment(draft, uploadedUrl);
+            ServerMediaClient.submitAttachment(attachment)
+                    .exceptionally(error -> {
+                        ChatUpgrade.LOGGER.warn("chat-upgrade: failed to submit attachment metadata: {}",
+                                error == null ? "unknown" : error.getMessage());
+                        return Optional.empty();
+                    });
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: cannot submit attachment metadata: {}", ex.getMessage());
+        }
+    }
+
+    private static StructuredAttachment buildStructuredAttachment(AttachmentDraft draft, String uploadedUrl) {
+        Optional<ServerMediaUrl.Parsed> serverMediaOpt = ServerMediaUrl.parse(uploadedUrl);
+        if (serverMediaOpt.isPresent()) {
+            return StructuredAttachment.serverMedia(
+                    null,
+                    serverMediaOpt.get().mediaId(),
+                    draft.type().toWire(),
+                    draft.displayName());
+        }
+        return StructuredAttachment.externalUrl(
+                null,
+                draft.type().toWire(),
+                draft.displayName(),
+                uploadedUrl);
     }
 
     private static boolean sendChat(String message) {

@@ -21,6 +21,7 @@ import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
@@ -118,9 +119,19 @@ public final class UpgradeBracketCodec {
         String name = kv.getOrDefault("name", defaultName).trim();
         String matched = m.group(0);
 
-        RichAttachment attachment = RichAttachment.legacyBracket(url, name, type);
+        RichAttachment attachment = resolveIncomingAttachment(url, name, type);
         Component modified = replaceMatchedPayload(original, matched, attachment);
         return new DecodedBracket(modified, Optional.of(attachment));
+    }
+
+    private static RichAttachment resolveIncomingAttachment(String url, String name, InlineResourceType type) {
+        Optional<RichAttachment> cachedAttachment = ServerMediaClient.cachedAttachmentForUrl(url)
+                .map(RichAttachment::fromStructured);
+        if (cachedAttachment.isPresent()) {
+            return cachedAttachment.get();
+        }
+        ServerMediaClient.requestAttachmentForUrlIfNeeded(url);
+        return RichAttachment.legacyBracket(url, name, type);
     }
 
     private static Component replaceMatchedPayload(

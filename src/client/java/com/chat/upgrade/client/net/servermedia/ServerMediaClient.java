@@ -20,6 +20,9 @@ import com.chat.upgrade.net.StructuredAttachment;
  */
 public final class ServerMediaClient {
     private static final ConcurrentHashMap<String, Boolean> REQUESTED_MEDIA_IDS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, StructuredAttachment> ATTACHMENTS_BY_MEDIA_ID = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, StructuredAttachment> ATTACHMENTS_BY_ID = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Boolean> PENDING_ATTACHMENT_MEDIA_IDS = new ConcurrentHashMap<>();
     private static volatile ServerMediaCapability capability = ServerMediaCapability.unavailable();
 
     private ServerMediaClient() {
@@ -46,6 +49,9 @@ public final class ServerMediaClient {
 
     public static void clearRuntimeState() {
         REQUESTED_MEDIA_IDS.clear();
+        ATTACHMENTS_BY_MEDIA_ID.clear();
+        ATTACHMENTS_BY_ID.clear();
+        PENDING_ATTACHMENT_MEDIA_IDS.clear();
         capability = ServerMediaCapability.unavailable();
     }
 
@@ -77,7 +83,9 @@ public final class ServerMediaClient {
         if (attachment == null) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
-        return ServerMediaNetworking.submitAttachment(attachment);
+        CompletableFuture<Optional<StructuredAttachment>> future = ServerMediaNetworking.submitAttachment(attachment);
+        future.thenAccept(result -> result.ifPresent(ServerMediaClient::rememberAttachment));
+        return future;
     }
 
     public static CompletableFuture<Optional<StructuredAttachment>> submitAttachment(RichAttachment attachment) {
@@ -93,11 +101,57 @@ public final class ServerMediaClient {
     }
 
     public static CompletableFuture<Optional<StructuredAttachment>> requestAttachmentById(String attachmentId) {
-        return ServerMediaNetworking.requestAttachment(attachmentId, null);
+        Optional<StructuredAttachment> cached = cachedAttachmentById(attachmentId);
+        if (cached.isPresent()) {
+            return CompletableFuture.completedFuture(cached);
+        }
+        CompletableFuture<Optional<StructuredAttachment>> future = ServerMediaNetworking.requestAttachment(attachmentId, null);
+        future.thenAccept(result -> result.ifPresent(ServerMediaClient::rememberAttachment));
+        return future;
     }
 
     public static CompletableFuture<Optional<StructuredAttachment>> requestAttachmentByMediaId(String mediaId) {
-        return ServerMediaNetworking.requestAttachment(null, mediaId);
+        Optional<StructuredAttachment> cached = cachedAttachmentByMediaId(mediaId);
+        if (cached.isPresent()) {
+            return CompletableFuture.completedFuture(cached);
+        }
+        CompletableFuture<Optional<StructuredAttachment>> future = ServerMediaNetworking.requestAttachment(null, mediaId);
+        future.thenAccept(result -> result.ifPresent(ServerMediaClient::rememberAttachment));
+        return future;
+    }
+
+    public static Optional<StructuredAttachment> cachedAttachmentById(String attachmentId) {
+        String safeId = normalizeOptional(attachmentId);
+        return safeId == null ? Optional.empty() : Optional.ofNullable(ATTACHMENTS_BY_ID.get(safeId));
+    }
+
+    public static Optional<StructuredAttachment> cachedAttachmentByMediaId(String mediaId) {
+        String safeMediaId = normalizeOptional(mediaId);
+        return safeMediaId == null ? Optional.empty() : Optional.ofNullable(ATTACHMENTS_BY_MEDIA_ID.get(safeMediaId));
+    }
+
+    public static Optional<StructuredAttachment> cachedAttachmentForUrl(String url) {
+        Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(url);
+        if (parsed.isEmpty()) {
+            return Optional.empty();
+        }
+        return cachedAttachmentByMediaId(parsed.get().mediaId());
+    }
+
+    public static void requestAttachmentForUrlIfNeeded(String url) {
+        Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(url);
+        if (parsed.isEmpty() || !capability.attachmentMetadataEnabled()) {
+            return;
+        }
+        String mediaId = parsed.get().mediaId();
+        if (ATTACHMENTS_BY_MEDIA_ID.containsKey(mediaId)) {
+            return;
+        }
+        boolean first = PENDING_ATTACHMENT_MEDIA_IDS.putIfAbsent(mediaId, Boolean.TRUE) == null;
+        if (!first) {
+            return;
+        }
+        requestAttachmentByMediaId(mediaId).whenComplete((result, error) -> PENDING_ATTACHMENT_MEDIA_IDS.remove(mediaId));
     }
 
     public static void forgetRequestForUrl(String url) {
@@ -124,6 +178,25 @@ public final class ServerMediaClient {
             case AUDIO -> AudioLoader.loadFromBytes(url, body, ct, md5Hex);
             case VIDEO -> VideoLoader.loadFromBytes(url, body, ct, md5Hex);
         }
+    }
+
+    private static void rememberAttachment(StructuredAttachment attachment) {
+        String attachmentId = normalizeOptional(attachment.attachmentId());
+        if (attachmentId != null) {
+            ATTACHMENTS_BY_ID.put(attachmentId, attachment);
+        }
+        String mediaId = normalizeOptional(attachment.mediaId());
+        if (mediaId != null) {
+            ATTACHMENTS_BY_MEDIA_ID.put(mediaId, attachment);
+        }
+    }
+
+    private static @Nullable String normalizeOptional(@Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }
 
