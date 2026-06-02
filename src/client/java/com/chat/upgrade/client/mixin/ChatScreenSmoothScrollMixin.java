@@ -5,6 +5,8 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -25,6 +27,17 @@ public abstract class ChatScreenSmoothScrollMixin {
             Operation<Void> original,
             @Local(name = "scrollY") double scaledScrollY
     ) {
+        if (ChatUpgradeChatPipelineGate.shouldUseRichViewportInteractions()) {
+            ChatUpgradeChatRenderState.cancelWheelOverscroll();
+            RichChatViewportState state = RichChatViewport.state();
+            int lineHeight = Math.max(1, ((ChatComponentLineHeightAccessor) chatComponent).chatupgrade$invokeGetLineHeight());
+            int deltaPx = (int) Math.round(scaledScrollY * lineHeight);
+            if (deltaPx == 0 && Math.abs(scaledScrollY) > 1.0e-5D) {
+                deltaPx = scaledScrollY > 0.0D ? 1 : -1;
+            }
+            state.scrollByPixels(deltaPx);
+            return;
+        }
         if (!ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
             ChatUpgradeChatRenderState.cancelWheelOverscroll();
             original.call(chatComponent, ignoredIntScroll);

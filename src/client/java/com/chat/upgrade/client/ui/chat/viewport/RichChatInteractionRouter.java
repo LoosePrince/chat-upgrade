@@ -40,6 +40,7 @@ import net.minecraft.network.chat.Style;
 public final class RichChatInteractionRouter {
     private static final List<ActiveHitBox> ACTIVE_HIT_BOXES = new ArrayList<>();
     private static @Nullable Matrix3x2fc activePose;
+    private static @Nullable RichChatBounds activeViewportBounds;
 
     private RichChatInteractionRouter() {
     }
@@ -47,15 +48,18 @@ public final class RichChatInteractionRouter {
     public static void clear() {
         ACTIVE_HIT_BOXES.clear();
         activePose = null;
+        activeViewportBounds = null;
     }
 
     public static void setActiveLayout(
             RichChatLayout layout,
             RichChatViewportState state,
             Matrix3x2fc pose,
-            int contentToLocalY) {
+            int contentToLocalY,
+            RichChatBounds localViewportBounds) {
         ACTIVE_HIT_BOXES.clear();
         activePose = pose;
+        activeViewportBounds = localViewportBounds;
         if (layout == null) {
             return;
         }
@@ -66,6 +70,9 @@ public final class RichChatInteractionRouter {
     }
 
     public static @Nullable RichChatHitBox hitBoxAtLocal(float localX, float localY) {
+        if (!isInsideActiveViewport(localX, localY)) {
+            return null;
+        }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
             if (active.localBounds().contains(Math.round(localX), Math.round(localY))) {
@@ -75,7 +82,14 @@ public final class RichChatInteractionRouter {
         return null;
     }
 
+    public static boolean hasActionAtLocal(float localX, float localY) {
+        return styleForLocalClick(localX, localY) != null;
+    }
+
     public static @Nullable Style styleForLocalClick(float localX, float localY) {
+        if (!isInsideActiveViewport(localX, localY)) {
+            return null;
+        }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
             if (!active.localBounds().contains(Math.round(localX), Math.round(localY))) {
@@ -106,7 +120,7 @@ public final class RichChatInteractionRouter {
             float localY,
             int screenX,
             int screenY) {
-        if (gfx == null || font == null) {
+        if (gfx == null || font == null || !isInsideActiveViewport(localX, localY)) {
             return false;
         }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
@@ -123,6 +137,13 @@ public final class RichChatInteractionRouter {
             return true;
         }
         return false;
+    }
+
+    private static boolean isInsideActiveViewport(float localX, float localY) {
+        if (activeViewportBounds == null) {
+            return true;
+        }
+        return activeViewportBounds.contains(Math.round(localX), Math.round(localY));
     }
 
     private static @Nullable Style styleForHitBox(ActiveHitBox active, float localX, float localY) {

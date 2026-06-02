@@ -15,6 +15,7 @@ import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.MediaFetchSupport;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -85,7 +86,7 @@ public final class ImageLoader {
             }
         }
         CACHE.clear();
-        UpgradePhantomHudLayout.clearLayoutRegistrations();
+        clearCompatLayoutRegistrations();
         RichChatViewport.invalidateAll();
     }
 
@@ -152,7 +153,7 @@ public final class ImageLoader {
             var textures = mc.getTextureManager();
             existing.forEachRegisteredTexture(textures::release);
         }
-        UpgradePhantomHudLayout.clearLayoutRegistrations();
+        clearCompatLayoutRegistrations();
         getOrLoad(url);
     }
 
@@ -226,6 +227,18 @@ public final class ImageLoader {
         scheduleTextureRegistration(url, entry, img);
     }
 
+    private static void notifyCompatLayoutForUrl(String url) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+        }
+    }
+
+    private static void clearCompatLayoutRegistrations() {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            UpgradePhantomHudLayout.clearLayoutRegistrations();
+        }
+    }
+
     private static void markFailed(String url, ImageEntry entry) {
         markFailed(url, entry, ImageEntry.FailureKind.UNKNOWN);
     }
@@ -243,7 +256,7 @@ public final class ImageLoader {
             return;
         }
         mc.execute(() -> {
-            UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+            notifyCompatLayoutForUrl(url);
             RichChatViewport.invalidateMedia(url);
             CACHE.remove(url, entry);
         });
@@ -356,7 +369,7 @@ public final class ImageLoader {
 
                 entry.setDecodedFormatName(formatName);
                 entry.setLoadedAnimated(ids, delayMs, displayW, displayH, texW, texH, rawW, rawH);
-                UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+                notifyCompatLayoutForUrl(url);
                 RichChatViewport.invalidateMedia(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register animated texture for {}: {}", url,
@@ -421,7 +434,7 @@ public final class ImageLoader {
                 Minecraft.getInstance().getTextureManager().register(fullLocation, fullTexture);
 
                 entry.setLoaded(location, fullLocation, displayW, displayH, texW, texH, fullTexW, fullTexH, rawW, rawH);
-                UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+                notifyCompatLayoutForUrl(url);
                 RichChatViewport.invalidateMedia(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register texture for {}: {}", url, e.getMessage());

@@ -51,17 +51,25 @@ public final class RichChatViewportState {
         bottomPinned = scrollPx == 0;
     }
 
-    public void scrollByPixels(int deltaPx) {
-        if (deltaPx == 0) {
-            return;
-        }
-        scrollPx = clampScroll(scrollPx + deltaPx);
-        bottomPinned = scrollPx == 0;
+    public boolean canScroll() {
+        return totalHeight > visibleHeight && visibleHeight > 0;
     }
 
-    public void setScrollPx(int nextScrollPx) {
+    public boolean scrollByPixels(int deltaPx) {
+        if (deltaPx == 0) {
+            return false;
+        }
+        int before = scrollPx;
+        scrollPx = clampScroll(scrollPx + deltaPx);
+        bottomPinned = scrollPx == 0;
+        return scrollPx != before;
+    }
+
+    public boolean setScrollPx(int nextScrollPx) {
+        int before = scrollPx;
         scrollPx = clampScroll(nextScrollPx);
         bottomPinned = scrollPx == 0;
+        return scrollPx != before;
     }
 
     public void scrollToBottom() {

@@ -17,13 +17,17 @@ public final class ChatUpgradeChatPipelineGate {
         return isTakeoverMode();
     }
 
+    public static boolean shouldUseRichViewportInteractions() {
+        return isTakeoverMode();
+    }
+
     public static boolean shouldUseScrollEnhancements() {
         return isTakeoverMode() && ChatUpgradeConfig.isSmoothScrollEnabled();
     }
 
     public static boolean shouldRenderLineEnhancements(GuiMessage.Line line) {
         if (isTakeoverMode()) {
-            return true;
+            return false;
         }
         if (!(((Object) line) instanceof ImageAttachable attachable)) {
             return false;
@@ -32,6 +36,6 @@ public final class ChatUpgradeChatPipelineGate {
     }
 
     public static boolean shouldResolveInlineChatClick() {
-        return true;
+        return !isTakeoverMode();
     }
 }

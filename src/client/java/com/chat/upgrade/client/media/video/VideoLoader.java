@@ -8,6 +8,7 @@ import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.MediaFetchSupport;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
@@ -166,6 +167,12 @@ public final class VideoLoader {
         notifyChanged(url);
     }
 
+    private static void notifyCompatLayoutForUrl(String url) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            UpgradePhantomHudLayout.notifyVideoEntryChanged(url);
+        }
+    }
+
     private static void notifyChanged(String url) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
@@ -173,7 +180,7 @@ public final class VideoLoader {
             return;
         }
         mc.execute(() -> {
-            UpgradePhantomHudLayout.notifyVideoEntryChanged(url);
+            notifyCompatLayoutForUrl(url);
             RichChatViewport.invalidateMedia(url);
         });
     }

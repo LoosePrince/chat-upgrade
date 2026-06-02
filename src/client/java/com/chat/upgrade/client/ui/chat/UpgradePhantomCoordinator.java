@@ -71,6 +71,13 @@ public final class UpgradePhantomCoordinator {
         return pendingDecodedAttachment != null;
     }
 
+    public static void clear() {
+        pendingDecodedAttachment = null;
+        nextPhantomTopAttachment = null;
+        nextPhantomTopType = InlineResourceType.IMAGE;
+        nextPhantomContinuation = false;
+    }
+
     public static void prepareNextPhantomTop(RichAttachment attachment) {
         nextPhantomTopAttachment = attachment;
         nextPhantomTopType = attachment.type();

@@ -8,6 +8,8 @@ import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.input.MouseButtonEvent;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
 import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -23,6 +25,10 @@ public abstract class ChatScreenScrollbarDragMixin {
 
     @Inject(method = "mouseClicked(Lnet/minecraft/client/input/MouseButtonEvent;Z)Z", at = @At("HEAD"), cancellable = true)
     private void chatupgrade$beginScrollbarDrag(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
+        if (ChatUpgradeChatPipelineGate.shouldUseRichViewportInteractions()) {
+            chatupgrade$beginViewportScrollbarDrag(event, cir);
+            return;
+        }
         if (!ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
             chatupgrade$draggingScrollbar = false;
             return;
@@ -68,6 +74,10 @@ public abstract class ChatScreenScrollbarDragMixin {
             int mouseY,
             float a,
             CallbackInfo ci) {
+        if (ChatUpgradeChatPipelineGate.shouldUseRichViewportInteractions()) {
+            chatupgrade$dragViewportScrollbarOnRender(mouseY);
+            return;
+        }
         if (!ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
             chatupgrade$draggingScrollbar = false;
             return;
@@ -94,6 +104,73 @@ public abstract class ChatScreenScrollbarDragMixin {
             return;
         }
         chatupgrade$applyScrollbarDrag(mc, chat, total, perPage, mouseY);
+    }
+
+    @Unique
+    private void chatupgrade$beginViewportScrollbarDrag(MouseButtonEvent event, CallbackInfoReturnable<Boolean> cir) {
+        chatupgrade$draggingScrollbar = false;
+        if (event.button() != 0) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) {
+            return;
+        }
+        ChatComponent chat = mc.gui.getChat();
+        if (!chat.isChatFocused()) {
+            return;
+        }
+        RichChatViewportState state = RichChatViewport.state();
+        if (!state.canScroll()) {
+            return;
+        }
+        if (!chatupgrade$isOverScrollbar(mc, chat, event.x(), event.y())) {
+            return;
+        }
+        chatupgrade$draggingScrollbar = true;
+        chatupgrade$applyViewportScrollbarDrag(mc, state, event.y());
+        cir.setReturnValue(true);
+    }
+
+    @Unique
+    private void chatupgrade$dragViewportScrollbarOnRender(int mouseY) {
+        if (!chatupgrade$draggingScrollbar) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) {
+            chatupgrade$draggingScrollbar = false;
+            return;
+        }
+        MouseButtonInfo activeButton = ((MouseHandlerActiveButtonAccessor) mc.mouseHandler).chatupgrade$getActiveButton();
+        if (activeButton == null || activeButton.button() != 0) {
+            chatupgrade$draggingScrollbar = false;
+            return;
+        }
+        RichChatViewportState state = RichChatViewport.state();
+        if (!state.canScroll()) {
+            chatupgrade$draggingScrollbar = false;
+            return;
+        }
+        chatupgrade$applyViewportScrollbarDrag(mc, state, mouseY);
+    }
+
+    @Unique
+    private static void chatupgrade$applyViewportScrollbarDrag(
+            Minecraft mc,
+            RichChatViewportState state,
+            double mouseY) {
+        double scale = mc.options.chatScale().get();
+        int screenHeight = mc.getWindow().getGuiScaledHeight();
+        int chatBottom = Mth.floor((screenHeight - 40.0D) / scale);
+        int visibleHeight = Math.max(1, state.visibleHeight());
+        double localY = mouseY / scale;
+        double top = chatBottom - visibleHeight;
+        double t = (localY - top) / Math.max(1.0D, visibleHeight);
+        t = Mth.clamp(t, 0.0D, 1.0D);
+        int desired = Mth.floor((1.0D - t) * state.maxScrollPx());
+        state.setScrollPx(desired);
+        ChatUpgradeChatRenderState.cancelWheelOverscroll();
     }
 
     @Unique

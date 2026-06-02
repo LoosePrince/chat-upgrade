@@ -19,6 +19,7 @@ import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
@@ -53,6 +54,7 @@ public final class ServerMediaNetworking {
             ServerMediaClient.clearRuntimeState();
             RichChatProjectionCoordinator.clear();
             RichChatProjectionService.clear();
+            UpgradePhantomCoordinator.clear();
             capabilityAnnounced = false;
         });
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
@@ -253,6 +255,19 @@ public final class ServerMediaNetworking {
         if (minecraft == null || minecraft.gui == null) {
             return;
         }
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            RichChatIngress.record(
+                    messageId,
+                    senderName,
+                    component,
+                    fallbackText,
+                    attachments,
+                    source);
+            attachments.stream()
+                    .filter(RichAttachment::hasRenderableUrl)
+                    .forEach(ServerMediaNetworking::preloadStructuredAttachmentMedia);
+            return;
+        }
         RichChatProjection projection = RichChatProjectionService.recordAndProject(
                 messageId,
                 senderName,
@@ -268,8 +283,15 @@ public final class ServerMediaNetworking {
     }
 
     private static void beginStructuredAttachmentRender(RichAttachment attachment) {
-        String url = attachment.requireRenderableUrl();
         UpgradePhantomCoordinator.setPendingDecoded(attachment);
+        preloadStructuredAttachmentMedia(attachment);
+    }
+
+    private static void preloadStructuredAttachmentMedia(RichAttachment attachment) {
+        if (attachment == null || !attachment.hasRenderableUrl()) {
+            return;
+        }
+        String url = attachment.requireRenderableUrl();
         switch (attachment.type()) {
             case IMAGE -> {
                 if (!ChatUpgradeConfig.get().manualImageReveal) {

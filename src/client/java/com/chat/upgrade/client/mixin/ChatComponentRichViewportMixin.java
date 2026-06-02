@@ -16,8 +16,10 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportMetrics;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
@@ -25,6 +27,7 @@ import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 
 import org.joml.Matrix3x2f;
+import org.joml.Vector2f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -87,7 +90,7 @@ public abstract class ChatComponentRichViewportMixin {
         int contentToLocalY = metrics.chatBottom() - (layout.totalHeight() - state.scrollPx());
 
         boolean ownsClip = false;
-        if (extractor != null && !ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
+        if (extractor != null) {
             ChatUpgradeChatRenderState.beginRenderPass(
                     extractor,
                     screenHeight,
@@ -102,22 +105,72 @@ public abstract class ChatComponentRichViewportMixin {
             pose.translate(4.0F, 0.0F);
         });
         try {
-            if (extractor != null && displayMode.foreground) {
+            Matrix3x2f activePose = chatupgrade$activePose(graphics, extractor);
+            RichChatBounds viewportBounds = chatupgrade$viewportBounds(metrics);
+            if (displayMode.foreground && activePose != null) {
                 RichChatInteractionRouter.setActiveLayout(
                         layout,
                         state,
-                        new Matrix3x2f(extractor.pose()),
-                        contentToLocalY);
+                        activePose,
+                        contentToLocalY,
+                        viewportBounds);
             }
             chatupgrade$paintMessages(graphics, extractor, font, metrics, layout, state, contentToLocalY, ticks,
                     displayMode.foreground);
             if (displayMode.foreground) {
                 chatupgrade$paintScrollBar(graphics, metrics, layout, state);
+                chatupgrade$showRichHover(graphics, extractor, font);
             }
         } finally {
             if (ownsClip && extractor != null) {
                 ChatUpgradeChatRenderState.endRenderPass(extractor);
             }
+        }
+    }
+
+    @Unique
+    private Matrix3x2f chatupgrade$activePose(
+            ChatComponent.ChatGraphicsAccess graphics,
+            GuiGraphicsExtractor extractor) {
+        if (extractor != null) {
+            return new Matrix3x2f(extractor.pose());
+        }
+        if (graphics instanceof ChatUpgradeClickableTextOnlyGraphicsAccessor clickable) {
+            ActiveTextCollector output = clickable.chatupgrade$output();
+            if (output != null) {
+                return new Matrix3x2f(output.defaultParameters().pose());
+            }
+        }
+        return null;
+    }
+
+    @Unique
+    private RichChatBounds chatupgrade$viewportBounds(RichChatViewportMetrics metrics) {
+        return RichChatBounds.ofSize(
+                metrics.backgroundLeft(),
+                metrics.chatBottom() - metrics.visibleHeight(),
+                metrics.backgroundRight() - metrics.backgroundLeft(),
+                metrics.visibleHeight());
+    }
+
+    @Unique
+    private void chatupgrade$showRichHover(
+            ChatComponent.ChatGraphicsAccess graphics,
+            GuiGraphicsExtractor extractor,
+            Font font) {
+        if (extractor == null || !(graphics instanceof ChatUpgradeDrawingFocusedAccessor focused)) {
+            return;
+        }
+        Vector2f local = focused.chatupgrade$localMousePos();
+        boolean tooltip = RichChatInteractionRouter.showTooltipForLocalHover(
+                extractor,
+                font,
+                local.x,
+                local.y,
+                focused.chatupgrade$globalMouseX(),
+                focused.chatupgrade$globalMouseY());
+        if (tooltip || RichChatInteractionRouter.hasActionAtLocal(local.x, local.y)) {
+            extractor.requestCursor(CursorTypes.POINTING_HAND);
         }
     }
 
