@@ -25,13 +25,13 @@ public final class RichChatProjectionService {
             String fallbackText,
             List<RichAttachment> attachments,
             RichChatMessageSource source) {
-        return RichChatStateStore.append(new RichChatMessage(
+        return RichChatIngress.record(
                 messageId,
                 senderName,
                 component,
                 fallbackText,
                 attachments,
-                source));
+                source);
     }
 
     public static RichChatProjection recordAndProject(
@@ -45,6 +45,6 @@ public final class RichChatProjectionService {
     }
 
     public static void clear() {
-        RichChatStateStore.clear();
+        RichChatIngress.clear();
     }
 }

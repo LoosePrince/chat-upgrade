@@ -4,5 +4,6 @@ public enum RichChatMessageSource {
     VANILLA_TEXT,
     LEGACY_BRACKET,
     STRUCTURED_PACKET,
-    LOCAL_DRAFT
+    LOCAL_DRAFT,
+    LOCAL_SYSTEM
 }
