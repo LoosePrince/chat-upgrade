@@ -9,6 +9,7 @@ import com.chat.upgrade.client.media.MediaFetchSupport;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
 import net.minecraft.client.Minecraft;
 
@@ -25,6 +26,7 @@ public final class VideoLoader {
             VideoPlayerService.remove(url);
         }
         CACHE.clear();
+        RichChatViewport.invalidateAll();
     }
 
     public static VideoEntry getOrLoad(String url) {
@@ -167,9 +169,13 @@ public final class VideoLoader {
     private static void notifyChanged(String url) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
+            RichChatViewport.invalidateMedia(url);
             return;
         }
-        mc.execute(() -> UpgradePhantomHudLayout.notifyVideoEntryChanged(url));
+        mc.execute(() -> {
+            UpgradePhantomHudLayout.notifyVideoEntryChanged(url);
+            RichChatViewport.invalidateMedia(url);
+        });
     }
 
     private static PreviewLayout computePreviewLayout(int rawW, int rawH) {

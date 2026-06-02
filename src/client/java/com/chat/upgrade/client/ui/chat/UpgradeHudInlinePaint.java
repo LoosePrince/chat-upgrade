@@ -8,9 +8,14 @@ import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaBox;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaRenderer;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaSizing;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 
@@ -52,34 +57,25 @@ public final class UpgradeHudInlinePaint {
         if (gfx == null)
             return;
 
-        if (attachable.chatupgrade$getResourceType() == InlineResourceType.AUDIO) {
-            AudioEntry entry = AudioLoader.getIfPresent(resourceUrl);
-            if (entry == null) {
-                return;
-            }
-            paintAudio(gfx, entry, attachable.chatupgrade$getResourceName(), resourceUrl, messageY, opacity);
-            return;
+        RichAttachment attachment = attachable.chatupgrade$getAttachment();
+        if (attachment == null) {
+            attachment = RichAttachment.legacyBracket(
+                    resourceUrl,
+                    attachable.chatupgrade$getResourceName(),
+                    attachable.chatupgrade$getResourceType());
         }
-        if (attachable.chatupgrade$getResourceType() == InlineResourceType.VIDEO) {
-            VideoEntry entry = VideoLoader.getIfPresent(resourceUrl);
-            if (entry == null) {
-                return;
-            }
-            paintVideo(gfx, entry, attachable.chatupgrade$getResourceName(), resourceUrl, messageY, opacity);
-            return;
-        }
-
-        ImageEntry imageEntry = ImageLoader.getIfPresent(resourceUrl);
-        if (imageEntry == null) {
-            return;
-        }
-
-        switch (imageEntry.getState()) {
-            case FAILED -> {
-            }
-            case LOADING -> paintLoadingStrip(gfx, imageEntry, messageY, opacity);
-            case LOADED -> paintDecodedBlit(gfx, imageEntry, messageY, opacity);
-        }
+        RichChatMediaBox box = RichChatMediaSizing.measure(
+                Math.max(ImageLoader.MAX_PREVIEW_WIDTH, Math.max(AUDIO_WIDTH, VideoUiLayout.WIDTH)),
+                9,
+                attachment);
+        RichChatBounds bounds = box.at(0, messageY);
+        RichChatMediaRenderer.paintAttachment(
+                gfx,
+                Minecraft.getInstance().font,
+                box.kind(),
+                bounds,
+                attachment,
+                opacity);
     }
 
     private static void paintAudio(

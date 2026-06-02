@@ -4,19 +4,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.chat.upgrade.client.media.audio.AudioEntry;
-import com.chat.upgrade.client.media.audio.AudioLoader;
-import com.chat.upgrade.client.media.image.ImageEntry;
-import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.RichAttachment;
-import com.chat.upgrade.client.media.video.VideoEntry;
-import com.chat.upgrade.client.media.video.VideoLoader;
-import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
 import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
-import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.Font;
@@ -105,7 +97,10 @@ public final class RichChatLayoutEngine {
             if (!nodes.isEmpty()) {
                 cursorY += NODE_GAP;
             }
-            AttachmentLayout attachmentLayout = measureAttachment(metrics, attachment);
+            RichChatMediaBox attachmentLayout = RichChatMediaSizing.measure(
+                    metrics.textWidth(),
+                    metrics.entryHeight(),
+                    attachment);
             RichChatBounds attachmentBounds = RichChatBounds.ofSize(
                     metrics.textLeft(),
                     cursorY,
@@ -143,67 +138,6 @@ public final class RichChatLayoutEngine {
         return message.component();
     }
 
-    private static AttachmentLayout measureAttachment(RichChatViewportMetrics metrics, RichAttachment attachment) {
-        if (!attachment.hasRenderableUrl()) {
-            return new AttachmentLayout(
-                    RichChatRenderNodeKind.ATTACHMENT_PENDING,
-                    Math.min(UpgradeHudInlinePaint.AUDIO_WIDTH, metrics.textWidth()),
-                    metrics.entryHeight());
-        }
-        String url = attachment.requireRenderableUrl();
-        return switch (attachment.type()) {
-            case IMAGE -> measureImage(metrics, url);
-            case AUDIO -> measureAudio(metrics, url);
-            case VIDEO -> measureVideo(metrics, url);
-        };
-    }
-
-    private static AttachmentLayout measureImage(RichChatViewportMetrics metrics, String url) {
-        ImageEntry entry = ImageLoader.getIfPresent(url);
-        if (entry != null && entry.getState() == ImageEntry.State.FAILED) {
-            return failedAttachment(metrics);
-        }
-        if (entry != null && entry.isLoaded() && entry.getWidth() > 0 && entry.getHeight() > 0) {
-            return new AttachmentLayout(
-                    RichChatRenderNodeKind.IMAGE,
-                    clampWidth(entry.getWidth(), metrics.textWidth()),
-                    Math.max(1, entry.getHeight()));
-        }
-        return new AttachmentLayout(
-                RichChatRenderNodeKind.IMAGE,
-                Math.min(ImageLoader.MAX_PREVIEW_WIDTH, metrics.textWidth()),
-                ImageLoader.PREVIEW_HEIGHT);
-    }
-
-    private static AttachmentLayout measureAudio(RichChatViewportMetrics metrics, String url) {
-        AudioEntry entry = AudioLoader.getIfPresent(url);
-        if (entry != null && entry.getState() == AudioEntry.State.FAILED) {
-            return failedAttachment(metrics);
-        }
-        return new AttachmentLayout(
-                RichChatRenderNodeKind.AUDIO,
-                Math.min(UpgradeHudInlinePaint.AUDIO_WIDTH, metrics.textWidth()),
-                UpgradeHudInlinePaint.AUDIO_HEIGHT);
-    }
-
-    private static AttachmentLayout measureVideo(RichChatViewportMetrics metrics, String url) {
-        VideoEntry entry = VideoLoader.getIfPresent(url);
-        if (entry != null && entry.getState() == VideoEntry.State.FAILED) {
-            return failedAttachment(metrics);
-        }
-        return new AttachmentLayout(
-                RichChatRenderNodeKind.VIDEO,
-                Math.min(VideoUiLayout.WIDTH, metrics.textWidth()),
-                VideoUiLayout.HEIGHT);
-    }
-
-    private static AttachmentLayout failedAttachment(RichChatViewportMetrics metrics) {
-        return new AttachmentLayout(
-                RichChatRenderNodeKind.ATTACHMENT_FAILED,
-                Math.min(UpgradeHudInlinePaint.AUDIO_WIDTH, metrics.textWidth()),
-                metrics.entryHeight());
-    }
-
     private static RichChatHitBoxKind hitBoxKind(RichChatRenderNodeKind kind) {
         return switch (kind) {
             case IMAGE -> RichChatHitBoxKind.IMAGE;
@@ -219,16 +153,5 @@ public final class RichChatLayoutEngine {
             return "pending";
         }
         return attachment.type().toWire() + ":" + attachment.requireRenderableUrl();
-    }
-
-    private static int clampWidth(int preferredWidth, int maxWidth) {
-        return Math.max(1, Math.min(Math.max(1, preferredWidth), Math.max(1, maxWidth)));
-    }
-
-    private record AttachmentLayout(RichChatRenderNodeKind kind, int width, int height) {
-        private AttachmentLayout {
-            width = Math.max(1, width);
-            height = Math.max(1, height);
-        }
     }
 }

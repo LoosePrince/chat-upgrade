@@ -16,6 +16,7 @@ import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.MediaFetchSupport;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
 
@@ -85,6 +86,7 @@ public final class ImageLoader {
         }
         CACHE.clear();
         UpgradePhantomHudLayout.clearLayoutRegistrations();
+        RichChatViewport.invalidateAll();
     }
 
     /**
@@ -236,11 +238,13 @@ public final class ImageLoader {
         entry.setFailed(kind);
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
+            RichChatViewport.invalidateMedia(url);
             CACHE.remove(url, entry);
             return;
         }
         mc.execute(() -> {
             UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+            RichChatViewport.invalidateMedia(url);
             CACHE.remove(url, entry);
         });
     }
@@ -353,6 +357,7 @@ public final class ImageLoader {
                 entry.setDecodedFormatName(formatName);
                 entry.setLoadedAnimated(ids, delayMs, displayW, displayH, texW, texH, rawW, rawH);
                 UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+                RichChatViewport.invalidateMedia(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register animated texture for {}: {}", url,
                         e.getMessage());
@@ -417,6 +422,7 @@ public final class ImageLoader {
 
                 entry.setLoaded(location, fullLocation, displayW, displayH, texW, texH, fullTexW, fullTexH, rawW, rawH);
                 UpgradePhantomHudLayout.notifyUrlEntryChanged(url);
+                RichChatViewport.invalidateMedia(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to register texture for {}: {}", url, e.getMessage());
                 markFailed(url, entry);
