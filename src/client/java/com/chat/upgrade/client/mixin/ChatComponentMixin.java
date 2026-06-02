@@ -27,6 +27,7 @@ import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeChatHudSync;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
+import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
@@ -80,8 +81,11 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @Unique
     private Component chatupgrade$processIncoming(Component original) {
-        if (!ChatUpgradeChatPipelineGate.shouldEnhancePlainTextChat()
-                && !RichChatProjectionCoordinator.hasPending()) {
+        if (RichChatProjectionCoordinator.hasPending()) {
+            InlineEmojiCoordinator.clearPendingSlots();
+            return original;
+        }
+        if (!ChatUpgradeChatPipelineGate.shouldEnhancePlainTextChat()) {
             InlineEmojiCoordinator.clearPendingSlots();
             UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
             if (decoded.attachment().isPresent() && decoded.attachment().get().hasRenderableUrl()) {
@@ -118,6 +122,15 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             RichChatProjectionCoordinator.prepareNext(projection);
             chatupgrade$prepareMediaProjection(projection);
             return decoded.modified();
+        }
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            RichChatIngress.record(
+                    "",
+                    "",
+                    emojiDecoded.modified(),
+                    emojiDecoded.modified().getString(),
+                    List.of(),
+                    RichChatMessageSource.VANILLA_TEXT);
         }
         return emojiDecoded.modified();
     }

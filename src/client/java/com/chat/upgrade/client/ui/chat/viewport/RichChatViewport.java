@@ -7,13 +7,19 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class RichChatViewport {
     private static final Set<String> INVALIDATED_MEDIA_URLS = ConcurrentHashMap.newKeySet();
     private static final AtomicLong INVALIDATION_VERSION = new AtomicLong();
+    private static final RichChatViewportState STATE = new RichChatViewportState();
 
     private RichChatViewport() {
     }
 
     public static void invalidateAll() {
         INVALIDATED_MEDIA_URLS.clear();
+        STATE.updateContentBounds(0, STATE.visibleHeight());
         INVALIDATION_VERSION.incrementAndGet();
+    }
+
+    public static RichChatViewportState state() {
+        return STATE;
     }
 
     public static void invalidateMedia(String url) {
