@@ -1,10 +1,14 @@
 package com.chat.upgrade.client.ui.chat.viewport;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
+import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
@@ -72,6 +76,7 @@ public final class RichChatLayoutEngine {
         boolean hasText = !textComponent.getString().isBlank() || message.attachments().isEmpty();
         int cursorY = top;
         int order = 0;
+        ArrayDeque<InlineEmojiSlot> emojiQueue = new ArrayDeque<>(message.inlineEmojiSlots());
 
         if (hasText) {
             List<FormattedCharSequence> lines = font.split(textComponent, metrics.textWidth());
@@ -84,10 +89,12 @@ public final class RichChatLayoutEngine {
                         cursorY,
                         metrics.textWidth(),
                         metrics.entryHeight());
+                List<InlineEmojiSlot> lineEmojiSlots = InlineEmojiCoordinator.consumeForLine(line, emojiQueue);
                 RichChatRenderNode node = message.source() == RichChatMessageSource.LOCAL_SYSTEM
-                        ? RichChatRenderNode.system(message.messageId(), lineBounds, order, line, textComponent)
-                        : RichChatRenderNode.text(message.messageId(), lineBounds, order, line, textComponent);
+                        ? RichChatRenderNode.system(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots)
+                        : RichChatRenderNode.text(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots);
                 nodes.add(node);
+                hitBoxes.addAll(emojiHitBoxes(font, metrics, message.messageId(), lineBounds, line, lineEmojiSlots));
                 cursorY += metrics.entryHeight();
                 order++;
             }
@@ -129,6 +136,50 @@ public final class RichChatLayoutEngine {
                 metrics.backgroundRight() - metrics.backgroundLeft(),
                 Math.max(0, cursorY - top));
         return new RichChatMessageLayout(message, messageBounds, nodes, hitBoxes);
+    }
+
+    private static List<RichChatHitBox> emojiHitBoxes(
+            Font font,
+            RichChatViewportMetrics metrics,
+            String messageId,
+            RichChatBounds lineBounds,
+            FormattedCharSequence line,
+            List<InlineEmojiSlot> slots) {
+        if (slots == null || slots.isEmpty()) {
+            return List.of();
+        }
+        String plain = extractPlain(line);
+        int textY = lineBounds.bottom() - metrics.entryBottomToMessageY();
+        int size = Math.max(1, metrics.entryHeight() - 2);
+        List<RichChatHitBox> hitBoxes = new ArrayList<>();
+        for (InlineEmojiSlot slot : slots) {
+            int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
+            int x = lineBounds.left() + font.width(plain.substring(0, charIndex)) + 1;
+            int y = textY + 1;
+            RichAttachment attachment = RichAttachment.structured(
+                    InlineResourceType.IMAGE,
+                    slot.token(),
+                    slot.iconUrl(),
+                    null,
+                    null);
+            hitBoxes.add(new RichChatHitBox(
+                    RichChatHitBoxKind.IMAGE,
+                    messageId,
+                    RichChatBounds.ofSize(x, y, size, size),
+                    attachment,
+                    null,
+                    "emoji:" + slot.token() + ":" + slot.iconUrl()));
+        }
+        return hitBoxes;
+    }
+
+    private static String extractPlain(FormattedCharSequence seq) {
+        StringBuilder sb = new StringBuilder();
+        seq.accept((index, style, codePoint) -> {
+            sb.appendCodePoint(codePoint);
+            return true;
+        });
+        return sb.toString();
     }
 
     private static Component textComponent(RichChatMessage message) {

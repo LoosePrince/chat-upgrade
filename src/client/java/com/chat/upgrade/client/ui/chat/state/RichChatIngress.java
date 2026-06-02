@@ -5,6 +5,7 @@ import java.util.List;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -30,6 +31,30 @@ public final class RichChatIngress {
                 component == null ? "" : component.getString(),
                 fallbackText,
                 attachments,
+                List.of(),
+                source,
+                null,
+                RichChatMessageStatus.VISIBLE);
+    }
+
+    public static RichChatMessage record(
+            String messageId,
+            String senderName,
+            Component component,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source) {
+        return record(
+                messageId,
+                senderName,
+                currentGuiTicks(),
+                component,
+                component,
+                component == null ? "" : component.getString(),
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
                 source,
                 null,
                 RichChatMessageStatus.VISIBLE);
@@ -44,6 +69,7 @@ public final class RichChatIngress {
             String plainText,
             String fallbackText,
             List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
             RichChatMessageSource source,
             @Nullable MessageSignature signature,
             RichChatMessageStatus status) {
@@ -56,6 +82,7 @@ public final class RichChatIngress {
                 plainText,
                 fallbackText,
                 attachments,
+                inlineEmojiSlots,
                 source,
                 signature,
                 status));
@@ -73,6 +100,7 @@ public final class RichChatIngress {
                 component,
                 component == null ? "" : component.getString(),
                 component == null ? "" : component.getString(),
+                List.of(),
                 List.of(),
                 RichChatMessageSource.VANILLA_TEXT,
                 signature,

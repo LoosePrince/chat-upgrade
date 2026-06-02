@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -21,6 +22,7 @@ public record RichChatMessage(
         String plainText,
         String fallbackText,
         List<RichAttachment> attachments,
+        List<InlineEmojiSlot> inlineEmojiSlots,
         RichChatMessageSource source,
         @Nullable MessageSignature signature,
         RichChatMessageStatus status) {
@@ -42,6 +44,7 @@ public record RichChatMessage(
                 component == null ? "" : component.getString(),
                 fallbackText,
                 attachments,
+                List.of(),
                 source,
                 null,
                 RichChatMessageStatus.VISIBLE);
@@ -55,6 +58,7 @@ public record RichChatMessage(
         plainText = safeText(plainText);
         fallbackText = safeText(fallbackText);
         attachments = List.copyOf(Objects.requireNonNullElse(attachments, List.of()));
+        inlineEmojiSlots = List.copyOf(Objects.requireNonNullElse(inlineEmojiSlots, List.of()));
         source = source == null ? RichChatMessageSource.VANILLA_TEXT : source;
         status = status == null ? RichChatMessageStatus.VISIBLE : status;
     }
@@ -80,6 +84,7 @@ public record RichChatMessage(
                 plainText,
                 fallbackText,
                 attachments,
+                inlineEmojiSlots,
                 source,
                 signature,
                 nextStatus);
@@ -96,6 +101,7 @@ public record RichChatMessage(
                 safeText(nextPlainText),
                 safeText(nextFallbackText),
                 attachments,
+                inlineEmojiSlots,
                 source,
                 signature,
                 status);

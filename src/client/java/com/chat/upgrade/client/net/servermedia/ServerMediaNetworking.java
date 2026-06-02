@@ -17,6 +17,7 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
@@ -256,12 +257,14 @@ public final class ServerMediaNetworking {
             return;
         }
         if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(component);
             RichChatIngress.record(
                     messageId,
                     senderName,
-                    component,
+                    emojiDecoded.modified(),
                     fallbackText,
                     attachments,
+                    emojiDecoded.slots(),
                     source);
             attachments.stream()
                     .filter(RichAttachment::hasRenderableUrl)

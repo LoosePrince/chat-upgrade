@@ -3,6 +3,7 @@ package com.chat.upgrade.client.ui.chat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 
 import net.minecraft.util.FormattedCharSequence;
@@ -25,12 +26,14 @@ public final class InlineEmojiCoordinator {
     }
 
     public static List<InlineEmojiSlot> consumeForLine(FormattedCharSequence lineContent) {
+        return consumeForLine(lineContent, PENDING_SLOTS.get());
+    }
+
+    public static List<InlineEmojiSlot> consumeForLine(
+            FormattedCharSequence lineContent,
+            Deque<InlineEmojiSlot> queue) {
         List<Integer> placeholderIndexes = findPlaceholderIndexes(lineContent);
-        if (placeholderIndexes.isEmpty()) {
-            return List.of();
-        }
-        ArrayDeque<InlineEmojiSlot> queue = PENDING_SLOTS.get();
-        if (queue.isEmpty()) {
+        if (placeholderIndexes.isEmpty() || queue == null || queue.isEmpty()) {
             return List.of();
         }
         List<InlineEmojiSlot> out = new ArrayList<>();

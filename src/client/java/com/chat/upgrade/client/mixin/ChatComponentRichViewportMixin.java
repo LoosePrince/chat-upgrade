@@ -87,7 +87,8 @@ public abstract class ChatComponentRichViewportMixin {
         GuiGraphicsExtractor extractor = ChatGraphicsAccessBridge.unwrap(graphics);
         RichChatViewportState state = RichChatViewport.state();
         state.updateContentBounds(layout.totalHeight(), metrics.visibleHeight());
-        int contentToLocalY = metrics.chatBottom() - (layout.totalHeight() - state.scrollPx());
+        state.tickSmoothOffset();
+        int contentToLocalY = metrics.chatBottom() - (layout.totalHeight() - state.visualScrollPx());
 
         boolean ownsClip = false;
         if (extractor != null) {
@@ -237,15 +238,15 @@ public abstract class ChatComponentRichViewportMixin {
             int contentToLocalY,
             float alpha) {
         RichChatBounds localBounds = node.bounds().translateY(contentToLocalY);
+        if (extractor != null) {
+            RichChatMediaRenderer.paintNode(extractor, font, metrics, node, contentToLocalY, alpha);
+            return;
+        }
         if (node.kind() == RichChatRenderNodeKind.TEXT || node.kind() == RichChatRenderNodeKind.SYSTEM) {
             if (node.text() != null) {
                 int textY = localBounds.bottom() - metrics.entryBottomToMessageY();
                 graphics.handleMessage(textY, alpha * metrics.textOpacity(), node.text());
             }
-            return;
-        }
-        if (extractor != null) {
-            RichChatMediaRenderer.paintNode(extractor, font, metrics, node, contentToLocalY, alpha);
         }
     }
 
@@ -259,7 +260,7 @@ public abstract class ChatComponentRichViewportMixin {
             return;
         }
         int barHeight = Math.max(2, metrics.visibleHeight() * metrics.visibleHeight() / layout.totalHeight());
-        int scrollOffset = state.scrollPx() * metrics.visibleHeight() / layout.totalHeight();
+        int scrollOffset = state.visualScrollPx() * metrics.visibleHeight() / layout.totalHeight();
         int bottom = metrics.chatBottom() - scrollOffset;
         int alpha = state.scrollPx() > 0 ? 170 : 96;
         int color = newMessageSinceScroll ? 13382451 : 3355562;

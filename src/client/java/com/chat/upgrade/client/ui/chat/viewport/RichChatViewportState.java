@@ -1,6 +1,10 @@
 package com.chat.upgrade.client.ui.chat.viewport;
 
 public final class RichChatViewportState {
+    private static final double SMOOTH_DECAY = 0.72D;
+    private static final double SMOOTH_EPSILON = 0.08D;
+    private static final double MAX_SMOOTH_OFFSET = 160.0D;
+
     private int scrollPx;
     private double smoothOffsetPx;
     private int totalHeight;
@@ -9,6 +13,10 @@ public final class RichChatViewportState {
 
     public int scrollPx() {
         return scrollPx;
+    }
+
+    public int visualScrollPx() {
+        return clampScroll((int) Math.round(scrollPx + smoothOffsetPx));
     }
 
     public double smoothOffsetPx() {
@@ -32,7 +40,7 @@ public final class RichChatViewportState {
     }
 
     public int visibleTop() {
-        return Math.max(0, totalHeight - visibleHeight - scrollPx);
+        return Math.max(0, totalHeight - visibleHeight - visualScrollPx());
     }
 
     public int visibleBottom() {
@@ -41,14 +49,26 @@ public final class RichChatViewportState {
 
     public void updateContentBounds(int nextTotalHeight, int nextVisibleHeight) {
         boolean shouldStayPinned = bottomPinned || scrollPx <= 0;
+        int before = scrollPx;
         totalHeight = Math.max(0, nextTotalHeight);
         visibleHeight = Math.max(0, nextVisibleHeight);
         if (shouldStayPinned) {
             scrollPx = 0;
+            smoothOffsetPx = 0.0D;
         } else {
             scrollPx = clampScroll(scrollPx);
+            if (scrollPx != before) {
+                smoothOffsetPx = 0.0D;
+            }
         }
         bottomPinned = scrollPx == 0;
+    }
+
+    public void tickSmoothOffset() {
+        smoothOffsetPx *= SMOOTH_DECAY;
+        if (Math.abs(smoothOffsetPx) < SMOOTH_EPSILON) {
+            smoothOffsetPx = 0.0D;
+        }
     }
 
     public boolean canScroll() {
@@ -61,13 +81,18 @@ public final class RichChatViewportState {
         }
         int before = scrollPx;
         scrollPx = clampScroll(scrollPx + deltaPx);
+        int actualDelta = scrollPx - before;
+        if (actualDelta != 0) {
+            smoothOffsetPx = Math.clamp(smoothOffsetPx - actualDelta, -MAX_SMOOTH_OFFSET, MAX_SMOOTH_OFFSET);
+        }
         bottomPinned = scrollPx == 0;
-        return scrollPx != before;
+        return actualDelta != 0;
     }
 
     public boolean setScrollPx(int nextScrollPx) {
         int before = scrollPx;
         scrollPx = clampScroll(nextScrollPx);
+        smoothOffsetPx = 0.0D;
         bottomPinned = scrollPx == 0;
         return scrollPx != before;
     }
@@ -79,7 +104,7 @@ public final class RichChatViewportState {
     }
 
     public void setSmoothOffsetPx(double nextSmoothOffsetPx) {
-        smoothOffsetPx = nextSmoothOffsetPx;
+        smoothOffsetPx = Math.clamp(nextSmoothOffsetPx, -MAX_SMOOTH_OFFSET, MAX_SMOOTH_OFFSET);
     }
 
     public void clear() {

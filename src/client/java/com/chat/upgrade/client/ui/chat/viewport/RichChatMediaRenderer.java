@@ -10,6 +10,7 @@ import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
+import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
@@ -24,6 +25,8 @@ import net.minecraft.util.ARGB;
 import net.minecraft.util.Util;
 
 public final class RichChatMediaRenderer {
+    private static final int EMOJI_SIDE_GAP_PX = 1;
+
     private RichChatMediaRenderer() {
     }
 
@@ -94,6 +97,64 @@ public final class RichChatMediaRenderer {
         }
         int textY = bounds.bottom() - metrics.entryBottomToMessageY();
         gfx.text(font, node.text(), bounds.left(), textY, ARGB.white(messageOpacity * metrics.textOpacity()), false);
+        paintInlineEmojis(gfx, font, metrics, node, bounds, textY, messageOpacity);
+    }
+
+    private static void paintInlineEmojis(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatViewportMetrics metrics,
+            RichChatRenderNode node,
+            RichChatBounds bounds,
+            int textY,
+            float messageOpacity) {
+        if (node.inlineEmojiSlots().isEmpty() || node.text() == null) {
+            return;
+        }
+        String plain = extractPlain(node.text());
+        int size = Math.max(1, metrics.entryHeight() - EMOJI_SIDE_GAP_PX * 2);
+        float opacity = messageOpacity * metrics.textOpacity();
+        for (InlineEmojiSlot slot : node.inlineEmojiSlots()) {
+            int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
+            int x = bounds.left() + font.width(plain.substring(0, charIndex)) + EMOJI_SIDE_GAP_PX;
+            int y = textY + EMOJI_SIDE_GAP_PX;
+            paintInlineEmoji(gfx, slot.iconUrl(), x, y, size, opacity);
+        }
+    }
+
+    private static void paintInlineEmoji(GuiGraphicsExtractor gfx, String url, int x, int y, int size, float opacity) {
+        ImageEntry entry = ImageLoader.getOrLoad(url);
+        switch (entry.getState()) {
+            case FAILED -> {
+                return;
+            }
+            case LOADING -> gfx.fill(x, y, x + size, y + size, argb(opacity * 0.85f, 28, 28, 32));
+            case LOADED -> {
+                Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(Util.getMillis())
+                        : entry.getTextureId();
+                if (textureId == null) {
+                    return;
+                }
+                gfx.blit(
+                        RenderPipelines.GUI_TEXTURED,
+                        textureId,
+                        x, y,
+                        0.0f, 0.0f,
+                        size, size,
+                        entry.getTextureWidth(), entry.getTextureHeight(),
+                        entry.getTextureWidth(), entry.getTextureHeight(),
+                        ARGB.white(opacity));
+            }
+        }
+    }
+
+    private static String extractPlain(net.minecraft.util.FormattedCharSequence seq) {
+        StringBuilder sb = new StringBuilder();
+        seq.accept((index, style, codePoint) -> {
+            sb.appendCodePoint(codePoint);
+            return true;
+        });
+        return sb.toString();
     }
 
     private static void paintImage(GuiGraphicsExtractor gfx, Font font, RichChatBounds bounds, String url, float opacity) {
