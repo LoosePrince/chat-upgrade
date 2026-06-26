@@ -15,7 +15,7 @@ public record StructuredChatMessage(
         String fallbackText,
         int compatFlags) {
     public static final int CURRENT_SCHEMA_VERSION = 1;
-    public static final int COMPAT_LEGACY_BRACKET = 1;
+    public static final int COMPAT_BRACKET_PROTOCOL = 1;
     public static final int COMPAT_VANILLA_SAFE_TEXT = 1 << 1;
 
     public StructuredChatMessage {
@@ -60,7 +60,7 @@ public record StructuredChatMessage(
                 outSegments,
                 List.of(attachment),
                 fallbackText,
-                COMPAT_LEGACY_BRACKET | COMPAT_VANILLA_SAFE_TEXT);
+                COMPAT_BRACKET_PROTOCOL | COMPAT_VANILLA_SAFE_TEXT);
     }
 
     public boolean hasAttachments() {

@@ -1,6 +1,6 @@
 # 协议与服务端路由
 
-这篇文档说明客户端、服务端、旧协议和 vanilla 客户端之间如何互通。
+这篇文档说明客户端、服务端、标准 bracket 协议和 vanilla 客户端之间如何互通。
 
 ## 协议目标
 
@@ -8,7 +8,7 @@
 
 1. 新客户端可以发送和接收结构化聊天消息。
 2. 服务端可以保存和查询附件 metadata，并下发媒体字节。
-3. 旧模组客户端和 vanilla 客户端仍能收到可读降级内容。
+3. 不支持结构化消息的模组客户端和 vanilla 客户端仍能收到可读降级内容。
 
 ## 核心模型
 
@@ -93,10 +93,10 @@ sequenceDiagram
     Client->>Server: C2SStructuredChatMessage
     Client->>Server: C2SAttachMetadata 可选
     Server->>Route: 统一路由
-    Route->>Target: 按能力发送结构化/legacy/vanilla
+    Route->>Target: 按能力发送结构化/bracket/vanilla
 ```
 
-如果服务端不支持结构化消息，客户端会降级发送旧 bracket 文本。附件 metadata 提交失败不会阻断旧协议兜底。
+如果服务端不支持结构化消息，客户端会降级发送 bracket 文本。附件 metadata 提交失败不会阻断 bracket fallback。
 
 ## 服务端路由策略
 
@@ -112,28 +112,30 @@ sequenceDiagram
 | --- | --- | --- |
 | 结构化消息 | 可发送 `S2CStructuredChatMessage`，且不是 COMPAT 纯文本保护 | 下发完整结构化消息。 |
 | 结构化附件 | 可发送 `S2CStructuredChatAttachment`，且有附件 | 下发结构化附件兼容包。 |
-| 旧模组客户端 | 可发送基础 capability，但不支持新结构化消息 | 下发 legacy bracket 文本。 |
+| bracket 兼容客户端 | 可发送基础 capability，但不支持新结构化消息 | 下发标准 bracket 文本。 |
 | vanilla | 不支持本模组 payload | 下发安全可读文本。 |
 
 兼容模式客户端收到无附件纯文本时，服务端避免向它下发结构化纯文本包，让它尽量保留原版纯文本显示链路。
 
-## legacy bracket 兜底
+## 标准 bracket 协议与 fallback
 
-旧格式仍然被保留：
+bracket 协议是保留并受支持的文本协议层：
 
 ```text
 [[ChatUpgrade,url=...,name=...,type=image]]
 [[CICode,url=...]]
 ```
 
-兜底规则：
+规则：
 
+- `[[ChatUpgrade,...]]` 是 Chat Upgrade 的标准 bracket tag。
+- `[[CICode,...]]` 是受支持的图片兼容 tag，可由 `ciCompatibility` 选择用于图片发送。
 - 新 TAKEOVER 客户端解析后写入统一状态层。
 - 新 COMPAT 客户端用于附件富媒体兼容显示。
-- 旧模组客户端继续按旧逻辑显示媒体。
+- 不支持结构化消息的 bracket 兼容客户端继续显示媒体。
 - vanilla 客户端收到安全占位和链接提示。
 
-结构化附件降级时，服务端会根据 `StructuredAttachment` 重建 legacy payload，避免只信任客户端传来的 fallback 字符串。
+结构化附件降级时，服务端会根据 `StructuredAttachment` 重建 bracket payload，避免只信任客户端传来的 fallback 字符串。
 
 ## 客户端接收
 

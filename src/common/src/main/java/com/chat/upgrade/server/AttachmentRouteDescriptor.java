@@ -6,7 +6,7 @@ import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
 
 public record AttachmentRouteDescriptor(
-        String legacyMessage,
+        String bracketMessage,
         String visibleText,
         String typeWire,
         String typeLabel,

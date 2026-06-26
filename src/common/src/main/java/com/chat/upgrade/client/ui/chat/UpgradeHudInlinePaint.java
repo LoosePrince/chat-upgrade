@@ -59,7 +59,7 @@ public final class UpgradeHudInlinePaint {
 
         RichAttachment attachment = attachable.chatupgrade$getAttachment();
         if (attachment == null) {
-            attachment = RichAttachment.legacyBracket(
+            attachment = RichAttachment.bracketProtocol(
                     resourceUrl,
                     attachable.chatupgrade$getResourceName(),
                     attachable.chatupgrade$getResourceType());

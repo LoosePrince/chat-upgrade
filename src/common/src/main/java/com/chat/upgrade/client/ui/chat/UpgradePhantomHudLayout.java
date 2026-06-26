@@ -305,7 +305,7 @@ public final class UpgradePhantomHudLayout {
         }
         UpgradePhantomCoordinator.prepareNextPhantomType(type);
         UpgradePhantomCoordinator.prepareNextPhantomTop(
-                ATTACHMENT_BY_PARENT.getOrDefault(parent, RichAttachment.legacyBracket(url, null, type)));
+                ATTACHMENT_BY_PARENT.getOrDefault(parent, RichAttachment.bracketProtocol(url, null, type)));
         trim.add(insertAt + phantomCount - 1, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
         ATTACHMENT_BY_PARENT.remove(parent);
     }

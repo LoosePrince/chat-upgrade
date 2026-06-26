@@ -97,7 +97,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
                         decoded.modified(),
                         decoded.modified().getString(),
                         List.of(attachment),
-                        RichChatMessageSource.LEGACY_BRACKET);
+                        RichChatMessageSource.BRACKET_PROTOCOL);
                 RichChatProjectionCoordinator.prepareNext(projection);
                 chatupgrade$prepareMediaProjection(projection);
                 return decoded.modified();
@@ -120,7 +120,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
                     decoded.modified().getString(),
                     List.of(attachment),
                     emojiDecoded.slots(),
-                    RichChatMessageSource.LEGACY_BRACKET);
+                    RichChatMessageSource.BRACKET_PROTOCOL);
             chatupgrade$preloadMedia(attachment);
             return decoded.modified();
         }

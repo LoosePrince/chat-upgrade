@@ -13,7 +13,7 @@ flowchart TD
     D --> F[服务端直传]
     E --> G[外部 URL]
     F --> H[chatupgrade://media/...]
-    G --> I[StructuredAttachment / legacy fallback]
+    G --> I[StructuredAttachment / bracket fallback]
     H --> I
     I --> J[聊天发送与服务端路由]
     J --> K[接收端 RichAttachment]
@@ -68,7 +68,7 @@ flowchart TD
 | `SERVER` | 强制服务端直传。 |
 | `THIRD_PARTY` | 强制第三方上传。 |
 
-发送附件时会同时准备结构化附件和旧 bracket fallback。结构化路径失败时，仍可降级旧文本载荷。
+发送附件时会同时准备结构化附件和 bracket fallback。结构化路径失败时，仍可降级为 bracket 文本载荷。
 
 ## 服务端直传媒体
 
@@ -116,7 +116,7 @@ metadata 用于把附件 ID、媒体 ID、类型、显示名、fallback URL 关�
 - 结构化聊天协议的基础。
 - `chatupgrade://media/...` 可以反查附件信息。
 - 新客户端接收结构化消息时可以缓存附件信息。
-- 旧文本解析时可以优先使用已缓存 metadata。
+- bracket 文本解析时可以优先使用已缓存 metadata。
 
 当前限制：metadata 查询结果不会自动回写已经生成的历史聊天行；如果未来需要，需要状态层支持更新和重投影。
 

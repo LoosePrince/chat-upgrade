@@ -36,7 +36,7 @@
 - 无附件纯文本应尽量回到原版输入/显示。
 - 普通文本不应触发 TAKEOVER 的 viewport、emoji、phantom、滚动增强等高风险路径。
 - 有附件草稿时仍接管发送。
-- 收到结构化附件或 legacy bracket 时仍保留富媒体显示。
+- 收到结构化附件或 bracket 协议文本时仍保留富媒体显示。
 
 兼容模式是“原版纯文本 + 富媒体兜底”，不是“简化版 TAKEOVER”。
 
@@ -46,7 +46,7 @@
 
 | 路径 | 当前定位 |
 | --- | --- |
-| `UpgradePhantomCoordinator` | 兼容投影或旧协议辅助。 |
+| `UpgradePhantomCoordinator` | 兼容投影或 bracket 协议辅助。 |
 | `UpgradePhantomHudLayout` | 兼容路径下的旧 HUD 布局同步。 |
 | `GuiMessageLineMixin` | 旧 line 增强和兼容承载。 |
 | `RichChatProjectionCoordinator` | 统一状态到兼容投影的过渡层。 |
@@ -78,7 +78,7 @@ TAKEOVER 下不要新增依赖这些路径的主功能。
 5. 扩展 `RichChatMediaSizing` 计算尺寸。
 6. 扩展 `RichChatRenderNodeKind` 和渲染器。
 7. 扩展 hit box 和点击事件。
-8. 更新 legacy fallback 策略，保证旧客户端/vanilla 可读。
+8. 更新 bracket fallback 策略，保证不支持结构化的客户端/vanilla 可读。
 
 ## 添加协议字段
 
@@ -134,14 +134,14 @@ TAKEOVER 下不要新增依赖这些路径的主功能。
 - 无附件纯文本尽量原版。
 - 普通文本不触发 TAKEOVER 渲染和滚动增强。
 - 有附件草稿仍能发送。
-- 旧 bracket 仍能显示富媒体。
+- bracket 文本仍能显示富媒体。
 - 结构化附件仍能显示富媒体。
 
 ### 多客户端
 
 - TAKEOVER -> TAKEOVER。
 - TAKEOVER -> COMPAT。
-- TAKEOVER -> 旧模组客户端。
+- TAKEOVER -> bracket 兼容客户端。
 - TAKEOVER -> vanilla。
 - 服务端结构化 payload 不可用时降级。
 - metadata 查询成功/失败。
@@ -153,4 +153,4 @@ TAKEOVER 下不要新增依赖这些路径的主功能。
 - TAKEOVER 不要回退到 phantom 作为主数据结构。
 - COMPAT 不要无意接管普通纯文本。
 - 命令输入不要被富媒体发送接管。
-- 不要让 metadata 失败阻断 legacy fallback。
+- 不要让 metadata 失败阻断 bracket fallback。

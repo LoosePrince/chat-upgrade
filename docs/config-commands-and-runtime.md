@@ -59,7 +59,7 @@ jps -l -v
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `chatInputMode` | `TAKEOVER` / `COMPAT_TEXT_VANILLA` | `TAKEOVER` | 聊天输入/渲染模式。字段缺失时等价于 `TAKEOVER`。 |
-| `ciCompatibility` | boolean | `false` | 图片发送是否优先使用 `[[CICode,...]]`。 |
+| `ciCompatibility` | boolean | `false` | 图片发送是否优先使用受支持的 `[[CICode,...]]` bracket tag；关闭时使用标准 `[[ChatUpgrade,...]]`。 |
 | `manualImageReveal` | boolean | `false` | 图片是否点击后加载。 |
 | `manualAudioReveal` | boolean | `false` | 音频是否点击后加载。 |
 | `manualVideoReveal` | boolean | `false` | 视频是否点击后加载。 |
@@ -131,7 +131,7 @@ jps -l -v
 
 | 命令 | 说明 |
 | --- | --- |
-| `/chatupgrade config ci <true|false>` | 开关 CICode 图片兼容。 |
+| `/chatupgrade config ci <true|false>` | 切换图片发送使用 `[[CICode,...]]` 还是 `[[ChatUpgrade,...]]` bracket tag。 |
 | `/chatupgrade config manual <true|false>` | 图片手动加载。 |
 | `/chatupgrade config manualaudio <true|false>` | 音频手动加载。 |
 | `/chatupgrade config manualvideo <true|false>` | 视频手动加载。 |
@@ -186,7 +186,7 @@ config/chat-upgrade/server-media.json
 | COMPAT 纯文本 | 尽量原版输入和显示。 |
 | COMPAT 附件 | 富媒体附件仍可显示。 |
 | 断开重连 | 状态、pending、缓存按预期清理。 |
-| 服务端无结构化支持 | 发送降级旧 bracket 或原版聊天包。 |
+| 服务端无结构化支持 | 发送降级 bracket 文本或原版聊天包。 |
 | vanilla 接收端 | 收到安全可读文本。 |
 
 ## 常见排查入口

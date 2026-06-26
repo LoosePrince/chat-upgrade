@@ -18,8 +18,8 @@ public abstract class ServerGamePacketListenerImplMixin {
     public ServerPlayer player;
 
     @Inject(method = "handleChat", at = @At("HEAD"), cancellable = true)
-    private void chatupgrade$routeLegacyBracket(ServerboundChatPacket packet, CallbackInfo ci) {
-        if (ServerChatRouteService.routeLegacyBracket(player, packet.message())) {
+    private void chatupgrade$routeBracketProtocol(ServerboundChatPacket packet, CallbackInfo ci) {
+        if (ServerChatRouteService.routeBracketProtocol(player, packet.message())) {
             ci.cancel();
         }
     }

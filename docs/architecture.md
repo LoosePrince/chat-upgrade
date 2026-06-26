@@ -11,7 +11,7 @@ Chat Upgrade 是 Minecraft 富媒体聊天模组，支持 **Fabric** 与 **NeoFo
 - `[:token]` 行内表情可以解析并渲染为图片。
 - 客户端可通过文件选择、剪贴板、命令等方式发送附件。
 - 服务端安装模组后可以承担媒体上传、metadata 存储和多客户端分发。
-- 未安装新客户端的接收方仍可以收到安全降级文本或旧 `[[ChatUpgrade,...]]` 载荷。
+- 未安装新客户端的接收方仍可以收到安全降级文本或 `[[ChatUpgrade,...]]` / `[[CICode,...]]` bracket 载荷。
 
 ## 运行模式
 
@@ -28,7 +28,7 @@ Chat Upgrade 是 Minecraft 富媒体聊天模组，支持 **Fabric** 与 **NeoFo
 flowchart TB
     A[Vanilla Chat Shell\nChatScreen / ChatComponent] --> B[ChatUpgrade Pipeline Gate\nTAKEOVER / COMPAT]
     B --> C[输入与发送层\n文本 / 附件草稿 / 上传]
-    B --> D[接收与协议层\n结构化包 / legacy bracket]
+    B --> D[接收与协议层\n结构化包 / bracket 协议]
     C --> E[统一聊天协议\nStructuredChatMessage / StructuredAttachment]
     D --> F[统一状态层\nRichChatStateStore]
     E --> G[服务端路由\nServerChatRouteService]
@@ -104,7 +104,7 @@ src/
 | --- | --- | --- |
 | 服务端入口 | `src/common/.../ChatUpgrade.java` | 公共服务端初始化；各加载器负责 payload/事件注册。 |
 | 统一协议 | `src/common/.../net` | payload、结构化聊天消息、附件、wire codec。 |
-| 聊天路由 | `src/common/.../server/ServerChatRouteService.java` | 根据接收端能力和模式分发结构化/legacy/vanilla 消息。 |
+| 聊天路由 | `src/common/.../server/ServerChatRouteService.java` | 根据接收端能力和模式分发结构化/bracket/vanilla 消息。 |
 | 媒体服务 | `src/common/.../server/ServerMediaService.java` | 媒体上传、请求、分块下发。 |
 | 附件 metadata | `src/common/.../server/ServerAttachmentService.java` | 附件 metadata 提交、查询和缓存。 |
 | 存储 | `src/common/.../server/store` | 内存/磁盘媒体存储。 |
@@ -142,22 +142,22 @@ sequenceDiagram
 
     Draft->>Upload: 上传图片/音频/视频
     Upload-->>Send: 返回 URL 或 chatupgrade://media
-    Send->>Server: 结构化消息 + 旧 bracket fallback
+    Send->>Server: 结构化消息 + bracket fallback
     Server->>Store: 接收端写入统一状态
 ```
 
-### 兼容与旧协议
+### 兼容与 bracket 协议
 
-旧 `[[ChatUpgrade,...]]` 文本仍然保留：
+`[[ChatUpgrade,...]]` 与 `[[CICode,...]]` bracket 文本仍然保留并受支持：
 
 - 新 TAKEOVER 客户端：解析后写入统一状态层。
 - 新兼容客户端：走附件兼容投影或普通原版文本链路。
-- 旧模组客户端：收到旧 bracket 载荷。
+- bracket 兼容客户端：收到 bracket 载荷。
 - vanilla 客户端：收到安全可读文本和链接提示。
 
 ## 架构原则
 
 - `TAKEOVER` 的事实来源是 `RichChatStateStore`，不是 `GuiMessage.Line`。
-- `GuiMessage.Line`、phantom 行和旧 HUD 叠加只作为兼容模式或旧协议兜底路径。
+- `GuiMessage.Line`、phantom 行和旧 HUD 叠加只作为兼容模式或 bracket fallback 路径。
 - 新的聊天内容形态应该扩展 viewport 状态、布局、节点、渲染和交互层。
 - 兼容性优先放在 `COMPAT_TEXT_VANILLA`，不要让 TAKEOVER 为其它聊天显示类模组牺牲主架构。

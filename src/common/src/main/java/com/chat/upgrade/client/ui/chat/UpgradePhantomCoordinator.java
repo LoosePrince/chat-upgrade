@@ -58,7 +58,7 @@ public final class UpgradePhantomCoordinator {
     }
 
     public static void setPendingDecoded(@Nullable String url, @Nullable String name, InlineResourceType type) {
-        pendingDecodedAttachment = url == null ? null : RichAttachment.legacyBracket(url, name, type);
+        pendingDecodedAttachment = url == null ? null : RichAttachment.bracketProtocol(url, name, type);
     }
 
     public static PendingDecoded consumePendingDecoded() {
@@ -84,7 +84,7 @@ public final class UpgradePhantomCoordinator {
     }
 
     public static void prepareNextPhantomTop(InlineResourceType type, @Nullable String name, @Nullable String url) {
-        nextPhantomTopAttachment = url == null ? null : RichAttachment.legacyBracket(url, name, type);
+        nextPhantomTopAttachment = url == null ? null : RichAttachment.bracketProtocol(url, name, type);
         nextPhantomTopType = type;
     }
 
@@ -98,7 +98,7 @@ public final class UpgradePhantomCoordinator {
             return;
         }
         if (nextPhantomTopAttachment == null) {
-            nextPhantomTopAttachment = RichAttachment.legacyBracket(url, null, nextPhantomTopType);
+            nextPhantomTopAttachment = RichAttachment.bracketProtocol(url, null, nextPhantomTopType);
         }
     }
 

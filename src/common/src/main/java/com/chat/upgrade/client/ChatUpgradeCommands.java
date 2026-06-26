@@ -338,7 +338,8 @@ public final class ChatUpgradeCommands {
             ChatUpgradeConfig.setCiCompatibilityAndSave(enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.ci.updated",
-                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
+                    enabled ? Component.literal(UpgradeBracketCodec.WIRE_TAG_CI_COMPAT)
+                            : Component.literal(UpgradeBracketCodec.WIRE_TAG_NATIVE))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
         } catch (IOException e) {
@@ -407,7 +408,8 @@ public final class ChatUpgradeCommands {
         ServerMediaNetworking.sendChatInputMode();
         sink.feedback(Component.translatable(
                 "chatupgrade.config.reload.done",
-                cfg.ciCompatibility ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
+                cfg.ciCompatibility ? Component.literal(UpgradeBracketCodec.WIRE_TAG_CI_COMPAT)
+                        : Component.literal(UpgradeBracketCodec.WIRE_TAG_NATIVE),
                 cfg.manualImageReveal ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
                 cfg.manualAudioReveal ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
                 cfg.manualVideoReveal ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),

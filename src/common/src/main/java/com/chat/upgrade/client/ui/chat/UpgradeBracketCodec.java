@@ -39,11 +39,11 @@ import net.minecraft.util.FormattedCharSequence;
  * Encodes and decodes bracketed URL payloads {@code [[tag,url=…]]} for chat.
  */
 public final class UpgradeBracketCodec {
-    /** Default tag for outgoing messages. */
+    /** Standard Chat Upgrade bracket tag for outgoing messages. */
     public static final String WIRE_TAG_NATIVE = "ChatUpgrade";
 
-    /** Tag used when {@link ChatUpgradeConfig#ciCompatibility} is enabled. */
-    public static final String WIRE_TAG_LEGACY = "CICode";
+    /** Supported CICode bracket tag used when {@link ChatUpgradeConfig#ciCompatibility} is enabled. */
+    public static final String WIRE_TAG_CI_COMPAT = "CICode";
 
     /**
      * Shown when the URL payload was replaced in chat ({@link #buildPlaceholder})
@@ -131,7 +131,7 @@ public final class UpgradeBracketCodec {
             return cachedAttachment.get();
         }
         ServerMediaClient.requestAttachmentForUrlIfNeeded(url);
-        return RichAttachment.legacyBracket(url, name, type);
+        return RichAttachment.bracketProtocol(url, name, type);
     }
 
     private static Component replaceMatchedPayload(
@@ -142,7 +142,7 @@ public final class UpgradeBracketCodec {
         String url = attachment.urlOrNull();
         InlineResourceType type = attachment.type();
         String probe = buildFullText(component);
-        if (!probe.contains("[[" + WIRE_TAG_NATIVE) && !probe.contains("[[" + WIRE_TAG_LEGACY)) {
+        if (!probe.contains("[[" + WIRE_TAG_NATIVE) && !probe.contains("[[" + WIRE_TAG_CI_COMPAT)) {
             return component;
         }
 
@@ -345,7 +345,7 @@ public final class UpgradeBracketCodec {
             case AUDIO -> I18n.get("chatupgrade.type.audio");
             case VIDEO -> I18n.get("chatupgrade.type.video");
         };
-        String currentWireTag = ChatUpgradeConfig.get().ciCompatibility ? WIRE_TAG_LEGACY : WIRE_TAG_NATIVE;
+        String currentWireTag = ChatUpgradeConfig.get().ciCompatibility ? WIRE_TAG_CI_COMPAT : WIRE_TAG_NATIVE;
         String receiveLimit = ChatUpgradeConfig.formatBytesHuman(ChatUpgradeConfig.get().maxReceiveBytes);
         StringBuilder sb = new StringBuilder();
         sb.append(I18n.get("chatupgrade.hover.resource_type")).append(": ").append(typeText).append('\n');
@@ -655,11 +655,11 @@ public final class UpgradeBracketCodec {
     }
 
     public static String buildSendPayload(String url, String name, InlineResourceType type) {
-        boolean useLegacy = type == InlineResourceType.IMAGE
+        boolean useCiCompat = type == InlineResourceType.IMAGE
                 && ChatUpgradeConfig.get().ciCompatibility
                 && !ServerMediaUrl.isServerMediaUrl(url);
-        return useLegacy
-                ? encodeLegacyTagBlock(url, name, type)
+        return useCiCompat
+                ? encodeCiCompatTagBlock(url, name, type)
                 : encodeNativeTagBlock(url, name, type);
     }
 
@@ -679,19 +679,19 @@ public final class UpgradeBracketCodec {
         return "[[" + WIRE_TAG_NATIVE + ",url=" + url + typeField + "]]";
     }
 
-    public static String encodeLegacyTagBlock(String url, String name) {
-        return encodeLegacyTagBlock(url, name, InlineResourceType.IMAGE);
+    public static String encodeCiCompatTagBlock(String url, String name) {
+        return encodeCiCompatTagBlock(url, name, InlineResourceType.IMAGE);
     }
 
-    public static String encodeLegacyTagBlock(String url, String name, InlineResourceType type) {
+    public static String encodeCiCompatTagBlock(String url, String name, InlineResourceType type) {
         String typeField = switch (type) {
             case IMAGE -> "";
             case AUDIO -> ",type=audio";
             case VIDEO -> ",type=video";
         };
         if (name != null && !name.isBlank()) {
-            return "[[" + WIRE_TAG_LEGACY + ",url=" + url + ",name=" + name + typeField + "]]";
+            return "[[" + WIRE_TAG_CI_COMPAT + ",url=" + url + ",name=" + name + typeField + "]]";
         }
-        return "[[" + WIRE_TAG_LEGACY + ",url=" + url + typeField + "]]";
+        return "[[" + WIRE_TAG_CI_COMPAT + ",url=" + url + typeField + "]]";
     }
 }

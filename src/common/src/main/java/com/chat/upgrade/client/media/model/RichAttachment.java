@@ -11,7 +11,7 @@ public final class RichAttachment {
     public static final int CURRENT_SCHEMA_VERSION = 1;
 
     public enum Source {
-        LEGACY_BRACKET,
+        BRACKET_PROTOCOL,
         STRUCTURED_PACKET,
         LOCAL_DRAFT
     }
@@ -41,12 +41,12 @@ public final class RichAttachment {
         this.attachmentId = normalizeOptional(attachmentId);
     }
 
-    public static RichAttachment legacyBracket(String url, String displayName, InlineResourceType type) {
+    public static RichAttachment bracketProtocol(String url, String displayName, InlineResourceType type) {
         return new RichAttachment(
                 CURRENT_SCHEMA_VERSION,
                 type,
                 displayName,
-                Source.LEGACY_BRACKET,
+                Source.BRACKET_PROTOCOL,
                 requireText(url, "url"),
                 null,
                 null);

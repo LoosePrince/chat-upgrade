@@ -40,8 +40,9 @@ public final class ChatUpgradeConfig {
     private static volatile ChatUpgradeConfig instance = defaults();
 
     /**
-     * When true, parse and emit {@code [[CICode,...]]}; when false,
-     * {@code [[ChatUpgrade,...]]}.
+     * When true, image sends prefer the supported {@code [[CICode,...]]} bracket tag;
+     * when false, they use the standard {@code [[ChatUpgrade,...]]} tag. Incoming
+     * bracket parsing always accepts both tags.
      */
     public boolean ciCompatibility;
 

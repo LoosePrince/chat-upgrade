@@ -27,7 +27,7 @@ import net.minecraft.server.players.PlayerList;
 public final class ServerChatRouteService {
     private static final int ROUTE_STRUCTURED_MESSAGE = 0;
     private static final int ROUTE_STRUCTURED_ATTACHMENT = 1;
-    private static final int ROUTE_LEGACY_MOD = 2;
+    private static final int ROUTE_BRACKET_COMPAT = 2;
     private static final int ROUTE_VANILLA = 3;
 
     private static final Pattern CHATUPGRADE_PAYLOAD = Pattern.compile(
@@ -37,8 +37,8 @@ public final class ServerChatRouteService {
     private ServerChatRouteService() {
     }
 
-    public static boolean routeLegacyBracket(ServerPlayer senderPlayer, String raw) {
-        AttachmentRouteDescriptor descriptor = descriptorForLegacy(raw);
+    public static boolean routeBracketProtocol(ServerPlayer senderPlayer, String raw) {
+        AttachmentRouteDescriptor descriptor = descriptorForBracketProtocol(raw);
         if (descriptor == null) {
             return false;
         }
@@ -60,8 +60,8 @@ public final class ServerChatRouteService {
                 continue;
             }
             Component out = switch (route) {
-                case ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_LEGACY_MOD ->
-                    buildLegacyModMessage(sender, descriptor.legacyMessage());
+                case ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_BRACKET_COMPAT ->
+                    buildBracketProtocolMessage(sender, descriptor.bracketMessage());
                 default -> buildVanillaMessage(sender, descriptor);
             };
             target.sendSystemMessage(out, false);
@@ -91,9 +91,9 @@ public final class ServerChatRouteService {
                 continue;
             }
             Component out = switch (route) {
-                case ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_LEGACY_MOD ->
-                    buildLegacyModMessage(sender,
-                            firstAttachment == null ? legacyFallback(routedMessage) : firstAttachment.legacyMessage());
+                case ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_BRACKET_COMPAT ->
+                    buildBracketProtocolMessage(sender,
+                            firstAttachment == null ? textFallback(routedMessage) : firstAttachment.bracketMessage());
                 default -> firstAttachment == null
                         ? Component.literal("<" + sender + "> " + routedMessage.fallbackText())
                         : buildVanillaMessage(sender, firstAttachment);
@@ -110,7 +110,7 @@ public final class ServerChatRouteService {
             return ROUTE_STRUCTURED_ATTACHMENT;
         }
         if (Net.canSendToClient(target, ServerMediaPayloads.S2CCapability.TYPE)) {
-            return ROUTE_LEGACY_MOD;
+            return ROUTE_BRACKET_COMPAT;
         }
         return ROUTE_VANILLA;
     }
@@ -159,7 +159,7 @@ public final class ServerChatRouteService {
                 "",
                 descriptor.visibleText(),
                 attachmentOpt.get(),
-                descriptor.legacyMessage()).withSenderName(sender);
+                descriptor.bracketMessage()).withSenderName(sender);
     }
 
     private static AttachmentRouteDescriptor firstAttachmentDescriptor(StructuredChatMessage message) {
@@ -169,9 +169,9 @@ public final class ServerChatRouteService {
         StructuredAttachment attachment = message.attachments().getFirst();
         String url = attachment.fallbackUrl() == null ? "" : attachment.fallbackUrl();
         String text = message.plainText() == null ? "" : message.plainText();
-        String legacyMessage = buildLegacyPayload(text, attachment);
+        String bracketMessage = buildBracketFallbackPayload(text, attachment);
         return new AttachmentRouteDescriptor(
-                legacyMessage,
+                bracketMessage,
                 text,
                 attachment.typeWire(),
                 typeLabel(attachment.typeWire()),
@@ -179,7 +179,7 @@ public final class ServerChatRouteService {
                 url);
     }
 
-    private static String buildLegacyPayload(String text, StructuredAttachment attachment) {
+    private static String buildBracketFallbackPayload(String text, StructuredAttachment attachment) {
         String url = attachment.fallbackUrl() == null ? "" : attachment.fallbackUrl();
         if (url.isBlank()) {
             return text == null ? "" : text;
@@ -201,14 +201,14 @@ public final class ServerChatRouteService {
         return payload.toString().trim();
     }
 
-    private static String legacyFallback(StructuredChatMessage message) {
+    private static String textFallback(StructuredChatMessage message) {
         if (message.fallbackText() != null && !message.fallbackText().isBlank()) {
             return message.fallbackText();
         }
         return message.plainText() == null ? "" : message.plainText();
     }
 
-    private static Component buildLegacyModMessage(String sender, String raw) {
+    private static Component buildBracketProtocolMessage(String sender, String raw) {
         return Component.literal("<" + sender + "> " + (raw == null ? "" : raw));
     }
 
@@ -221,7 +221,7 @@ public final class ServerChatRouteService {
         return out.append(buildVanillaComponent(descriptor));
     }
 
-    private static AttachmentRouteDescriptor descriptorForLegacy(String raw) {
+    private static AttachmentRouteDescriptor descriptorForBracketProtocol(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }

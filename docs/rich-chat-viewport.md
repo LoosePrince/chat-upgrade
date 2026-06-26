@@ -48,10 +48,10 @@ flowchart TB
 | `senderName` | 发送者。 |
 | `component` | 进入渲染的 Minecraft 文本组件。 |
 | `plainText` | 纯文本内容。 |
-| `fallbackText` | 降级文本，通常用于 legacy/vanilla。 |
+| `fallbackText` | 降级文本，通常用于 bracket/vanilla。 |
 | `attachments` | 图片、音频、视频等附件。 |
 | `inlineEmojiSlots` | 表情 slot，布局时分配到文本行。 |
-| `source` | 消息来源，如 vanilla、结构化包、legacy bracket。 |
+| `source` | 消息来源，如 vanilla、结构化包、bracket 协议。 |
 | `status` | 可见、删除等状态。 |
 
 事实层不保存“这一行在哪里画”，只保存“这条消息是什么”。

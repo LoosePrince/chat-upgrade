@@ -100,12 +100,12 @@ public final class AttachmentSendController {
         return SendStartResult.STARTED;
     }
 
-    public static String buildLegacyFallbackMessage(AttachmentDraft draft, String uploadedUrl, String typedMessage) {
+    public static String buildBracketFallbackMessage(AttachmentDraft draft, String uploadedUrl, String typedMessage) {
         RichAttachment attachment = RichAttachment.localDraft(uploadedUrl, draft.displayName(), draft.type());
-        return buildLegacyFallbackMessage(RichMessageDraft.withAttachment(typedMessage, attachment));
+        return buildBracketFallbackMessage(RichMessageDraft.withAttachment(typedMessage, attachment));
     }
 
-    public static String buildLegacyFallbackMessage(RichMessageDraft messageDraft) {
+    public static String buildBracketFallbackMessage(RichMessageDraft messageDraft) {
         RichAttachment attachment = messageDraft.attachment().orElseThrow();
         String payload = UpgradeBracketCodec.buildSendPayload(
                 attachment.requireRenderableUrl(),
@@ -210,7 +210,7 @@ public final class AttachmentSendController {
             StructuredAttachment attachment = null;
             try {
                 attachment = buildStructuredAttachment(draft, uploadedUrl);
-                String fallback = buildLegacyFallbackMessage(draft, uploadedUrl, typedMessage);
+                String fallback = buildBracketFallbackMessage(draft, uploadedUrl, typedMessage);
                 StructuredChatMessage message = StructuredChatMessage.withSingleAttachment(
                         nextClientNonce(),
                         typedMessage,
@@ -224,7 +224,7 @@ public final class AttachmentSendController {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: cannot build structured chat message: {}", ex.getMessage());
             }
         }
-        if (!sendChat(buildLegacyFallbackMessage(draft, uploadedUrl, typedMessage))) {
+        if (!sendChat(buildBracketFallbackMessage(draft, uploadedUrl, typedMessage))) {
             return false;
         }
         submitMetadataIfAvailable(draft, uploadedUrl);
