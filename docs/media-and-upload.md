@@ -25,11 +25,11 @@ flowchart TD
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/input/AttachmentDraft.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/input/AttachmentComposerState.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/input/AttachmentDraftResolver.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/input/AttachmentSendController.java`
-- `src/client/java/com/chat/upgrade/client/mixin/ChatScreenRichInputMixin.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentDraft.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentComposerState.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentDraftResolver.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentSendController.java`
+- `src/common/src/main/java/com/chat/upgrade/client/mixin/ChatScreenRichInputMixin.java`
 
 当前聊天框 MVP 支持单附件草稿。
 
@@ -55,10 +55,10 @@ flowchart TD
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/upload/UploadRouter.java`
-- `src/client/java/com/chat/upgrade/client/upload/ServerUploadProvider.java`
-- `src/client/java/com/chat/upgrade/client/upload/ThirdPartyUploadProvider.java`
-- `src/client/java/com/chat/upgrade/client/upload/CatboxUploader.java`
+- `src/common/src/main/java/com/chat/upgrade/client/upload/UploadRouter.java`
+- `src/common/src/main/java/com/chat/upgrade/client/upload/ServerUploadProvider.java`
+- `src/common/src/main/java/com/chat/upgrade/client/upload/ThirdPartyUploadProvider.java`
+- `src/common/src/main/java/com/chat/upgrade/client/upload/CatboxUploader.java`
 
 上传模式：
 
@@ -74,12 +74,12 @@ flowchart TD
 
 主要文件：
 
-- `src/main/java/com/chat/upgrade/server/ServerMediaServerNetworking.java`
-- `src/main/java/com/chat/upgrade/server/ServerMediaService.java`
-- `src/main/java/com/chat/upgrade/server/ServerMediaServerConfig.java`
-- `src/main/java/com/chat/upgrade/server/store/MediaStore.java`
-- `src/main/java/com/chat/upgrade/server/store/InMemoryMediaStore.java`
-- `src/main/java/com/chat/upgrade/server/store/DiskMediaStore.java`
+- `src/common/src/main/java/com/chat/upgrade/server/ServerMediaServerNetworking.java`
+- `src/common/src/main/java/com/chat/upgrade/server/ServerMediaService.java`
+- `src/common/src/main/java/com/chat/upgrade/server/ServerMediaServerConfig.java`
+- `src/common/src/main/java/com/chat/upgrade/server/store/MediaStore.java`
+- `src/common/src/main/java/com/chat/upgrade/server/store/InMemoryMediaStore.java`
+- `src/common/src/main/java/com/chat/upgrade/server/store/DiskMediaStore.java`
 
 服务端安装并启用后，客户端可以上传媒体到服务器。上传成功后，聊天中的 URL 会变成：
 
@@ -105,9 +105,9 @@ chatupgrade://media/<mediaId>?t=<type>
 
 主要文件：
 
-- `src/main/java/com/chat/upgrade/server/ServerAttachmentService.java`
-- `src/main/java/com/chat/upgrade/server/store/StoredAttachment.java`
-- `src/client/java/com/chat/upgrade/client/net/servermedia/ServerMediaClient.java`
+- `src/common/src/main/java/com/chat/upgrade/server/ServerAttachmentService.java`
+- `src/common/src/main/java/com/chat/upgrade/server/store/StoredAttachment.java`
+- `src/common/src/main/java/com/chat/upgrade/client/net/servermedia/ServerMediaClient.java`
 
 metadata 用于把附件 ID、媒体 ID、类型、显示名、fallback URL 关联起来。
 
@@ -124,12 +124,12 @@ metadata 用于把附件 ID、媒体 ID、类型、显示名、fallback URL 关�
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/media/image/ImageLoader.java`
-- `src/client/java/com/chat/upgrade/client/media/image/ImageEntry.java`
-- `src/client/java/com/chat/upgrade/client/media/image/RasterImageDecoder.java`
-- `src/client/java/com/chat/upgrade/client/media/image/GifAnimatedDecoder.java`
-- `src/client/java/com/chat/upgrade/client/media/image/ApngAnimatedDecoder.java`
-- `src/client/java/com/chat/upgrade/client/media/image/WebpAnimatedDecoder.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/image/ImageLoader.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/image/ImageEntry.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/image/RasterImageDecoder.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/image/GifAnimatedDecoder.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/image/ApngAnimatedDecoder.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/image/WebpAnimatedDecoder.java`
 
 支持格式包括：
 
@@ -143,10 +143,10 @@ png / apng / jpg / jpeg / gif / webp / bmp / tif / tiff / jfif / ico
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/media/audio/AudioLoader.java`
-- `src/client/java/com/chat/upgrade/client/media/audio/AudioEntry.java`
-- `src/client/java/com/chat/upgrade/client/media/audio/AudioPlayerService.java`
-- `src/client/java/com/chat/upgrade/client/ui/layout/AudioUiLayout.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/audio/AudioLoader.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/audio/AudioEntry.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/audio/AudioPlayerService.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/layout/AudioUiLayout.java`
 
 支持常见音频容器和编码，实际解码能力取决于 FFmpeg。
 
@@ -162,10 +162,10 @@ png / apng / jpg / jpeg / gif / webp / bmp / tif / tiff / jfif / ico
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/media/video/VideoLoader.java`
-- `src/client/java/com/chat/upgrade/client/media/video/VideoEntry.java`
-- `src/client/java/com/chat/upgrade/client/media/video/VideoPlayerService.java`
-- `src/client/java/com/chat/upgrade/client/ui/layout/VideoUiLayout.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/video/VideoLoader.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/video/VideoEntry.java`
+- `src/common/src/main/java/com/chat/upgrade/client/media/video/VideoPlayerService.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/layout/VideoUiLayout.java`
 
 视频 UI 支持：
 
@@ -181,8 +181,8 @@ png / apng / jpg / jpeg / gif / webp / bmp / tif / tiff / jfif / ico
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/plugin/FfmpegNativeBootstrap.java`
-- `src/client/java/com/chat/upgrade/client/plugin/ExternalImageIoPluginLoader.java`
+- `src/common/src/main/java/com/chat/upgrade/client/plugin/FfmpegNativeBootstrap.java`
+- `src/common/src/main/java/com/chat/upgrade/client/plugin/ExternalImageIoPluginLoader.java`
 
 运行时会尝试准备：
 

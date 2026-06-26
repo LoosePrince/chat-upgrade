@@ -14,11 +14,11 @@
 
 主要文件：
 
-- `src/main/java/com/chat/upgrade/net/StructuredChatMessage.java`
-- `src/main/java/com/chat/upgrade/net/StructuredChatSegment.java`
-- `src/main/java/com/chat/upgrade/net/StructuredAttachment.java`
-- `src/main/java/com/chat/upgrade/net/StructuredChatWireCodec.java`
-- `src/main/java/com/chat/upgrade/net/ServerMediaPayloads.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatMessage.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatSegment.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredAttachment.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatWireCodec.java`
+- `src/common/src/main/java/com/chat/upgrade/net/ServerMediaPayloads.java`
 
 ### StructuredChatMessage
 
@@ -102,9 +102,9 @@ sequenceDiagram
 
 主要文件：
 
-- `src/main/java/com/chat/upgrade/server/ServerChatRouteService.java`
-- `src/main/java/com/chat/upgrade/server/ServerMediaServerNetworking.java`
-- `src/main/java/com/chat/upgrade/mixin/ServerGamePacketListenerImplMixin.java`
+- `src/common/src/main/java/com/chat/upgrade/server/ServerChatRouteService.java`
+- `src/common/src/main/java/com/chat/upgrade/server/ServerMediaServerNetworking.java`
+- `src/common/src/main/java/com/chat/upgrade/mixin/ServerGamePacketListenerImplMixin.java`
 
 服务端会按接收端能力选择路线：
 
@@ -139,9 +139,9 @@ sequenceDiagram
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/net/servermedia/ServerMediaNetworking.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/state/RichChatIngress.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/UpgradeBracketCodec.java`
+- `src/common/src/main/java/com/chat/upgrade/client/net/servermedia/ServerMediaNetworking.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/state/RichChatIngress.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/UpgradeBracketCodec.java`
 
 TAKEOVER 下，结构化消息接收后会：
 

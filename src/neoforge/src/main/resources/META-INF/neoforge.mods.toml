@@ -1,0 +1,30 @@
+modLoader="javafml"
+loaderVersion="${loader}"
+license="All Rights Reserved"
+
+[[mods]]
+modId="${id}"
+version="${version}"
+displayName="${name}"
+authors="chat-upgrade"
+description="Rich media (images / audio / video) inline in chat."
+
+[[mixins]]
+config="chatupgrade.mixins.json"
+
+[[mixins]]
+config="chatupgrade.client.mixins.json"
+
+[[dependencies.${id}]]
+modId="neoforge"
+type="required"
+versionRange="${neoforge}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${id}]]
+modId="minecraft"
+type="required"
+versionRange="${minecraft}"
+ordering="NONE"
+side="BOTH"

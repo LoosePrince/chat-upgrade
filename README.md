@@ -4,12 +4,14 @@
 
 ![Page views](https://count.getloli.com/@LoosePrince#ChatUpgrade)
 
-[![Fabric](https://img.shields.io/badge/Fabric-loader-141417?style=flat-square)](https://fabricmc.net/)
+[![Fabric](https://img.shields.io/badge/Fabric-supported-141417?style=flat-square)](https://fabricmc.net/)
+[![NeoForge](https://img.shields.io/badge/NeoForge-supported-f16436?style=flat-square)](https://neoforged.net/)
+[![Minecraft](https://img.shields.io/badge/Minecraft-26.1%20%7C%2026.2-62b47a?style=flat-square)](https://minecraft.net/)
 [![Java](https://img.shields.io/badge/Java-25%2B-ea7100?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/)
 
 </div>
 
-Chat Upgrade 是一个基于 **Fabric** 的 Minecraft 富媒体聊天模组。
+Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / 多加载器** 架构，同时支持 **Fabric** 与 **NeoForge**，目标版本 **26.1 / 26.2**（可向下/向上扩展）。
 
 它保留原版聊天栏外壳，同时在默认 `TAKEOVER` 模式下接管聊天栏内容区，用自定义 `RichChatViewport` 渲染文本、行内表情、图片、音频播放器和视频播放器。服务端也安装本模组时，客户端可以把媒体直接上传到服务器，并通过结构化协议分发给其它客户端。
 
@@ -94,29 +96,69 @@ config/chat-upgrade/server-media.json
 - [配置、命令与运行验证](./docs/config-commands-and-runtime.md)
 - [兼容性与扩展指南](./docs/compatibility-and-extension.md)
 
+## 版本与加载器支持
+
+本工程使用 **Stonecutter**（多版本编排）+ 各加载器原生工具链（Fabric Loom / NeoForge ModDevGradle）+ 自写平台抽象层，单一源码树编译到多个目标，不需要单文件多版本/多框架兼容。
+
+| Minecraft | 加载器 | 目标 |
+| --- | --- | --- |
+| 26.1 | Fabric / NeoForge | `26.1-fabric` / `26.1-neoforge` |
+| 26.2 | Fabric / NeoForge | `26.2-fabric` / `26.2-neoforge` |
+
+各版本依赖坐标在 `gradle/targets/<version>.properties` 维护，新增版本只需加一个 properties 文件并在 `settings.gradle.kts` 注册。
+
+## 工程结构
+
+```text
+src/
+  common/      # 加载器无关的全部逻辑（媒体/UI/状态/编解码/服务端业务/mixin）+ platform 抽象
+  fabric/      # Fabric 入口 + 平台实现 + fabric.mod.json
+  neoforge/    # NeoForge 入口 + 平台实现 + neoforge.mods.toml
+buildSrc/      # 源码合并与版本预处理（//? if >=26.2 { ... }）
+gradle/targets/  # 各 Minecraft 版本依赖坐标
+versions/      # Stonecutter 目标工作区（由源码生成）
+```
+
+平台抽象（`com.chat.upgrade.platform`）：`Platform`/`PlatformServices`、`Net`/`NetworkRegistrar`/`NetworkSender`、`CommandSink`/`CommandAdapter`，由各加载器实现，common 不直接依赖 Fabric/NeoForge API。
+
+> 注：NeoForge 的 modId 不允许连字符，模组技术 id 统一为 `chatupgrade`（资源命名空间 `assets/chatupgrade/`），配置目录仍为 `config/chat-upgrade/`。
+
 ## 运行环境
 
 | 项目 | 版本 |
 | --- | --- |
-| Minecraft | `26.1` |
-| Fabric Loader | `>= 0.18.6` |
+| Minecraft | `26.1` / `26.2` |
+| 加载器 | Fabric（Loader `>= 0.18.6`）/ NeoForge `26.x` |
 | Java | `>= 25` |
-| Fabric API | 见 `gradle.properties` |
+| Gradle | `>= 9.5.1`（NeoForge ModDevGradle / Loom 1.17 要求） |
+| 依赖坐标 | 见 `gradle/targets/<version>.properties` |
 
 ## 构建
 
+构建指定目标（产物在 `versions/<target>/build/libs/`）：
+
 ```powershell
-.\gradlew.bat build
+.\gradlew.bat :26.1-fabric:build
+.\gradlew.bat :26.1-neoforge:build
+.\gradlew.bat :26.2-fabric:build
+.\gradlew.bat :26.2-neoforge:build
 ```
 
-开发客户端：
+默认 **不** 把 FFmpeg 五平台 native 打进 jar（约 **2.5 MiB**）；首次播放音视频时由 `FfmpegNativeBootstrap` 按当前平台下载到 `config/chat-upgrade/libs/`。若需要离线全平台 fat jar（约 **116 MiB**），显式开启：
 
 ```powershell
-.\gradlew.bat runClient --stacktrace
+.\gradlew.bat :26.1-fabric:build -PembedFfmpegNatives=true
+```
+
+开发运行（先用 `stonecutter.gradle.kts` 切换 active 目标，或直接对目标调用）：
+
+```powershell
+.\gradlew.bat :26.1-fabric:runClient --stacktrace
+.\gradlew.bat :26.1-neoforge:runClient --stacktrace
 ```
 
 服务端 smoke：
 
 ```powershell
-.\gradlew.bat runServer --args="--world chat-upgrade-runtime-smoke --port 25575 --nogui"
+.\gradlew.bat :26.1-fabric:runServer --args="--world chat-upgrade-runtime-smoke --port 25575 --nogui"
 ```

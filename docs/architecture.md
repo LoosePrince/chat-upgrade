@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-Chat Upgrade 是 Fabric Minecraft 模组，用于把聊天消息升级为富媒体聊天：
+Chat Upgrade 是 Minecraft 富媒体聊天模组，支持 **Fabric** 与 **NeoForge**，目标版本 **26.1 / 26.2**。用于把聊天消息升级为富媒体聊天：
 
 - 普通文本仍可显示。
 - 图片、音频、视频可以作为聊天附件展示。
@@ -68,30 +68,47 @@ RichChatMessage
 
 因此，在聊天栏范围内可以自定义渲染文本、表情、图片、音频、视频、按钮、进度条、卡片等内容。仍需尊重的是外层聊天栏矩形和原版 shell 生命周期。
 
-## 客户端模块
+## 工程与加载器分层
+
+项目采用 **Stonecutter 多版本编排** + **各加载器原生工具链** + **自写平台抽象**，单一 `src/common` 源码树编译到多个目标：
+
+```text
+src/
+  common/     # 加载器无关逻辑 + mixin + platform 抽象
+  fabric/     # Fabric 入口与平台实现
+  neoforge/   # NeoForge 入口与平台实现
+```
+
+| 层级 | 包/路径 | 职责 |
+| --- | --- | --- |
+| 公共入口 | `src/common/.../ChatUpgrade.java` | 服务端公共初始化（配置、媒体存储） |
+| 平台抽象 | `src/common/.../platform` | `Platform`、`Net`、`CommandSink` 等接口 |
+| Fabric 绑定 | `src/fabric/.../fabric/*` | `ModInitializer`、Fabric 网络/命令/事件实现 |
+| NeoForge 绑定 | `src/neoforge/.../neoforge/*` | `@Mod`、NeoForge payload/事件实现 |
+
+技术 mod id 为 `chatupgrade`（NeoForge 不允许连字符）；配置目录仍为 `config/chat-upgrade/`。
+
+## 客户端模块（common）
+| 初始化与命令 | `src/common/.../client/ChatUpgradeClientBootstrap.java`、`ChatUpgradeCommands.java`；加载器入口见 `src/fabric`、`src/neoforge` | 客户端公共初始化、命令树、插件预热、资源清理。 |
+| 配置 | `src/common/.../client/ChatUpgradeConfig.java` | 客户端配置、默认值、范围归一化、保存/重载。 |
+| 输入草稿 | `src/common/.../client/ui/chat/input` | 单附件草稿、剪贴板/文件来源、发送控制。 |
+| 聊天状态 | `src/common/.../client/ui/chat/state` | 统一消息事实层、投影兼容层。 |
+| 富媒体 viewport | `src/common/.../client/ui/chat/viewport` | TAKEOVER 布局、渲染节点、命中框、滚动状态。 |
+| 媒体加载 | `src/common/.../client/media` | 图片、音频、视频加载和缓存。 |
+| 服务端媒体客户端 | `src/common/.../client/net/servermedia` | 服务端能力、上传/查询 future、结构化消息接收。 |
+| Mixin 接入 | `src/common/.../client/mixin` | ChatScreen/ChatComponent 输入、渲染、滚动、点击入口。 |
+
+## 服务端模块（common）
 
 | 模块 | 主要路径 | 职责 |
 | --- | --- | --- |
-| 初始化与命令 | `src/client/java/com/chat/upgrade/client/ChatUpgradeClient.java` | 客户端入口、命令注册、插件预热、资源清理。 |
-| 配置 | `src/client/java/com/chat/upgrade/client/ChatUpgradeConfig.java` | 客户端配置、默认值、范围归一化、保存/重载。 |
-| 输入草稿 | `src/client/java/com/chat/upgrade/client/ui/chat/input` | 单附件草稿、剪贴板/文件来源、发送控制。 |
-| 聊天状态 | `src/client/java/com/chat/upgrade/client/ui/chat/state` | 统一消息事实层、投影兼容层。 |
-| 富媒体 viewport | `src/client/java/com/chat/upgrade/client/ui/chat/viewport` | TAKEOVER 布局、渲染节点、命中框、滚动状态。 |
-| 媒体加载 | `src/client/java/com/chat/upgrade/client/media` | 图片、音频、视频加载和缓存。 |
-| 服务端媒体客户端 | `src/client/java/com/chat/upgrade/client/net/servermedia` | 服务端能力、上传/查询 future、结构化消息接收。 |
-| Mixin 接入 | `src/client/java/com/chat/upgrade/client/mixin` | ChatScreen/ChatComponent 输入、渲染、滚动、点击入口。 |
-
-## 服务端模块
-
-| 模块 | 主要路径 | 职责 |
-| --- | --- | --- |
-| 服务端入口 | `src/main/java/com/chat/upgrade/ChatUpgrade.java` | payload 注册、服务端网络初始化。 |
-| 统一协议 | `src/main/java/com/chat/upgrade/net` | payload、结构化聊天消息、附件、wire codec。 |
-| 聊天路由 | `src/main/java/com/chat/upgrade/server/ServerChatRouteService.java` | 根据接收端能力和模式分发结构化/legacy/vanilla 消息。 |
-| 媒体服务 | `src/main/java/com/chat/upgrade/server/ServerMediaService.java` | 媒体上传、请求、分块下发。 |
-| 附件 metadata | `src/main/java/com/chat/upgrade/server/ServerAttachmentService.java` | 附件 metadata 提交、查询和缓存。 |
-| 存储 | `src/main/java/com/chat/upgrade/server/store` | 内存/磁盘媒体存储。 |
-| 服务端 Mixin | `src/main/java/com/chat/upgrade/mixin/ServerGamePacketListenerImplMixin.java` | 拦截旧聊天载荷并交给统一服务端路由。 |
+| 服务端入口 | `src/common/.../ChatUpgrade.java` | 公共服务端初始化；各加载器负责 payload/事件注册。 |
+| 统一协议 | `src/common/.../net` | payload、结构化聊天消息、附件、wire codec。 |
+| 聊天路由 | `src/common/.../server/ServerChatRouteService.java` | 根据接收端能力和模式分发结构化/legacy/vanilla 消息。 |
+| 媒体服务 | `src/common/.../server/ServerMediaService.java` | 媒体上传、请求、分块下发。 |
+| 附件 metadata | `src/common/.../server/ServerAttachmentService.java` | 附件 metadata 提交、查询和缓存。 |
+| 存储 | `src/common/.../server/store` | 内存/磁盘媒体存储。 |
+| 服务端 Mixin | `src/common/.../mixin/ServerGamePacketListenerImplMixin.java` | 拦截旧聊天载荷并交给统一服务端路由。 |
 
 ## 关键数据流
 

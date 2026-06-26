@@ -36,9 +36,9 @@ flowchart TB
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/state/RichChatMessage.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/state/RichChatStateStore.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/state/RichChatIngress.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/state/RichChatMessage.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/state/RichChatStateStore.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/state/RichChatIngress.java`
 
 `RichChatMessage` 表示一条聊天消息的事实：
 
@@ -60,10 +60,10 @@ flowchart TB
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatLayoutEngine.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatLayout.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMessageLayout.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMediaSizing.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatLayoutEngine.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatLayout.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMessageLayout.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMediaSizing.java`
 
 布局层把消息事实转成 viewport 坐标系下的布局结果：
 
@@ -81,8 +81,8 @@ RichChatStateStore.snapshotNewestFirst()
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatRenderNode.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatRenderNodeKind.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatRenderNode.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatRenderNodeKind.java`
 
 节点类型包括：
 
@@ -102,9 +102,9 @@ RichChatStateStore.snapshotNewestFirst()
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatHitBox.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatHitBoxKind.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatInteractionRouter.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatHitBox.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatHitBoxKind.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatInteractionRouter.java`
 
 `RichChatHitBox` 表示一个可交互区域，不依赖原版聊天行。
 
@@ -122,9 +122,9 @@ RichChatStateStore.snapshotNewestFirst()
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/mixin/ChatComponentRichViewportMixin.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMediaRenderer.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/ChatUpgradeChatRenderState.java`
+- `src/common/src/main/java/com/chat/upgrade/client/mixin/ChatComponentRichViewportMixin.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMediaRenderer.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/ChatUpgradeChatRenderState.java`
 
 渲染流程：
 
@@ -147,9 +147,9 @@ ChatComponent 提取渲染状态
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/InlineEmojiCodec.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/InlineEmojiCoordinator.java`
-- `src/client/java/com/chat/upgrade/client/ui/chat/InlineEmojiSlot.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/InlineEmojiCodec.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/InlineEmojiCoordinator.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/InlineEmojiSlot.java`
 
 表情流程：
 
@@ -170,9 +170,9 @@ ChatComponent 提取渲染状态
 
 主要文件：
 
-- `src/client/java/com/chat/upgrade/client/ui/chat/viewport/RichChatViewportState.java`
-- `src/client/java/com/chat/upgrade/client/mixin/ChatScreenSmoothScrollMixin.java`
-- `src/client/java/com/chat/upgrade/client/mixin/ChatScreenScrollbarDragMixin.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatViewportState.java`
+- `src/common/src/main/java/com/chat/upgrade/client/mixin/ChatScreenSmoothScrollMixin.java`
+- `src/common/src/main/java/com/chat/upgrade/client/mixin/ChatScreenScrollbarDragMixin.java`
 
 滚动状态是像素级：
 

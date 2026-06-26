@@ -39,3 +39,5 @@
 `TAKEOVER` 模式下，项目保留原版聊天栏外壳，但聊天栏内容区已经由 `RichChatViewport` 接管：统一消息状态进入布局层，再投影成文本、表情、图片、音频、视频等自定义节点，由自定义渲染与交互层处理。
 
 `COMPAT_TEXT_VANILLA` 模式下，普通纯文本尽量回到原版链路，附件和旧协议兜底继续保留富媒体能力。
+
+工程层面，公共逻辑集中在 `src/common`，通过 `com.chat.upgrade.platform` 与各加载器绑定层同时支持 **Fabric / NeoForge** 以及 **26.1 / 26.2** 目标。

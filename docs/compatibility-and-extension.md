@@ -90,14 +90,20 @@ TAKEOVER 下不要新增依赖这些路径的主功能。
 - 对旧客户端必须有降级路径。
 - 发送前继续使用 `canSend(...)` gate。
 
-涉及文件：
+涉及文件（均在 `src/common`）：
 
-- `src/main/java/com/chat/upgrade/net/StructuredChatMessage.java`
-- `src/main/java/com/chat/upgrade/net/StructuredAttachment.java`
-- `src/main/java/com/chat/upgrade/net/StructuredChatWireCodec.java`
-- `src/main/java/com/chat/upgrade/net/ServerMediaPayloads.java`
-- `src/main/java/com/chat/upgrade/server/ServerChatRouteService.java`
-- `src/client/java/com/chat/upgrade/client/net/servermedia/ServerMediaNetworking.java`
+- `src/common/.../net/StructuredChatMessage.java`
+- `src/common/.../net/StructuredAttachment.java`
+- `src/common/.../net/StructuredChatWireCodec.java`
+- `src/common/.../net/ServerMediaPayloads.java`
+- `src/common/.../server/ServerChatRouteService.java`
+- `src/common/.../client/net/servermedia/ServerMediaNetworking.java`
+
+## 添加新加载器或版本
+
+- **新版本**：在 `gradle/targets/` 增加 properties，在 `settings.gradle.kts` 注册 Stonecutter 目标；若 API 有差异，在 `src/common` 用 `//? if >=26.2` 等预处理指令分支。
+- **新加载器**：在 `src/<loader>/` 实现 `PlatformServices`、`NetworkRegistrar`、`NetworkSender`、`CommandAdapter` 并在入口注册；公共逻辑不要直接引用加载器 API。
+- **Forge**：`platform` 包已预留抽象，当前未实装。
 
 ## 添加配置或命令
 

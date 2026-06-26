@@ -6,31 +6,38 @@
 
 | 项目 | 版本 |
 | --- | --- |
-| Minecraft | `26.1` |
-| Fabric Loader | `>= 0.18.6` |
+| Minecraft | `26.1` / `26.2` |
+| 加载器 | Fabric（Loader `>= 0.18.6`）/ NeoForge `26.x` |
 | Java | `>= 25` |
-| Fabric API | 见 `gradle.properties` |
+| Gradle | `>= 9.5.1` |
+| 依赖坐标 | `gradle/targets/<version>.properties` |
 
-项目使用 Fabric Loom，并启用 client/main 分离 source set。
+工程使用 **Stonecutter** 管理多版本目标；Fabric 侧用 **Fabric Loom 1.17**，NeoForge 侧用 **ModDevGradle**。公共逻辑在 `src/common`，经 `buildSrc` 预处理合并到各目标。
 
 ## 构建与运行
 
-在项目根目录执行：
+构建指定目标（产物在 `versions/<target>/build/libs/`，默认约 **2.5 MiB**）：
 
 ```powershell
-.\gradlew.bat build
+.\gradlew.bat :26.1-fabric:build
+.\gradlew.bat :26.1-neoforge:build
+.\gradlew.bat :26.2-fabric:build
+.\gradlew.bat :26.2-neoforge:build
 ```
 
-开发客户端：
+默认不把 FFmpeg 五平台 native 嵌入 jar；需要离线 fat jar（约 116 MiB）时加 `-PembedFfmpegNatives=true`。CI 与发布均使用 slim 包，运行时由 `FfmpegNativeBootstrap` 按平台下载 native。
+
+开发客户端（可直接指定目标，或在 `stonecutter.gradle.kts` 中切换 active 目标）：
 
 ```powershell
-.\gradlew.bat runClient --stacktrace
+.\gradlew.bat :26.1-fabric:runClient --stacktrace
+.\gradlew.bat :26.1-neoforge:runClient --stacktrace
 ```
 
 服务端 smoke：
 
 ```powershell
-.\gradlew.bat runServer --args="--world chat-upgrade-runtime-smoke --port 25575 --nogui"
+.\gradlew.bat :26.1-fabric:runServer --args="--world chat-upgrade-runtime-smoke --port 25575 --nogui"
 ```
 
 检查 Java 进程：

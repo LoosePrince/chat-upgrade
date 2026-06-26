@@ -1,44 +1,35 @@
-# gradle
-
+# Gradle / build artifacts
 .gradle/
 build/
-out/
-classes/
+*/build/
+bin/
+run/
+*.class
 
-# eclipse
+# Stonecutter generated workspaces (regenerated from src/)
+versions/*/build/
+versions/*/.gradle/
 
-*.launch
+# Offline verification harness artifacts
+tools/verify-fabric-26.1/cp/
+tools/verify-fabric-26.1/out/
+tools/verify-fabric-26.1/build/
+tools/verify-fabric-26.1/.gradle/
+tools/verify-fabric-26.1/run/
+tools/verify-fabric-26.1/sources*.txt
 
-# idea
+# Local Gradle distribution cache (downloaded separately)
+.gradle-dist/
 
+# IDE
 .idea/
 *.iml
 *.ipr
 *.iws
-
-# vscode
-
-.settings/
 .vscode/
-bin/
-.classpath
-.project
+.eclipse/
+*.launch
 
-# macos
-
-*.DS_Store
-
-# fabric
-
-run/
-
-# java
-
-hs_err_*.log
-replay_*.log
-*.hprof
-*.jfr
-
-# local reference checkouts (do not commit)
-
-temp/
+# OS
+.DS_Store
+Thumbs.db
