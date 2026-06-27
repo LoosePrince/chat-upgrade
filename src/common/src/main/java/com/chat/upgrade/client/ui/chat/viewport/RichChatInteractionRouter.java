@@ -32,14 +32,22 @@ import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
+import net.minecraft.util.Util;
 
 public final class RichChatInteractionRouter {
     private static final List<ActiveHitBox> ACTIVE_HIT_BOXES = new ArrayList<>();
+    private static final String EMOJI_ACTION_PREFIX = "emoji:";
+    private static final int EMOJI_PREVIEW_MIN_SIZE = 48;
+    private static final int EMOJI_PREVIEW_MAX_SIZE = 96;
+    private static final int EMOJI_PREVIEW_GAP = 8;
     private static @Nullable Matrix3x2fc activePose;
     private static @Nullable RichChatBounds activeViewportBounds;
 
@@ -129,6 +137,9 @@ public final class RichChatInteractionRouter {
             if (!active.localBounds().contains(Math.round(localX), Math.round(localY))) {
                 continue;
             }
+            if (isEmojiHitBox(active.hitBox())) {
+                return showEmojiPreviewForLocalHover(gfx, font, active, localX, localY);
+            }
             String text = tooltipForHitBox(active, localX, localY);
             if (text == null || text.isBlank()) {
                 return false;
@@ -145,6 +156,87 @@ public final class RichChatInteractionRouter {
             return true;
         }
         return activeViewportBounds.contains(Math.round(localX), Math.round(localY));
+    }
+
+    private static boolean isEmojiHitBox(RichChatHitBox hitBox) {
+        return hitBox != null && hitBox.actionKey().startsWith(EMOJI_ACTION_PREFIX);
+    }
+
+    private static boolean showEmojiPreviewForLocalHover(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            ActiveHitBox active,
+            float localX,
+            float localY) {
+        RichAttachment attachment = active.hitBox().attachment();
+        if (attachment == null || !attachment.hasRenderableUrl()) {
+            return false;
+        }
+        String url = attachment.requireRenderableUrl();
+        RichChatBounds previewBounds = emojiPreviewBounds(active.localBounds(), localX, localY);
+        ChatUpgradeChatRenderState.withClipSuspended(gfx, () -> paintEmojiPreview(gfx, font, url, previewBounds));
+        return true;
+    }
+
+    private static RichChatBounds emojiPreviewBounds(RichChatBounds sourceBounds, float localX, float localY) {
+        int previewSize = Math.clamp(sourceBounds.height() * 6, EMOJI_PREVIEW_MIN_SIZE, EMOJI_PREVIEW_MAX_SIZE);
+        int x0 = Math.round(localX) + EMOJI_PREVIEW_GAP;
+        int y0 = Math.round(localY) - previewSize - EMOJI_PREVIEW_GAP;
+        RichChatBounds viewport = activeViewportBounds;
+        if (viewport != null) {
+            if (x0 + previewSize > viewport.right()) {
+                x0 = Math.round(localX) - EMOJI_PREVIEW_GAP - previewSize;
+            }
+            if (x0 < viewport.left()) {
+                x0 = viewport.left();
+            }
+            if (y0 < viewport.top()) {
+                y0 = Math.round(localY) + EMOJI_PREVIEW_GAP;
+            }
+            if (y0 + previewSize > viewport.bottom()) {
+                y0 = Math.max(viewport.top(), viewport.bottom() - previewSize);
+            }
+        }
+        return RichChatBounds.ofSize(x0, y0, previewSize, previewSize);
+    }
+
+    private static void paintEmojiPreview(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            String url,
+            RichChatBounds bounds) {
+        gfx.fill(bounds.left() - 1, bounds.top() - 1, bounds.right() + 1, bounds.bottom() + 1, 0xDD0A0C10);
+        gfx.outline(bounds.left() - 1, bounds.top() - 1, bounds.width() + 2, bounds.height() + 2, 0xFF5A6B84);
+        ImageEntry entry = ImageLoader.getOrLoad(url);
+        switch (entry.getState()) {
+            case LOADED -> paintLoadedEmojiPreview(gfx, entry, bounds);
+            case LOADING -> {
+                gfx.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xDD23262E);
+                gfx.centeredText(font, "...", bounds.left() + bounds.width() / 2,
+                        bounds.top() + bounds.height() / 2 - font.lineHeight / 2, 0xFFE6EAF2);
+            }
+            case FAILED -> {
+                gfx.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xDD3A1D1D);
+                gfx.centeredText(font, "x", bounds.left() + bounds.width() / 2,
+                        bounds.top() + bounds.height() / 2 - font.lineHeight / 2, 0xFFFFB0B0);
+            }
+        }
+    }
+
+    private static void paintLoadedEmojiPreview(GuiGraphicsExtractor gfx, ImageEntry entry, RichChatBounds bounds) {
+        Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(Util.getMillis()) : entry.getTextureId();
+        if (textureId == null) {
+            return;
+        }
+        gfx.blit(
+                RenderPipelines.GUI_TEXTURED,
+                textureId,
+                bounds.left(), bounds.top(),
+                0.0F, 0.0F,
+                bounds.width(), bounds.height(),
+                entry.getTextureWidth(), entry.getTextureHeight(),
+                entry.getTextureWidth(), entry.getTextureHeight(),
+                ARGB.white(1.0F));
     }
 
     private static @Nullable Style styleForHitBox(ActiveHitBox active, float localX, float localY) {

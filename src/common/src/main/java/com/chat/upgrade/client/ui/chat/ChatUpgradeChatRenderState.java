@@ -104,6 +104,27 @@ public final class ChatUpgradeChatRenderState {
         clipActive = false;
     }
 
+    public static void withClipSuspended(GuiGraphicsExtractor graphics, Runnable draw) {
+        if (graphics == null || draw == null) {
+            return;
+        }
+        boolean restore = clipActive;
+        int left = clipLeft;
+        int top = clipTop;
+        int right = clipRight;
+        int bottom = clipBottom;
+        if (restore) {
+            graphics.disableScissor();
+        }
+        try {
+            draw.run();
+        } finally {
+            if (restore) {
+                graphics.enableScissor(left, top, right, bottom);
+            }
+        }
+    }
+
     public static boolean isInClipBounds(int screenX, int screenY) {
         if (!clipActive) {
             return true;

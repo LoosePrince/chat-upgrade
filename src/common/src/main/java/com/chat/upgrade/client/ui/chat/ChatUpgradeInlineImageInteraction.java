@@ -214,33 +214,35 @@ public final class ChatUpgradeInlineImageInteraction {
         int y = localMouseToLocalY(acc, acc.chatupgrade$globalMouseY()) + EMOJI_HOVER_OFFSET_Y - previewSize;
         int x1 = x + previewSize;
         int y1 = y + previewSize;
-        gfx.fill(x - 1, y - 1, x1 + 1, y1 + 1, 0xCC0A0C10);
-        switch (entry.getState()) {
-            case LOADED -> {
-                Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(net.minecraft.util.Util.getMillis())
-                        : entry.getTextureId();
-                if (textureId == null) {
-                    return;
+        ChatUpgradeChatRenderState.withClipSuspended(gfx, () -> {
+            gfx.fill(x - 1, y - 1, x1 + 1, y1 + 1, 0xCC0A0C10);
+            switch (entry.getState()) {
+                case LOADED -> {
+                    Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(net.minecraft.util.Util.getMillis())
+                            : entry.getTextureId();
+                    if (textureId == null) {
+                        return;
+                    }
+                    gfx.blit(
+                            net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+                            textureId,
+                            x, y,
+                            0.0f, 0.0f,
+                            previewSize, previewSize,
+                            entry.getTextureWidth(), entry.getTextureHeight(),
+                            entry.getTextureWidth(), entry.getTextureHeight(),
+                            net.minecraft.util.ARGB.white(Math.min(1.0f, textOpacity + 0.1f)));
                 }
-                gfx.blit(
-                        net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
-                        textureId,
-                        x, y,
-                        0.0f, 0.0f,
-                        previewSize, previewSize,
-                        entry.getTextureWidth(), entry.getTextureHeight(),
-                        entry.getTextureWidth(), entry.getTextureHeight(),
-                        net.minecraft.util.ARGB.white(Math.min(1.0f, textOpacity + 0.1f)));
+                case LOADING -> {
+                    gfx.fill(x, y, x1, y1, 0xCC23262E);
+                    gfx.centeredText(acc.chatupgrade$font(), "…", x + previewSize / 2, y + previewSize / 2 - 4, 0xFFE6EAF2);
+                }
+                case FAILED -> {
+                    gfx.fill(x, y, x1, y1, 0xCC3A1D1D);
+                    gfx.centeredText(acc.chatupgrade$font(), "x", x + previewSize / 2, y + previewSize / 2 - 4, 0xFFFFB0B0);
+                }
             }
-            case LOADING -> {
-                gfx.fill(x, y, x1, y1, 0xCC23262E);
-                gfx.centeredText(acc.chatupgrade$font(), "…", x + previewSize / 2, y + previewSize / 2 - 4, 0xFFE6EAF2);
-            }
-            case FAILED -> {
-                gfx.fill(x, y, x1, y1, 0xCC3A1D1D);
-                gfx.centeredText(acc.chatupgrade$font(), "x", x + previewSize / 2, y + previewSize / 2 - 4, 0xFFFFB0B0);
-            }
-        }
+        });
     }
 
     private static int localMouseToLocalX(ChatUpgradeDrawingFocusedAccessor acc, int globalMouseX) {
