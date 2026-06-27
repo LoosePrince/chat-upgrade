@@ -17,6 +17,7 @@ import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 
 public final class RichChatLayoutEngine {
@@ -94,6 +95,7 @@ public final class RichChatLayoutEngine {
                         ? RichChatRenderNode.system(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots)
                         : RichChatRenderNode.text(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots);
                 nodes.add(node);
+                hitBoxes.addAll(styledTextHitBoxes(font, message.messageId(), lineBounds, line));
                 hitBoxes.addAll(emojiHitBoxes(font, metrics, message.messageId(), lineBounds, line, lineEmojiSlots));
                 cursorY += metrics.entryHeight();
                 order++;
@@ -136,6 +138,65 @@ public final class RichChatLayoutEngine {
                 metrics.backgroundRight() - metrics.backgroundLeft(),
                 Math.max(0, cursorY - top));
         return new RichChatMessageLayout(message, messageBounds, nodes, hitBoxes);
+    }
+
+    private static List<RichChatHitBox> styledTextHitBoxes(
+            Font font,
+            String messageId,
+            RichChatBounds lineBounds,
+            FormattedCharSequence line) {
+        List<StyledTextRun> runs = styledTextRuns(line);
+        if (runs.isEmpty()) {
+            return List.of();
+        }
+        List<RichChatHitBox> hitBoxes = new ArrayList<>();
+        int cursorX = lineBounds.left();
+        int runIndex = 0;
+        for (StyledTextRun run : runs) {
+            int width = font.width(run.text());
+            if (width > 0 && hasInteractiveStyle(run.style())) {
+                hitBoxes.add(new RichChatHitBox(
+                        RichChatHitBoxKind.TEXT,
+                        messageId,
+                        RichChatBounds.ofSize(cursorX, lineBounds.top(), width, lineBounds.height()),
+                        null,
+                        run.style(),
+                        "text:" + messageId + ":" + runIndex));
+            }
+            cursorX += width;
+            runIndex++;
+        }
+        return hitBoxes;
+    }
+
+    private static List<StyledTextRun> styledTextRuns(FormattedCharSequence line) {
+        if (line == null) {
+            return List.of();
+        }
+        List<StyledTextRun> runs = new ArrayList<>();
+        StringBuilder currentText = new StringBuilder();
+        Style[] currentStyle = new Style[1];
+        line.accept((index, style, codePoint) -> {
+            Style safeStyle = style == null ? Style.EMPTY : style;
+            if (currentStyle[0] != null && !currentStyle[0].equals(safeStyle)) {
+                runs.add(new StyledTextRun(currentStyle[0], currentText.toString()));
+                currentText.setLength(0);
+            }
+            currentStyle[0] = safeStyle;
+            currentText.appendCodePoint(codePoint);
+            return true;
+        });
+        if (currentStyle[0] != null && !currentText.isEmpty()) {
+            runs.add(new StyledTextRun(currentStyle[0], currentText.toString()));
+        }
+        return runs;
+    }
+
+    private static boolean hasInteractiveStyle(Style style) {
+        return style != null && (style.getClickEvent() != null || style.getHoverEvent() != null);
+    }
+
+    private record StyledTextRun(Style style, String text) {
     }
 
     private static List<RichChatHitBox> emojiHitBoxes(

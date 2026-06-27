@@ -35,6 +35,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 
 public final class RichChatInteractionRouter {
@@ -147,6 +148,10 @@ public final class RichChatInteractionRouter {
     }
 
     private static @Nullable Style styleForHitBox(ActiveHitBox active, float localX, float localY) {
+        Style textStyle = active.hitBox().style();
+        if (textStyle != null && textStyle.getClickEvent() != null) {
+            return textStyle;
+        }
         RichAttachment attachment = active.hitBox().attachment();
         if (attachment == null || !attachment.hasRenderableUrl()) {
             return null;
@@ -199,6 +204,10 @@ public final class RichChatInteractionRouter {
     }
 
     private static @Nullable String tooltipForHitBox(ActiveHitBox active, float localX, float localY) {
+        String textTooltip = tooltipForStyle(active.hitBox().style());
+        if (textTooltip != null) {
+            return textTooltip;
+        }
         RichAttachment attachment = active.hitBox().attachment();
         if (attachment == null || !attachment.hasRenderableUrl()) {
             return null;
@@ -209,6 +218,18 @@ public final class RichChatInteractionRouter {
             case AUDIO -> describeAudio(active.localBounds(), localX, localY, url);
             case VIDEO -> describeVideo(active.localBounds(), localX, localY, url);
         };
+    }
+
+    private static @Nullable String tooltipForStyle(@Nullable Style style) {
+        if (style == null) {
+            return null;
+        }
+        HoverEvent hoverEvent = style.getHoverEvent();
+        if (hoverEvent instanceof HoverEvent.ShowText showText) {
+            String text = showText.value().getString();
+            return text.isBlank() ? null : text;
+        }
+        return null;
     }
 
     private static String describeImage(String url) {

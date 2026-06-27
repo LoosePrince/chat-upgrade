@@ -1,6 +1,5 @@
 package com.chat.upgrade.client.mixin;
 
-import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -56,13 +55,10 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     private final AttachmentComposerState chatupgrade$attachmentState = new AttachmentComposerState();
 
     @Unique
-    private Button chatupgrade$imageButton;
+    private Button chatupgrade$attachmentButton;
 
     @Unique
-    private Button chatupgrade$audioButton;
-
-    @Unique
-    private Button chatupgrade$videoButton;
+    private int chatupgrade$attachmentButtonWidth;
 
     @Unique
     private Button chatupgrade$clearButton;
@@ -74,33 +70,21 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     @Inject(method = "init()V", at = @At("TAIL"))
     private void chatupgrade$initAttachmentControls(CallbackInfo ci) {
         int y = Math.max(2, this.height - 34);
-        chatupgrade$imageButton = chatupgrade$attachButton(
-                Component.translatable("chatupgrade.input.button.image"),
-                Component.translatable("chatupgrade.input.button.image.tooltip"),
-                4,
-                y,
-                InlineResourceType.IMAGE);
-        chatupgrade$audioButton = chatupgrade$attachButton(
-                Component.translatable("chatupgrade.input.button.audio"),
-                Component.translatable("chatupgrade.input.button.audio.tooltip"),
-                42,
-                y,
-                InlineResourceType.AUDIO);
-        chatupgrade$videoButton = chatupgrade$attachButton(
-                Component.translatable("chatupgrade.input.button.video"),
-                Component.translatable("chatupgrade.input.button.video.tooltip"),
-                80,
-                y,
-                InlineResourceType.VIDEO);
+        Component attachmentLabel = Component.translatable("chatupgrade.input.button.attachment");
+        chatupgrade$attachmentButtonWidth = chatupgrade$buttonWidthFor(attachmentLabel);
+        chatupgrade$attachmentButton = Button.builder(
+                attachmentLabel,
+                button -> chatupgrade$pickAttachment())
+                .bounds(4, y, chatupgrade$attachmentButtonWidth, 16)
+                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.attachment.tooltip")))
+                .build();
         chatupgrade$clearButton = Button.builder(
                 Component.translatable("chatupgrade.input.button.clear"),
                 button -> chatupgrade$clearDraft())
                 .bounds(Math.max(4, this.width - 24), y, 20, 16)
                 .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.clear.tooltip")))
                 .build();
-        this.addRenderableWidget(chatupgrade$imageButton);
-        this.addRenderableWidget(chatupgrade$audioButton);
-        this.addRenderableWidget(chatupgrade$videoButton);
+        this.addRenderableWidget(chatupgrade$attachmentButton);
         this.addRenderableWidget(chatupgrade$clearButton);
         chatupgrade$refreshControls();
     }
@@ -182,7 +166,7 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         }
         AttachmentDraft draft = draftOpt.get();
         int y = Math.max(2, this.height - 34);
-        int x = 122;
+        int x = chatupgrade$attachmentChipX();
         int right = Math.max(x + 24, this.width - 28);
         if (right <= x + 12) {
             return;
@@ -230,21 +214,10 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     }
 
     @Unique
-    private Button chatupgrade$attachButton(Component label, Component tooltip, int x, int y, InlineResourceType type) {
-        return Button.builder(label, button -> chatupgrade$pickAttachment(type))
-                .bounds(x, y, 34, 16)
-                .tooltip(Tooltip.create(tooltip))
-                .build();
-    }
-
-    @Unique
-    private void chatupgrade$pickAttachment(InlineResourceType type) {
-        chatupgrade$systemMessage(switch (type) {
-            case IMAGE -> Component.translatable("chatupgrade.upload.open_image_picker").withStyle(ChatFormatting.GRAY);
-            case AUDIO -> Component.translatable("chatupgrade.upload.open_audio_picker").withStyle(ChatFormatting.GRAY);
-            case VIDEO -> Component.translatable("chatupgrade.upload.open_video_picker").withStyle(ChatFormatting.GRAY);
-        });
-        CompletableFuture.supplyAsync(() -> AttachmentDraftResolver.pickFile(type))
+    private void chatupgrade$pickAttachment() {
+        chatupgrade$systemMessage(Component.translatable("chatupgrade.upload.open_attachment_picker")
+                .withStyle(ChatFormatting.GRAY));
+        CompletableFuture.supplyAsync(AttachmentDraftResolver::pickFile)
                 .thenAccept(result -> this.minecraft.execute(() -> chatupgrade$applyResolveResult(result)));
     }
 
@@ -311,6 +284,20 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         if (chat != null) {
             chat.resetChatScroll();
         }
+    }
+
+    @Unique
+    private int chatupgrade$buttonWidthFor(Component label) {
+        String text = label == null ? "" : label.getString();
+        return Math.max(34, this.font.width(text) + 12);
+    }
+
+    @Unique
+    private int chatupgrade$attachmentChipX() {
+        int width = chatupgrade$attachmentButtonWidth > 0
+                ? chatupgrade$attachmentButtonWidth
+                : chatupgrade$buttonWidthFor(Component.translatable("chatupgrade.input.button.attachment"));
+        return 4 + width + 6;
     }
 
     @Unique

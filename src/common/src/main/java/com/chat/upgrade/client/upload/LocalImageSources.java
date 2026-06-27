@@ -36,6 +36,10 @@ public final class LocalImageSources {
             "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm");
     private static final Set<String> VIDEO_EXTENSIONS = Set.of(
             "mp4", "webm", "mov", "mkv", "m4v", "avi");
+    private static final Set<String> ATTACHMENT_EXTENSIONS = Set.of(
+            "png", "apng", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "jfif", "ico",
+            "ogg", "wav", "mp3", "flac", "m4a", "aac", "opus", "webm",
+            "mp4", "mov", "mkv", "m4v", "avi");
 
     private LocalImageSources() {}
 
@@ -86,6 +90,20 @@ public final class LocalImageSources {
         }
         String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
         return extensions.contains(ext);
+    }
+
+    public static Optional<Path> pickAttachmentWithFileChooser() {
+        if (GraphicsEnvironment.isHeadless()) {
+            ChatUpgrade.LOGGER.warn(I18n.get("chatupgrade.log.awt_headless_with_hint"));
+            return Optional.empty();
+        }
+        try {
+            Toolkit.getDefaultToolkit();
+        } catch (Throwable t) {
+            ChatUpgrade.LOGGER.warn("ChatUpgrade: AWT toolkit unavailable: {}", t.getMessage());
+            return Optional.empty();
+        }
+        return pickWithFileDialog(I18n.get("chatupgrade.file_chooser.attachment.title"), ATTACHMENT_EXTENSIONS);
     }
 
     /**

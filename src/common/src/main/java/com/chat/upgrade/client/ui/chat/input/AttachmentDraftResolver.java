@@ -53,6 +53,14 @@ public final class AttachmentDraftResolver {
         }
     }
 
+    public static ResolveResult pickFile() {
+        Optional<Path> picked = LocalImageSources.pickAttachmentWithFileChooser();
+        if (picked.isEmpty()) {
+            return ResolveResult.message(Component.translatable("chatupgrade.upload.no_file_picked").withStyle(ChatFormatting.GRAY));
+        }
+        return fromFile(picked.get(), AttachmentDraft.Source.FILE_PICKER, Optional.empty());
+    }
+
     public static ResolveResult pickFile(InlineResourceType type) {
         Optional<Path> picked = switch (type) {
             case IMAGE -> LocalImageSources.pickImageWithFileChooser();
@@ -226,11 +234,35 @@ public final class AttachmentDraftResolver {
         if (IMAGE_EXTENSIONS.contains(ext)) {
             return Optional.of(InlineResourceType.IMAGE);
         }
-        if (AUDIO_EXTENSIONS.contains(ext)) {
+        boolean audioByExtension = AUDIO_EXTENSIONS.contains(ext);
+        boolean videoByExtension = VIDEO_EXTENSIONS.contains(ext);
+        if (audioByExtension && videoByExtension) {
+            Optional<InlineResourceType> probed = inferAmbiguousMediaType(file);
+            return probed.isPresent() ? probed : Optional.of(InlineResourceType.VIDEO);
+        }
+        if (videoByExtension) {
+            return Optional.of(InlineResourceType.VIDEO);
+        }
+        if (audioByExtension) {
             return Optional.of(InlineResourceType.AUDIO);
         }
-        if (VIDEO_EXTENSIONS.contains(ext)) {
-            return Optional.of(InlineResourceType.VIDEO);
+        return Optional.empty();
+    }
+
+    private static Optional<InlineResourceType> inferAmbiguousMediaType(Path file) {
+        try {
+            String probed = Files.probeContentType(file);
+            if (probed == null || probed.isBlank()) {
+                return Optional.empty();
+            }
+            String lower = probed.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("video/")) {
+                return Optional.of(InlineResourceType.VIDEO);
+            }
+            if (lower.startsWith("audio/")) {
+                return Optional.of(InlineResourceType.AUDIO);
+            }
+        } catch (IOException ignored) {
         }
         return Optional.empty();
     }
