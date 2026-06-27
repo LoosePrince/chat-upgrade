@@ -1,191 +1,494 @@
-# Automatically build the project and run any configured tests for every push
-# and submitted pull request. This can help catch issues that only occur on
-# certain platforms or Java versions, and provides a first line of defence
-# against bad commits.
+# Builds only the Stonecutter targets affected by source changes.
+# Release commits use the first commit-message line as the public version and
+# the following bullet list as the target selector set.
 
 name: build
+
 on:
   push:
     branches:
       - main
     paths:
-      - build.gradle
+      - src/**
+      - buildSrc/**
+      - gradle/**
+      - versions/**
+      - '*.gradle.kts'
       - gradle.properties
+      - gradlew
+      - gradlew.bat
       - .github/workflows/build.yml
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, for example v2.1.0. Leave empty for build-only.'
+        required: false
+        type: string
+      selectors:
+        description: 'Release targets: all, 26.1-fabric, 26.1-all, all-fabric. Comma or newline separated.'
+        required: false
+        type: string
 
 permissions:
   contents: write
 
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: checkout repository
-        uses: actions/checkout@v4
-      - name: validate gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
-      - name: setup jdk
-        uses: actions/setup-java@v4
-        with:
-          java-version: '25'
-          distribution: 'microsoft'
-      - name: make gradle wrapper executable
-        run: chmod +x ./gradlew
-      - name: build
-        run: ./gradlew build -PembedFfmpegNatives=false
-      - name: capture build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-jars
-          path: build/libs/
+env:
+  MODRINTH_PROJECT_ID: Af5aD8GN
 
-  release:
+jobs:
+  prepare:
     runs-on: ubuntu-24.04
-    needs: build
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    outputs:
+      build_count: ${{ steps.plan.outputs.build_count }}
+      build_matrix: ${{ steps.plan.outputs.build_matrix }}
+      release_count: ${{ steps.plan.outputs.release_count }}
+      release_matrix: ${{ steps.plan.outputs.release_matrix }}
+      is_release: ${{ steps.plan.outputs.is_release }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      release_version: ${{ steps.plan.outputs.release_version }}
+      release_title: ${{ steps.plan.outputs.release_title }}
+      changelog: ${{ steps.plan.outputs.changelog }}
     steps:
       - name: checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: plan target matrix
+        id: plan
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+          DISPATCH_SELECTORS: ${{ inputs.selectors }}
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          def git(*args: str) -> str:
+              return subprocess.check_output(["git", *args], text=True, encoding="utf-8", errors="replace").strip()
+
+          def git_lines(*args: str) -> list[str]:
+              output = git(*args)
+              return [line for line in output.splitlines() if line]
+
+          def output(name: str, value: str) -> None:
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  if "\n" in value:
+                      marker = f"EOF_{name}"
+                      print(f"{name}<<{marker}", file=fh)
+                      print(value, file=fh)
+                      print(marker, file=fh)
+                  else:
+                      print(f"{name}={value}", file=fh)
+
+          def fail(message: str) -> None:
+              print(f"::error::{message}", file=sys.stderr)
+              sys.exit(1)
+
+          def discover_targets() -> list[dict[str, str]]:
+              records: list[dict[str, str]] = []
+              settings_file = Path("settings.gradle.kts")
+              if settings_file.exists():
+                  settings = settings_file.read_text(encoding="utf-8")
+                  for match in re.finditer(r'mc\("([^"]+)"\s*,\s*([^)]*)\)', settings):
+                      loader = match.group(1)
+                      versions = re.findall(r'"([^"]+)"', match.group(2))
+                      for mc in versions:
+                          records.append({
+                              "target": f"{mc}-{loader}",
+                              "mc": mc,
+                              "loader": loader,
+                              "loader_label": "NeoForge" if loader == "neoforge" else loader.capitalize(),
+                          })
+
+              if not records:
+                  for target_dir in sorted(Path("versions").iterdir() if Path("versions").exists() else []):
+                      if not target_dir.is_dir() or not (target_dir / "gradle.properties").exists():
+                          continue
+                      target = target_dir.name
+                      if "-" not in target:
+                          continue
+                      mc, loader = target.rsplit("-", 1)
+                      records.append({
+                          "target": target,
+                          "mc": mc,
+                          "loader": loader,
+                          "loader_label": "NeoForge" if loader == "neoforge" else loader.capitalize(),
+                      })
+
+              if not records:
+                  fail("No Stonecutter targets found in settings.gradle.kts or versions/*/gradle.properties.")
+              unique = {record["target"]: record for record in records}
+              return [unique[target] for target in sorted(unique)]
+
+          def matrix(records: list[dict[str, str]]) -> str:
+              return json.dumps({"include": records}, separators=(",", ":"))
+
+          def selectors_from_text(text: str) -> list[str]:
+              selectors: list[str] = []
+              for raw in re.split(r"[\n,]", text):
+                  item = raw.strip()
+                  if not item:
+                      continue
+                  if item.startswith("-"):
+                      item = item[1:].strip()
+                  if item:
+                      selectors.append(item)
+              return selectors
+
+          def expand_selectors(selectors: list[str], records: list[dict[str, str]]) -> list[dict[str, str]]:
+              by_target = {record["target"]: record for record in records}
+              selected: dict[str, dict[str, str]] = {}
+
+              for selector in selectors:
+                  normalized = selector.strip().lower()
+                  if normalized.startswith("-"):
+                      normalized = normalized[1:].strip()
+                  if not normalized:
+                      continue
+
+                  matches: list[dict[str, str]] = []
+                  if normalized == "all":
+                      matches = records
+                  elif normalized in by_target:
+                      matches = [by_target[normalized]]
+                  elif normalized.endswith("-all"):
+                      mc = normalized.removesuffix("-all")
+                      matches = [record for record in records if record["mc"] == mc]
+                  elif normalized.startswith("all-"):
+                      loader = normalized.removeprefix("all-")
+                      matches = [record for record in records if record["loader"] == loader]
+                  else:
+                      fail(f"Unknown release selector: {selector}")
+
+                  if not matches:
+                      fail(f"Release selector matched no target: {selector}")
+                  for record in matches:
+                      selected[record["target"]] = record
+
+              if not selected:
+                  fail("Release version was provided, but no release selectors were provided.")
+              return [selected[target] for target in sorted(selected)]
+
+          def changed_files() -> list[str]:
+              event_name = os.environ.get("EVENT_NAME", "")
+              before = os.environ.get("BEFORE_SHA", "")
+              head = os.environ.get("HEAD_SHA", "HEAD")
+              zero = "0" * 40
+
+              if event_name == "push" and before and before != zero:
+                  return git_lines("diff", "--name-only", before, head)
+              if subprocess.run(["git", "rev-parse", "--verify", "HEAD^"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                  return git_lines("diff", "--name-only", "HEAD^", "HEAD")
+              return git_lines("ls-files")
+
+          def infer_build_targets(files: list[str], records: list[dict[str, str]]) -> list[dict[str, str]]:
+              selected: dict[str, dict[str, str]] = {}
+
+              def add_all() -> None:
+                  for record in records:
+                      selected[record["target"]] = record
+
+              def add_loader(loader: str) -> None:
+                  for record in records:
+                      if record["loader"] == loader:
+                          selected[record["target"]] = record
+
+              def add_mc(mc: str) -> None:
+                  for record in records:
+                      if record["mc"] == mc:
+                          selected[record["target"]] = record
+
+              def add_target(target: str) -> None:
+                  for record in records:
+                      if record["target"] == target:
+                          selected[target] = record
+
+              for path in files:
+                  path = path.replace("\\", "/")
+
+                  if path.startswith("src/common/"):
+                      add_all()
+                  elif path.startswith("src/fabric/"):
+                      add_loader("fabric")
+                  elif path.startswith("src/neoforge/"):
+                      add_loader("neoforge")
+                  elif path in {"build-fabric.gradle.kts"}:
+                      add_loader("fabric")
+                  elif path in {"build-neoforge.gradle.kts"}:
+                      add_loader("neoforge")
+                  elif path in {"settings.gradle.kts", "stonecutter.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat"}:
+                      add_all()
+                  elif path.endswith(".gradle.kts") and "/" not in path:
+                      add_all()
+                  elif path.startswith("buildSrc/") or path.startswith("gradle/wrapper/") or path == ".github/workflows/build.yml":
+                      add_all()
+                  elif path.startswith("gradle/targets/") and path.endswith(".properties"):
+                      add_mc(Path(path).stem)
+                  elif path.startswith("versions/"):
+                      parts = path.split("/")
+                      if len(parts) >= 2:
+                          add_target(parts[1])
+
+              return [selected[target] for target in sorted(selected)]
+
+          def parse_release(records: list[dict[str, str]]) -> tuple[bool, str, str, list[dict[str, str]]]:
+              event_name = os.environ.get("EVENT_NAME", "")
+              dispatch_version = os.environ.get("DISPATCH_VERSION", "").strip()
+              dispatch_selectors = os.environ.get("DISPATCH_SELECTORS", "").strip()
+
+              if event_name == "workflow_dispatch":
+                  if not dispatch_version and not dispatch_selectors:
+                      return False, "", "", []
+                  if not dispatch_version or not dispatch_selectors:
+                      fail("workflow_dispatch release requires both version and selectors.")
+                  tag = dispatch_version
+                  selectors = selectors_from_text(dispatch_selectors)
+              else:
+                  commit_message = git("log", "-1", "--format=%B")
+                  lines = commit_message.splitlines()
+                  subject = lines[0].strip() if lines else ""
+                  if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", subject):
+                      return False, "", "", []
+                  tag = subject
+                  selectors = selectors_from_text("\n".join(lines[1:]))
+
+              if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+                  fail(f"Invalid release version: {tag}")
+              release_version = tag.removeprefix("v")
+              return True, tag, release_version, expand_selectors(selectors, records)
+
+          def build_changelog(tag: str) -> str:
+              previous_tags = [item for item in git_lines("tag", "--list", "v*", "--sort=-v:refname") if item != tag]
+              previous_tag = previous_tags[0] if previous_tags else ""
+              commit_range = f"{previous_tag}..HEAD" if previous_tag else "HEAD"
+              hashes = git_lines("rev-list", "--no-merges", commit_range)
+              lines: list[str] = []
+              for commit_hash in hashes:
+                  first_line = git("show", "-s", "--format=%B", commit_hash).splitlines()[0].strip()
+                  first_line = first_line.split(" - ", 1)[0].strip()
+                  if not first_line or first_line == tag or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", first_line):
+                      continue
+                  lines.append(f"- {first_line} ({commit_hash})")
+              if lines:
+                  return "\n".join(lines)
+              if previous_tag:
+                  return f"- chore: release update ({os.environ.get('HEAD_SHA', 'HEAD')})"
+              return f"- chore: initial release ({os.environ.get('HEAD_SHA', 'HEAD')})"
+
+          targets = discover_targets()
+          is_release, release_tag, release_version, release_targets = parse_release(targets)
+          build_targets = release_targets if is_release else infer_build_targets(changed_files(), targets)
+          changelog = build_changelog(release_tag) if is_release else ""
+
+          output("build_count", str(len(build_targets)))
+          output("build_matrix", matrix(build_targets))
+          output("release_count", str(len(release_targets)))
+          output("release_matrix", matrix(release_targets))
+          output("is_release", "true" if is_release else "false")
+          output("release_tag", release_tag)
+          output("release_version", release_version)
+          output("release_title", release_tag)
+          output("changelog", changelog)
+
+          print(f"Release: {is_release}")
+          print(f"Build targets: {', '.join(record['target'] for record in build_targets) or '(none)'}")
+          if is_release:
+              print(f"Release targets: {', '.join(record['target'] for record in release_targets)}")
+          PY
+
+  build:
+    runs-on: ubuntu-24.04
+    needs: prepare
+    if: needs.prepare.outputs.build_count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
       - name: setup jdk
         uses: actions/setup-java@v4
         with:
           java-version: '25'
           distribution: 'microsoft'
-      - name: download build artifacts
+
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: build target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          IS_RELEASE: ${{ needs.prepare.outputs.is_release }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
+        run: |
+          args=(":${TARGET}:build" "-PembedFfmpegNatives=false")
+          if [[ "$IS_RELEASE" == "true" ]]; then
+            args+=("-Pmod.version=${RELEASE_VERSION}")
+          fi
+          ./gradlew "${args[@]}"
+
+      - name: collect target jar
+        id: jar
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          IS_RELEASE: ${{ needs.prepare.outputs.is_release }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          python3 <<'PY'
+          import glob
+          import os
+          import shutil
+          import sys
+          from pathlib import Path
+
+          target = os.environ["TARGET"]
+          is_release = os.environ.get("IS_RELEASE") == "true"
+          release_tag = os.environ.get("RELEASE_TAG", "snapshot")
+          jars = sorted(glob.glob(f"versions/{target}/build/libs/*.jar"))
+          candidates = [
+              jar for jar in jars
+              if not any(jar.endswith(suffix) for suffix in ("-sources.jar", "-dev.jar", "-javadoc.jar"))
+          ]
+          if len(candidates) != 1:
+              print(f"Expected exactly one publishable jar for {target}, got {len(candidates)}: {candidates}", file=sys.stderr)
+              sys.exit(1)
+
+          out_dir = Path("dist") / target
+          out_dir.mkdir(parents=True, exist_ok=True)
+          asset_name = f"ChatUpgrade-{release_tag}-{target}.jar" if is_release else f"ChatUpgrade-{target}.jar"
+          out_file = out_dir / asset_name
+          shutil.copy2(candidates[0], out_file)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              print(f"jar={out_file}", file=fh)
+          print(out_file)
+          PY
+
+      - name: capture target artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-jar-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/*.jar
+          if-no-files-found: error
+
+  github-release:
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+      - build
+    if: needs.prepare.outputs.is_release == 'true'
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: download target artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-jars
-          path: build/libs
-      - name: check version changed
-        id: version_changed
+          pattern: release-jar-*
+          path: dist
+          merge-multiple: true
+
+      - name: create or update github release
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          RELEASE_TITLE: ${{ needs.prepare.outputs.release_title }}
+          RELEASE_CHANGELOG: ${{ needs.prepare.outputs.changelog }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -Fxq "gradle.properties"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          diff_content="$(git diff -U0 "${{ github.event.before }}" "${{ github.sha }}" -- gradle.properties)"
-          if printf '%s' "$diff_content" | grep -Eq "^[+-](minecraft_version|mod_version)="; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: compute release metadata
-        id: meta
-        if: steps.version_changed.outputs.changed == 'true'
-        shell: bash
-        run: |
-          minecraft_version="$(awk -F= '/^minecraft_version=/{print $2}' gradle.properties)"
-          mod_version="$(awk -F= '/^mod_version=/{print $2}' gradle.properties)"
-          tag="v${minecraft_version}_fabric-${mod_version}"
-          title="${minecraft_version}_fabric-${mod_version}"
-          prev_tag="$(git tag --list 'v*_fabric-*' --sort=-v:refname | awk -v t="$tag" '$0 != t { print; exit }')"
           body_file="$RUNNER_TEMP/release_body.md"
-          range=""
-          if [[ -n "$prev_tag" ]]; then
-            range="${prev_tag}..HEAD"
+          printf '%s\n' "$RELEASE_CHANGELOG" > "$body_file"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$body_file"
           else
-            range="HEAD"
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$body_file"
           fi
 
-          : > "$body_file"
-          while IFS= read -r commit_hash; do
-            commit_first_line="$(git show -s --format=%B "$commit_hash" | head -n 1)"
-            commit_first_line="${commit_first_line%$'\r'}"
-            commit_first_line="${commit_first_line%% - *}"
-            commit_first_line="$(echo "$commit_first_line" | sed 's/[[:space:]]\+$//')"
-            if [[ -n "$commit_first_line" ]]; then
-              echo "- ${commit_first_line} (${commit_hash})" >> "$body_file"
-            fi
-          done < <(git rev-list --no-merges "$range")
-
-          if [[ ! -s "$body_file" ]]; then
-            if [[ -n "$prev_tag" ]]; then
-              echo "- chore: release update (${GITHUB_SHA})" > "$body_file"
-            else
-              echo "- chore: initial release (${GITHUB_SHA})" > "$body_file"
-            fi
-          fi
-
-          asset_file=""
-          for jar in build/libs/*.jar; do
-            if [[ "$jar" != *-sources.jar ]]; then
-              asset_file="$jar"
-              break
-            fi
-          done
-          if [[ -z "$asset_file" ]]; then
-            echo "No release jar found (excluding -sources)." >&2
+          shopt -s nullglob
+          jars=(dist/*.jar)
+          if (( ${#jars[@]} == 0 )); then
+            echo "No release jars found in dist/." >&2
             exit 1
           fi
+          gh release upload "$RELEASE_TAG" "${jars[@]}" --clobber
 
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "title=$title" >> "$GITHUB_OUTPUT"
-          echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
-          echo "asset_file=$asset_file" >> "$GITHUB_OUTPUT"
-          echo "minecraft_version=$minecraft_version" >> "$GITHUB_OUTPUT"
-          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
-          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
-          cat "$body_file" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-      - name: check github release exists
-        if: steps.version_changed.outputs.changed == 'true'
-        id: release_exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+  publish-modrinth:
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+      - build
+      - github-release
+    if: needs.prepare.outputs.is_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.release_matrix) }}
+    steps:
+      - name: download target artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-jar-${{ matrix.target }}
+          path: dist
+
+      - name: check modrinth version exists
+        id: modrinth_version
         shell: bash
+        env:
+          PROJECT_ID: ${{ env.MODRINTH_PROJECT_ID }}
+          VERSION_NUMBER: ${{ needs.prepare.outputs.release_version }}+${{ matrix.target }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          project_id = os.environ["PROJECT_ID"]
+          version_number = os.environ["VERSION_NUMBER"]
+          request = urllib.request.Request(
+              f"https://api.modrinth.com/v2/project/{project_id}/version",
+              headers={"User-Agent": "chat-upgrade-ci/1.0"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  versions = json.load(response)
+          except Exception as exc:
+              print(f"Failed to query Modrinth versions: {exc}", file=sys.stderr)
+              sys.exit(1)
+
+          exists = any(item.get("version_number") == version_number for item in versions)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              print(f"exists={'true' if exists else 'false'}", file=fh)
+          print(f"Modrinth version {version_number} exists: {exists}")
+          PY
+
       - name: publish to modrinth
-        if: steps.version_changed.outputs.changed == 'true' && steps.release_exists.outputs.exists == 'false'
+        if: steps.modrinth_version.outputs.exists == 'false'
         uses: Kira-NT/mc-publish@v3.3.0
         with:
-          files: ${{ steps.meta.outputs.asset_file }}
-          name: ${{ steps.meta.outputs.title }}
-          version: ${{ steps.meta.outputs.mod_version }}
+          files: dist/*.jar
+          name: ${{ needs.prepare.outputs.release_version }} for ${{ matrix.mc }} ${{ matrix.loader_label }}
+          version: ${{ needs.prepare.outputs.release_version }}+${{ matrix.target }}
           version-type: release
-          changelog: ${{ steps.meta.outputs.changelog }}
-          loaders: fabric
-          game-versions: ${{ steps.meta.outputs.minecraft_version }}
-          modrinth-id: Af5aD8GN
+          changelog: ${{ needs.prepare.outputs.changelog }}
+          loaders: ${{ matrix.loader }}
+          game-versions: ${{ matrix.mc }}
+          modrinth-id: ${{ env.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_API_TOKEN }}
-      - name: create or update github release
-        if: steps.version_changed.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
-          RELEASE_TITLE: ${{ steps.meta.outputs.title }}
-          RELEASE_BODY_FILE: ${{ steps.meta.outputs.body_file }}
-          RELEASE_ASSET_FILE: ${{ steps.meta.outputs.asset_file }}
-        shell: bash
-        run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$RELEASE_BODY_FILE"
-            while IFS= read -r asset_name; do
-              if [[ "$asset_name" == *.jar && "$asset_name" != *-sources.jar ]]; then
-                gh release delete-asset "$RELEASE_TAG" "$asset_name" --yes
-              fi
-            done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-            gh release upload "$RELEASE_TAG" "$RELEASE_ASSET_FILE" --clobber
-          else
-            gh release create "$RELEASE_TAG" "$RELEASE_ASSET_FILE" --title "$RELEASE_TITLE" --notes-file "$RELEASE_BODY_FILE"
-          fi
