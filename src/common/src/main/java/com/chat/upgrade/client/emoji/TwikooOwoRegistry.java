@@ -1,39 +1,39 @@
 package com.chat.upgrade.client.emoji;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.chat.upgrade.ChatUpgrade;
-import com.chat.upgrade.client.media.MediaFetchSupport;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 public final class TwikooOwoRegistry {
-    private static final String OWO_JSON_URL = "https://looseprince.github.io/Twikoo-Magic/owo.json";
-    private static final long CACHE_TTL_MS = TimeUnit.MINUTES.toMillis(10);
+    private static final long REFRESH_THROTTLE_MS = TimeUnit.MINUTES.toMillis(10);
 
-    private static final AtomicReference<Map<String, String>> TOKEN_TO_ICON = new AtomicReference<>(Map.of());
-    private static volatile long lastRefreshAtMs = 0L;
+    private static final AtomicReference<EmojiCatalog> CATALOG = new AtomicReference<>(EmojiCatalog.empty());
+    private static volatile boolean localCacheLoaded = false;
+    private static volatile long lastRefreshAttemptAtMs = 0L;
     private static volatile CompletableFuture<Void> inFlightRefresh;
 
     private TwikooOwoRegistry() {
     }
 
-    public static String resolveIconByToken(String token) {
-        if (token == null || token.isBlank()) {
-            return null;
-        }
+    public static @Nullable String resolveIconByToken(String token) {
+        EmojiCatalog.Item item = catalog().itemByToken(token);
+        return item == null ? null : item.loaderUrl();
+    }
+
+    public static EmojiCatalog catalog() {
+        ensureLocalCacheLoaded();
         refreshIfExpired();
-        return TOKEN_TO_ICON.get().get(token);
+        return CATALOG.get();
     }
 
     public static void refreshIfExpired() {
+        ensureLocalCacheLoaded();
         long now = System.currentTimeMillis();
-        if (now - lastRefreshAtMs <= CACHE_TTL_MS && !TOKEN_TO_ICON.get().isEmpty()) {
+        if (now - lastRefreshAttemptAtMs <= REFRESH_THROTTLE_MS) {
             return;
         }
         refreshAsync();
@@ -49,6 +49,7 @@ public final class TwikooOwoRegistry {
             if (existing != null && !existing.isDone()) {
                 return;
             }
+            lastRefreshAttemptAtMs = System.currentTimeMillis();
             inFlightRefresh = CompletableFuture.runAsync(TwikooOwoRegistry::doRefresh)
                     .whenComplete((v, t) -> {
                         synchronized (TwikooOwoRegistry.class) {
@@ -59,58 +60,38 @@ public final class TwikooOwoRegistry {
     }
 
     public static void clearRuntimeState() {
-        TOKEN_TO_ICON.set(Map.of());
-        lastRefreshAtMs = 0L;
+        CATALOG.set(EmojiCatalog.empty());
+        localCacheLoaded = false;
+        lastRefreshAttemptAtMs = 0L;
         synchronized (TwikooOwoRegistry.class) {
             inFlightRefresh = null;
         }
     }
 
-    private static void doRefresh() {
-        var response = MediaFetchSupport.sendGet(OWO_JSON_URL, 15, "application/json");
-        if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
+    private static void ensureLocalCacheLoaded() {
+        if (localCacheLoaded) {
             return;
         }
-        try {
-            MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, 2 * 1024 * 1024);
-            String json = new String(payload.body(), java.nio.charset.StandardCharsets.UTF_8);
-            Map<String, String> parsed = parseMapping(json);
-            if (!parsed.isEmpty()) {
-                TOKEN_TO_ICON.set(Map.copyOf(parsed));
-                lastRefreshAtMs = System.currentTimeMillis();
-                ChatUpgrade.LOGGER.info("chat-upgrade: loaded owo mapping size={}", parsed.size());
+        synchronized (TwikooOwoRegistry.class) {
+            if (localCacheLoaded) {
+                return;
             }
-        } catch (Exception e) {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to refresh owo mapping: {}", e.getMessage());
+            EmojiCatalog cached = EmojiCatalogStore.loadCached();
+            if (!cached.isEmpty()) {
+                CATALOG.set(cached);
+            }
+            localCacheLoaded = true;
         }
     }
 
-    private static Map<String, String> parseMapping(String json) {
-        Map<String, String> out = new HashMap<>();
-        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        for (Map.Entry<String, JsonElement> groupEntry : root.entrySet()) {
-            JsonObject group = groupEntry.getValue().getAsJsonObject();
-            JsonElement containerElement = group.get("container");
-            if (containerElement == null || !containerElement.isJsonArray()) {
-                continue;
-            }
-            for (JsonElement itemElement : containerElement.getAsJsonArray()) {
-                if (!itemElement.isJsonObject()) {
-                    continue;
-                }
-                JsonObject item = itemElement.getAsJsonObject();
-                JsonElement textElement = item.get("text");
-                JsonElement iconElement = item.get("icon");
-                if (textElement == null || iconElement == null) {
-                    continue;
-                }
-                String text = textElement.getAsString();
-                String icon = iconElement.getAsString();
-                if (!text.isBlank() && !icon.isBlank()) {
-                    out.put(text, icon);
-                }
-            }
+    private static void doRefresh() {
+        EmojiCatalog online = EmojiCatalogStore.fetchOnline();
+        if (online.isEmpty()) {
+            return;
         }
-        return out;
+        CATALOG.set(online);
+        EmojiCatalogStore.saveCached(online);
+        ChatUpgrade.LOGGER.info("chat-upgrade: loaded emoji catalog groups={} items={}",
+                online.groups().size(), online.itemCount());
     }
 }

@@ -13,6 +13,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.emoji.EmojiImageCache;
 import com.chat.upgrade.client.media.MediaFetchSupport;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
@@ -158,6 +159,10 @@ public final class ImageLoader {
     }
 
     private static void startLoad(String url, ImageEntry entry) {
+        if (EmojiImageCache.isEmojiLoaderUrl(url)) {
+            startEmojiLoad(url, entry);
+            return;
+        }
         if (ServerMediaClient.isServerMediaUrl(url)) {
             if (!ServerMediaClient.capability().enabled()) {
                 markFailed(url, entry);
@@ -200,6 +205,44 @@ public final class ImageLoader {
         }).exceptionally(e -> {
             ChatUpgrade.LOGGER.warn("chat-upgrade: unexpected error loading {}: {}", url, e.getMessage());
             markFailed(url, entry);
+            return null;
+        });
+    }
+
+    private static void startEmojiLoad(String url, ImageEntry entry) {
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return EmojiImageCache.readOrDownload(url, ChatUpgradeConfig.get().maxReceiveBytes);
+            } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
+                throw e;
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to read emoji image cache {}: {}", url, e.getMessage());
+                return Optional.<EmojiImageCache.CachedPayload>empty();
+            }
+        }).thenAccept(payloadOpt -> {
+            if (payloadOpt.isEmpty()) {
+                markFailed(url, entry);
+                return;
+            }
+            EmojiImageCache.CachedPayload payload = payloadOpt.get();
+            byte[] body = payload.body();
+            entry.setTransferMetadata(body.length, payload.contentType(), payload.md5Hex());
+            entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
+            try {
+                decodeAndSchedule(url, entry, body, false);
+            } catch (Throwable t) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode emoji image {}: {} [{}]",
+                        url, t.getMessage(), t.getClass().getName());
+                markFailed(url, entry);
+            }
+        }).exceptionally(e -> {
+            if (e.getCause() instanceof MediaFetchSupport.ResponseBodyTooLarge
+                    || e instanceof MediaFetchSupport.ResponseBodyTooLarge) {
+                markFailedOversize(url, entry);
+            } else {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: unexpected error loading emoji image {}: {}", url, e.getMessage());
+                markFailed(url, entry);
+            }
             return null;
         });
     }

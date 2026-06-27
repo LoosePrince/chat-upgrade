@@ -18,6 +18,7 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentComposerState;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraftResolver;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
+import com.chat.upgrade.client.ui.chat.input.EmojiPickerPopover;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -29,6 +30,7 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 @Mixin(ChatScreen.class)
@@ -61,6 +63,15 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     private int chatupgrade$attachmentButtonWidth;
 
     @Unique
+    private Button chatupgrade$emojiButton;
+
+    @Unique
+    private int chatupgrade$emojiButtonWidth;
+
+    @Unique
+    private final EmojiPickerPopover chatupgrade$emojiPopover = new EmojiPickerPopover();
+
+    @Unique
     private Button chatupgrade$clearButton;
 
     protected ChatScreenRichInputMixin(Component title) {
@@ -78,6 +89,14 @@ public abstract class ChatScreenRichInputMixin extends Screen {
                 .bounds(4, y, chatupgrade$attachmentButtonWidth, 16)
                 .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.attachment.tooltip")))
                 .build();
+        Component emojiLabel = Component.translatable("chatupgrade.input.button.emoji");
+        chatupgrade$emojiButtonWidth = chatupgrade$buttonWidthFor(emojiLabel);
+        chatupgrade$emojiButton = Button.builder(
+                emojiLabel,
+                button -> chatupgrade$toggleEmojiPopover())
+                .bounds(chatupgrade$emojiButtonX(), y, chatupgrade$emojiButtonWidth, 16)
+                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.emoji.tooltip")))
+                .build();
         chatupgrade$clearButton = Button.builder(
                 Component.translatable("chatupgrade.input.button.clear"),
                 button -> chatupgrade$clearDraft())
@@ -85,8 +104,68 @@ public abstract class ChatScreenRichInputMixin extends Screen {
                 .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.clear.tooltip")))
                 .build();
         this.addRenderableWidget(chatupgrade$attachmentButton);
+        this.addRenderableWidget(chatupgrade$emojiButton);
         this.addRenderableWidget(chatupgrade$clearButton);
         chatupgrade$refreshControls();
+    }
+
+    @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$closeEmojiPopoverOnEscape(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (chatupgrade$emojiPopover.isVisible() && event.isEscape()) {
+            chatupgrade$emojiPopover.close();
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseClicked(Lnet/minecraft/client/input/MouseButtonEvent;Z)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$handleEmojiPopoverMouseClick(
+            MouseButtonEvent event,
+            boolean doubleClick,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (!chatupgrade$emojiPopover.isVisible() || chatupgrade$isEmojiButtonClick(event.x(), event.y())) {
+            return;
+        }
+        EmojiPickerPopover.ClickResult result = chatupgrade$emojiPopover.mouseClicked(
+                event,
+                this.width,
+                this.height,
+                chatupgrade$emojiButtonX(),
+                chatupgrade$buttonRowY(),
+                chatupgrade$emojiButtonWidth());
+        if (result.insertionText() != null) {
+            chatupgrade$insertInputText(result.insertionText());
+        }
+        if (result.close()) {
+            chatupgrade$emojiPopover.close();
+        }
+        if (result.handled()) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseScrolled(DDDD)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$handleEmojiPopoverMouseScroll(
+            double mouseX,
+            double mouseY,
+            double scrollX,
+            double scrollY,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (chatupgrade$emojiPopover.mouseScrolled(
+                mouseX,
+                mouseY,
+                scrollY,
+                this.width,
+                this.height,
+                chatupgrade$emojiButtonX(),
+                chatupgrade$buttonRowY(),
+                chatupgrade$emojiButtonWidth())) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "removed()V", at = @At("HEAD"))
+    private void chatupgrade$closeEmojiPopoverOnRemoved(CallbackInfo ci) {
+        chatupgrade$emojiPopover.close();
     }
 
     @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
@@ -160,12 +239,22 @@ public abstract class ChatScreenRichInputMixin extends Screen {
             float partialTick,
             CallbackInfo ci) {
         chatupgrade$refreshControls();
+        int y = chatupgrade$buttonRowY();
+        chatupgrade$emojiPopover.render(
+                graphics,
+                this.font,
+                mouseX,
+                mouseY,
+                this.width,
+                this.height,
+                chatupgrade$emojiButtonX(),
+                y,
+                chatupgrade$emojiButtonWidth());
         Optional<AttachmentDraft> draftOpt = chatupgrade$attachmentState.draft();
         if (draftOpt.isEmpty()) {
             return;
         }
         AttachmentDraft draft = draftOpt.get();
-        int y = Math.max(2, this.height - 34);
         int x = chatupgrade$attachmentChipX();
         int right = Math.max(x + 24, this.width - 28);
         if (right <= x + 12) {
@@ -293,11 +382,49 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     }
 
     @Unique
-    private int chatupgrade$attachmentChipX() {
+    private int chatupgrade$buttonRowY() {
+        return Math.max(2, this.height - 34);
+    }
+
+    @Unique
+    private int chatupgrade$emojiButtonX() {
         int width = chatupgrade$attachmentButtonWidth > 0
                 ? chatupgrade$attachmentButtonWidth
                 : chatupgrade$buttonWidthFor(Component.translatable("chatupgrade.input.button.attachment"));
         return 4 + width + 6;
+    }
+
+    @Unique
+    private int chatupgrade$emojiButtonWidth() {
+        return chatupgrade$emojiButtonWidth > 0
+                ? chatupgrade$emojiButtonWidth
+                : chatupgrade$buttonWidthFor(Component.translatable("chatupgrade.input.button.emoji"));
+    }
+
+    @Unique
+    private int chatupgrade$attachmentChipX() {
+        return chatupgrade$emojiButtonX() + chatupgrade$emojiButtonWidth() + 6;
+    }
+
+    @Unique
+    private void chatupgrade$toggleEmojiPopover() {
+        chatupgrade$emojiPopover.toggle();
+    }
+
+    @Unique
+    private boolean chatupgrade$isEmojiButtonClick(double mouseX, double mouseY) {
+        int x = chatupgrade$emojiButtonX();
+        int y = chatupgrade$buttonRowY();
+        return mouseX >= x && mouseX < x + chatupgrade$emojiButtonWidth()
+                && mouseY >= y && mouseY < y + 16;
+    }
+
+    @Unique
+    private void chatupgrade$insertInputText(String text) {
+        if (input == null || text == null || text.isEmpty()) {
+            return;
+        }
+        input.insertText(text);
     }
 
     @Unique
