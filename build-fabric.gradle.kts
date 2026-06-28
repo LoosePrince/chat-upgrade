@@ -12,6 +12,7 @@ plugins {
 val minecraftTitle = mod.prop("mc_title")
 val loader = stonecutter.current.project.substringAfterLast('-') // "fabric"
 val javaVersion = mod.prop("java_version")
+val releaseTarget = mod.prop("release_target").toBoolean()
 val embedFfmpegNatives = (findProperty("embedFfmpegNatives") ?: "false").toString().toBoolean()
 
 version = "${mod.version}+$minecraftTitle"
@@ -115,9 +116,15 @@ tasks.processResources {
 
 // Collect the production jar into build/libs/<modversion>/fabric/ for convenience.
 // Unobfuscated Minecraft (26.x) uses non-remapping Loom: output is `jar`, not `remapJar`.
-tasks.register<Copy>("buildAndCollect") {
-    group = "build"
-    from(tasks.named("jar"))
-    into(rootProject.layout.buildDirectory.dir("libs/${mod.version}/$loader"))
-    dependsOn("build")
+if (releaseTarget) {
+    tasks.register<Copy>("buildAndCollect") {
+        group = "build"
+        from(tasks.named("jar"))
+        into(rootProject.layout.buildDirectory.dir("libs/${mod.version}/$loader"))
+        dependsOn("build")
+    }
+} else {
+    tasks.matching { it.name in setOf("jar", "sourcesJar", "remapJar", "remapSourcesJar") }.configureEach {
+        enabled = false
+    }
 }

@@ -3,12 +3,34 @@ import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.kotlin.dsl.getByType
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.File
+import java.util.Properties
 
 // Accessor to retrieve mod configuration properties defined in gradle.properties.
 val Project.mod: ModData get() = ModData(this)
 
-// Helper to retrieve a property from gradle.properties as a String.
-fun Project.prop(key: String): String? = findProperty(key)?.toString()
+// Helper to retrieve a property from the target first, then from root/user Gradle properties.
+// Stonecutter target directories are generated workspaces; Gradle does not reliably expose
+// versions/<target>/gradle.properties as project properties during every configuration path.
+fun Project.prop(key: String): String? = targetProp(key) ?: findProperty(key)?.toString()
+
+private fun Project.targetProp(key: String): String? {
+    if (this == rootProject) return null
+
+    val targetName = name
+    val targetVersion = targetName.substringBeforeLast('-', missingDelimiterValue = targetName)
+    val candidates = listOf(
+        rootProject.file("versions/$targetName/gradle.properties"),
+        rootProject.file("gradle/targets/$targetVersion.properties")
+    )
+
+    for (file in candidates) {
+        if (!file.isFile) continue
+        val properties = Properties()
+        file.inputStream().use(properties::load)
+        properties.getProperty(key)?.let { return it }
+    }
+    return null
+}
 
 // Replaces tokens in resource files (e.g. fabric.mod.json, neoforge.mods.toml) during build time.
 fun ProcessResources.properties(files: Iterable<String>, vararg properties: Pair<String, Any>) {

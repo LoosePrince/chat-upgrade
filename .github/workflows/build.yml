@@ -93,6 +93,31 @@ jobs:
               print(f"::error::{message}", file=sys.stderr)
               sys.exit(1)
 
+          def target_properties(mc: str) -> dict[str, str]:
+              properties_file = Path("gradle/targets") / f"{mc}.properties"
+              if not properties_file.exists():
+                  return {}
+
+              properties: dict[str, str] = {}
+              for raw_line in properties_file.read_text(encoding="utf-8").splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  properties[key.strip()] = value.strip()
+              return properties
+
+          def target_record(mc: str, loader: str) -> dict[str, str]:
+              properties = target_properties(mc)
+              return {
+                  "target": f"{mc}-{loader}",
+                  "mc": mc,
+                  "mc_title": properties.get("mod.mc_title", mc),
+                  "modrinth_game_versions": properties.get("mod.mc_targets", mc),
+                  "loader": loader,
+                  "loader_label": "NeoForge" if loader == "neoforge" else loader.capitalize(),
+              }
+
           def discover_targets() -> list[dict[str, str]]:
               records: list[dict[str, str]] = []
               settings_file = Path("settings.gradle.kts")
@@ -102,12 +127,7 @@ jobs:
                       loader = match.group(1)
                       versions = re.findall(r'"([^"]+)"', match.group(2))
                       for mc in versions:
-                          records.append({
-                              "target": f"{mc}-{loader}",
-                              "mc": mc,
-                              "loader": loader,
-                              "loader_label": "NeoForge" if loader == "neoforge" else loader.capitalize(),
-                          })
+                          records.append(target_record(mc, loader))
 
               if not records:
                   for target_dir in sorted(Path("versions").iterdir() if Path("versions").exists() else []):
@@ -117,12 +137,7 @@ jobs:
                       if "-" not in target:
                           continue
                       mc, loader = target.rsplit("-", 1)
-                      records.append({
-                          "target": target,
-                          "mc": mc,
-                          "loader": loader,
-                          "loader_label": "NeoForge" if loader == "neoforge" else loader.capitalize(),
-                      })
+                      records.append(target_record(mc, loader))
 
               if not records:
                   fail("No Stonecutter targets found in settings.gradle.kts or versions/*/gradle.properties.")
@@ -484,11 +499,12 @@ jobs:
         uses: Kira-NT/mc-publish@v3.3.0
         with:
           files: dist/*.jar
-          name: ${{ needs.prepare.outputs.release_version }} for ${{ matrix.mc }} ${{ matrix.loader_label }}
+          name: ${{ needs.prepare.outputs.release_version }} for ${{ matrix.mc_title }} ${{ matrix.loader_label }}
           version: ${{ needs.prepare.outputs.release_version }}+${{ matrix.target }}
           version-type: release
           changelog: ${{ needs.prepare.outputs.changelog }}
           loaders: ${{ matrix.loader }}
-          game-versions: ${{ matrix.mc }}
+          game-versions: ${{ matrix.modrinth_game_versions }}
+          game-version-filter: releases
           modrinth-id: ${{ env.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_API_TOKEN }}

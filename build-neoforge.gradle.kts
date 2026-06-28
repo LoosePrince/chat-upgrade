@@ -10,6 +10,7 @@ val minecraftTitle = mod.prop("mc_title")
 val loader = stonecutter.current.project.substringAfterLast('-') // "neoforge"
 val javaVersion = mod.prop("java_version")
 val projectName = project.name
+val releaseTarget = mod.prop("release_target").toBoolean()
 val embedFfmpegNatives = (findProperty("embedFfmpegNatives") ?: "false").toString().toBoolean()
 
 version = "${mod.version}+$minecraftTitle"
@@ -112,9 +113,15 @@ tasks.processResources {
 }
 
 // Collect the jar into build/libs/<modversion>/neoforge/ for convenience.
-tasks.register<Copy>("buildAndCollect") {
-    group = "build"
-    from(tasks.named("jar"))
-    into(rootProject.layout.buildDirectory.dir("libs/${mod.version}/$loader"))
-    dependsOn("build")
+if (releaseTarget) {
+    tasks.register<Copy>("buildAndCollect") {
+        group = "build"
+        from(tasks.named("jar"))
+        into(rootProject.layout.buildDirectory.dir("libs/${mod.version}/$loader"))
+        dependsOn("build")
+    }
+} else {
+    tasks.matching { it.name in setOf("jar", "sourcesJar", "javadocJar", "jarJar") }.configureEach {
+        enabled = false
+    }
 }
