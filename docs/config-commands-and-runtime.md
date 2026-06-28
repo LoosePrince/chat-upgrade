@@ -7,9 +7,9 @@
 | 项目 | 版本 |
 | --- | --- |
 | Minecraft | `26.1` / `26.2` |
-| 加载器 | Fabric（Loader `>= 0.18.6`）/ NeoForge `26.x` |
+| 加载器 | Fabric（26.1.x 使用 Loader `>=0.18.6`，26.2.x 使用 `>=0.19.3`）/ NeoForge `26.x` |
 | Java | `>= 25` |
-| Gradle | `>= 9.5.1` |
+| Gradle | Wrapper `9.5.1` |
 | 依赖坐标 | `gradle/targets/<version>.properties` |
 
 工程使用 **Stonecutter** 管理多版本目标；Fabric 侧用 **Fabric Loom 1.17**，NeoForge 侧用 **ModDevGradle**。公共逻辑在 `src/common`，经 `buildSrc` 预处理合并到各目标。
@@ -106,24 +106,24 @@ jps -l -v
 
 | 模式 | 说明 |
 | --- | --- |
-| `auto` | 服务端可用时优先服务端直传，否则第三方。 |
-| `server` | 强制服务端直传。 |
+| `auto` | 服务端声明可用时选择服务端直传，否则选择第三方。已选择服务端后如果上传失败，不会在同一次发送中再自动重试第三方。 |
+| `server` | 强制服务端直传；服务端能力或上传失败时直接失败，不自动回退第三方。 |
 | `third` | 强制第三方上传。 |
 
 ## 常用发送命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `/chatupgrade send <url> <name>` | 发送图片 URL。 |
-| `/chatupgrade sendaudio <url> <name>` | 发送音频 URL。 |
-| `/chatupgrade sendvideo <url> <name>` | 发送视频 URL。 |
-| `/chatupgrade upload folder <path> <name>` | 从本机路径上传图片并发送。 |
-| `/chatupgrade upload pick <name>` | 文件选择器选择图片并发送。 |
-| `/chatupgrade upload paste <name>` | 从剪贴板读取图片并发送。 |
-| `/chatupgrade uploadaudio folder <path> <name>` | 上传本地音频并发送。 |
-| `/chatupgrade uploadaudio pick <name>` | 文件选择器选择音频并发送。 |
-| `/chatupgrade uploadvideo folder <path> <name>` | 上传本地视频并发送。 |
-| `/chatupgrade uploadvideo pick <name>` | 文件选择器选择视频并发送。 |
+| `/chatupgrade send <url> [name]` | 发送图片 URL。 |
+| `/chatupgrade sendaudio <url> [name]` | 发送音频 URL。 |
+| `/chatupgrade sendvideo <url> [name]` | 发送视频 URL。 |
+| `/chatupgrade upload folder <path> [name]` | 从本机路径上传图片并发送。 |
+| `/chatupgrade upload pick [name]` | 文件选择器选择图片并发送。 |
+| `/chatupgrade upload paste [name]` | 从剪贴板读取图片并发送。 |
+| `/chatupgrade uploadaudio folder <path> [name]` | 上传本地音频并发送。 |
+| `/chatupgrade uploadaudio pick [name]` | 文件选择器选择音频并发送。 |
+| `/chatupgrade uploadvideo folder <path> [name]` | 上传本地视频并发送。 |
+| `/chatupgrade uploadvideo pick [name]` | 文件选择器选择视频并发送。 |
 
 `name` 多数情况下可省略，默认使用资源类型或文件名。
 
@@ -146,13 +146,13 @@ jps -l -v
 
 | 命令 | 说明 |
 | --- | --- |
-| `/chatupgrade plugin status` | 查看 FFmpeg / APNG 插件状态。 |
-| `/chatupgrade plugin load ffmpeg` | 手动加载 FFmpeg。 |
-| `/chatupgrade plugin load apng` | 手动加载 APNG 插件。 |
-| `/chatupgrade plugin load all` | 加载全部插件。 |
-| `/chatupgrade plugin download ffmpeg` | 重新下载 FFmpeg。 |
-| `/chatupgrade plugin download apng` | 重新下载 APNG 插件。 |
-| `/chatupgrade plugin download all` | 重新下载全部插件。 |
+| `/chatupgrade config plugin status` | 查看 FFmpeg / APNG 插件状态。 |
+| `/chatupgrade config plugin load ffmpeg` | 手动加载 FFmpeg。 |
+| `/chatupgrade config plugin load apng` | 手动加载 APNG 插件。 |
+| `/chatupgrade config plugin load all` | 加载全部插件。 |
+| `/chatupgrade config plugin download ffmpeg` | 重新下载 FFmpeg。 |
+| `/chatupgrade config plugin download apng` | 重新下载 APNG 插件。 |
+| `/chatupgrade config plugin download all` | 重新下载全部插件。 |
 
 ## 服务端配置
 

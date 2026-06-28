@@ -11,7 +11,7 @@
 
 </div>
 
-Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / 多加载器** 架构，同时支持 **Fabric** 与 **NeoForge**，目标版本 **26.1 / 26.2**（可向下/向上扩展）。
+Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / 多加载器** 架构，同时支持 **Fabric** 与 **NeoForge**。当前发布线覆盖 **Minecraft 26.1.x / 26.2.x**；工程内还保留 **26.1.1 / 26.1.2** 兼容检查目标，但这些目标不发布独立 jar。
 
 它保留原版聊天栏外壳，同时在默认 `TAKEOVER` 模式下接管聊天栏内容区，用自定义 `RichChatViewport` 渲染文本、行内表情、图片、音频播放器和视频播放器。服务端也安装本模组时，客户端可以把媒体直接上传到服务器，并通过结构化协议分发给其它客户端。
 
@@ -21,7 +21,7 @@ Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / �
 - **TAKEOVER 自定义渲染**：默认模式下，聊天栏内容区由自定义 viewport 渲染，支持可变高度、像素滚动、裁切、hover、点击和 tooltip。
 - **兼容文本模式**：`COMPAT_TEXT_VANILLA` 下，无附件纯文本尽量保留原版输入和显示链路，附件仍可走富媒体路径。
 - **结构化聊天协议**：新客户端优先发送结构化消息和附件 metadata；不支持结构化时降级到标准 bracket 文本。
-- **服务端媒体直传**：服务端启用后，客户端上传可生成 `chatupgrade://media/...`，其它客户端通过服务端拉取媒体字节。
+- **服务端媒体直传**：服务端启用后，客户端上传可生成 `chat-upgrade://media/<type>/<mediaId>`，其它客户端通过服务端拉取媒体字节。
 - **行内表情**：识别 `[:token]`，按 `owo.json` 映射渲染为同高图片。
 - **Bracket 协议兼容**：继续解析 `[[ChatUpgrade,url=...]]` 和图片场景下的 `[[CICode,...]]`，二者都是受支持的 bracket 协议格式。
 
@@ -45,16 +45,16 @@ Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / �
 
 | 命令 | 说明 |
 | --- | --- |
-| `/chatupgrade send <url> <name>` | 发送图片 URL。 |
-| `/chatupgrade sendaudio <url> <name>` | 发送音频 URL。 |
-| `/chatupgrade sendvideo <url> <name>` | 发送视频 URL。 |
-| `/chatupgrade upload pick <name>` | 选择图片并上传发送。 |
-| `/chatupgrade upload paste <name>` | 从剪贴板读取图片并上传发送。 |
-| `/chatupgrade uploadaudio pick <name>` | 选择音频并上传发送。 |
-| `/chatupgrade uploadvideo pick <name>` | 选择视频并上传发送。 |
+| `/chatupgrade send <url> [name]` | 发送图片 URL。 |
+| `/chatupgrade sendaudio <url> [name]` | 发送音频 URL。 |
+| `/chatupgrade sendvideo <url> [name]` | 发送视频 URL。 |
+| `/chatupgrade upload pick [name]` | 选择图片并上传发送。 |
+| `/chatupgrade upload paste [name]` | 从剪贴板读取图片并上传发送。 |
+| `/chatupgrade uploadaudio pick [name]` | 选择音频并上传发送。 |
+| `/chatupgrade uploadvideo pick [name]` | 选择视频并上传发送。 |
 | `/chatupgrade config uploadmode <auto/server/third>` | 切换上传路由。 |
 | `/chatupgrade config reload` | 重新读取客户端配置。 |
-| `/chatupgrade plugin status` | 查看 FFmpeg / APNG 插件状态。 |
+| `/chatupgrade config plugin status` | 查看 FFmpeg / APNG 插件状态。 |
 
 完整命令和配置说明见 [配置、命令与运行验证](./docs/config-commands-and-runtime.md)。
 
@@ -82,7 +82,7 @@ config/chat-upgrade/server-media.json
 | 音频 | 常见音频格式，实际解码能力取决于 FFmpeg。 |
 | 视频 | 常见视频格式，实际解码能力取决于 FFmpeg。 |
 
-音频和视频基于 **JavaCPP FFmpeg + OpenAL**。FFmpeg native 和 APNG 插件可由模组自动准备，也可通过 `/chatupgrade plugin ...` 命令检查或重新下载。
+音频和视频基于 **JavaCPP FFmpeg + OpenAL**。FFmpeg native 和 APNG 插件可由模组自动准备，也可通过 `/chatupgrade config plugin ...` 命令检查或重新下载。
 
 ## 技术文档
 
@@ -128,9 +128,9 @@ versions/      # Stonecutter 目标工作区（由源码生成）
 | 项目 | 版本 |
 | --- | --- |
 | Minecraft | `26.1` / `26.2` |
-| 加载器 | Fabric（Loader `>= 0.18.6`）/ NeoForge `26.x` |
+| 加载器 | Fabric（26.1.x 使用 Loader `>=0.18.6`，26.2.x 使用 `>=0.19.3`）/ NeoForge `26.x` |
 | Java | `>= 25` |
-| Gradle | `>= 9.5.1`（NeoForge ModDevGradle / Loom 1.17 要求） |
+| Gradle | Wrapper `9.5.1`（NeoForge ModDevGradle / Loom 1.17 要求） |
 | 依赖坐标 | 见 `gradle/targets/<version>.properties` |
 
 ## 构建

@@ -6,13 +6,14 @@
 
 ```mermaid
 flowchart TD
-    A[文件选择 / 剪贴板 / 命令 URL] --> B[AttachmentDraft]
-    B --> C[AttachmentSendController]
+    A[本地文件 / 剪贴板] --> B[AttachmentDraft 或上传命令]
+    U[命令 URL] --> I[bracket payload]
+    B --> C[AttachmentSendController / ChatUpgradeCommands]
     C --> D{UploadRouter}
     D --> E[第三方上传]
     D --> F[服务端直传]
     E --> G[外部 URL]
-    F --> H[chatupgrade://media/...]
+    F --> H[chat-upgrade://media/<type>/<mediaId>]
     G --> I[StructuredAttachment / bracket fallback]
     H --> I
     I --> J[聊天发送与服务端路由]
@@ -20,6 +21,8 @@ flowchart TD
     K --> L[ImageLoader / AudioLoader / VideoLoader]
     L --> M[RichChatViewport 渲染]
 ```
+
+本地文件和剪贴板会经过上传路由；`/chatupgrade send* <url>` 这类 URL 直发命令不会上传资源，而是直接生成 bracket payload 后进入聊天发送和服务端路由。
 
 ## 附件草稿
 
@@ -60,15 +63,17 @@ flowchart TD
 - `src/common/src/main/java/com/chat/upgrade/client/upload/ThirdPartyUploadProvider.java`
 - `src/common/src/main/java/com/chat/upgrade/client/upload/CatboxUploader.java`
 
+第三方上传当前由 `ThirdPartyUploadProvider` 委托给 `CatboxUploader`，实际请求的是 Litterbox API（`https://litterbox.catbox.moe/resources/internals/api.php`），保留 1 小时。
+
 上传模式：
 
 | 模式 | 行为 |
 | --- | --- |
-| `AUTO` | 服务端声明可用时优先服务端直传，否则第三方。 |
-| `SERVER` | 强制服务端直传。 |
+| `AUTO` | 服务端声明可用时选择服务端直传，否则选择第三方；已进入服务端上传后失败不会在同一次发送中再自动重试第三方。 |
+| `SERVER` | 强制服务端直传；服务端能力或上传失败时直接失败，不自动回退第三方。 |
 | `THIRD_PARTY` | 强制第三方上传。 |
 
-发送附件时会同时准备结构化附件和 bracket fallback。结构化路径失败时，仍可降级为 bracket 文本载荷。
+发送附件时会同时准备结构化附件和 bracket fallback。结构化消息发送不可用或发送失败时，客户端会退回到 bracket 文本发送；但这发生在“上传已经成功拿到 URL 之后”，不代表服务端上传失败会自动改走第三方上传。
 
 ## 服务端直传媒体
 
@@ -84,7 +89,7 @@ flowchart TD
 服务端安装并启用后，客户端可以上传媒体到服务器。上传成功后，聊天中的 URL 会变成：
 
 ```text
-chatupgrade://media/<mediaId>?t=<type>
+chat-upgrade://media/<type>/<mediaId>
 ```
 
 接收端看到该 URL 后，通过服务端 payload 请求媒体字节并渲染。
@@ -114,7 +119,7 @@ metadata 用于把附件 ID、媒体 ID、类型、显示名、fallback URL 关�
 它的作用：
 
 - 结构化聊天协议的基础。
-- `chatupgrade://media/...` 可以反查附件信息。
+- `chat-upgrade://media/<type>/<mediaId>` 可以反查附件信息。
 - 新客户端接收结构化消息时可以缓存附件信息。
 - bracket 文本解析时可以优先使用已缓存 metadata。
 

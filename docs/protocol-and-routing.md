@@ -40,7 +40,7 @@
 结构化附件描述图片、音频、视频等资源。它可以指向：
 
 - 外部 URL。
-- 服务端媒体 ID：`chatupgrade://media/...`。
+- 服务端媒体 ID：`chat-upgrade://media/<type>/<mediaId>`。
 - 附件 ID：用于 metadata 查询和缓存。
 
 ## Payload 分类
@@ -89,7 +89,7 @@ sequenceDiagram
     participant Target as 接收客户端
 
     Client->>Upload: 上传附件，可为第三方或服务端媒体
-    Upload-->>Client: 返回 URL 或 chatupgrade://media
+    Upload-->>Client: 返回 URL 或 chat-upgrade://media/<type>/<mediaId>
     Client->>Server: C2SStructuredChatMessage
     Client->>Server: C2SAttachMetadata 可选
     Server->>Route: 统一路由
@@ -162,4 +162,4 @@ COMPAT 下，无附件结构化纯文本会普通显示；附件仍进入富媒�
 - 服务端按每个接收端能力分发，不假设所有客户端都支持最新协议。
 - 服务端媒体有单文件、分块、总容量和 TTL 限制。
 - 客户端接收大小受 `maxReceiveBytes` 限制。
-- `chatupgrade://media/...` 只表示服务端媒体引用，不等同于外部 URL。
+- `chat-upgrade://media/<type>/<mediaId>` 只表示服务端媒体引用，不等同于外部 URL。

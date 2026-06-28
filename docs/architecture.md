@@ -141,7 +141,7 @@ sequenceDiagram
     participant Store as RichChatStateStore
 
     Draft->>Upload: 上传图片/音频/视频
-    Upload-->>Send: 返回 URL 或 chatupgrade://media
+    Upload-->>Send: 返回 URL 或 chat-upgrade://media/<type>/<mediaId>
     Send->>Server: 结构化消息 + bracket fallback
     Server->>Store: 接收端写入统一状态
 ```
