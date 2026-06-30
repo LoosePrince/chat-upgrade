@@ -7,16 +7,7 @@ run/
 *.class
 
 # Stonecutter generated workspaces (regenerated from src/)
-versions/*/build/
-versions/*/.gradle/
-
-# Offline verification harness artifacts
-tools/verify-fabric-26.1/cp/
-tools/verify-fabric-26.1/out/
-tools/verify-fabric-26.1/build/
-tools/verify-fabric-26.1/.gradle/
-tools/verify-fabric-26.1/run/
-tools/verify-fabric-26.1/sources*.txt
+versions/
 
 # Local Gradle distribution cache (downloaded separately)
 .gradle-dist/
