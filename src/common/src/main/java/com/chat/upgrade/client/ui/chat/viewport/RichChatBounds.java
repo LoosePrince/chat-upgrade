@@ -30,10 +30,14 @@ public record RichChatBounds(int left, int top, int right, int bottom) {
         return bottom > topInclusive && top < bottomExclusive;
     }
 
-    public RichChatBounds translateY(int delta) {
-        if (delta == 0) {
+    public RichChatBounds translate(int deltaX, int deltaY) {
+        if (deltaX == 0 && deltaY == 0) {
             return this;
         }
-        return new RichChatBounds(left, top + delta, right, bottom + delta);
+        return new RichChatBounds(left + deltaX, top + deltaY, right + deltaX, bottom + deltaY);
+    }
+
+    public RichChatBounds translateY(int delta) {
+        return translate(0, delta);
     }
 }

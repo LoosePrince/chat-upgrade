@@ -33,7 +33,7 @@ public abstract class ChatScreenImageClickMixin {
             if (richViewportStyle != null) {
                 return richViewportStyle;
             }
-            return original.call(instance);
+            return null;
         }
         Style base = original.call(instance);
         if (base != null) {

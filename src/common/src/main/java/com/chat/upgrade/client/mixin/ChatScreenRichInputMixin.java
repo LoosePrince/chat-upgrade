@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.MinecraftGuiBridge;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.ui.chat.input.AttachmentComposerState;
@@ -19,6 +20,9 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraftResolver;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import com.chat.upgrade.client.ui.chat.input.EmojiPickerPopover;
+import com.chat.upgrade.client.ui.chat.surface.ChatPanelGeometry;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -80,7 +84,11 @@ public abstract class ChatScreenRichInputMixin extends Screen {
 
     @Inject(method = "init()V", at = @At("TAIL"))
     private void chatupgrade$initAttachmentControls(CallbackInfo ci) {
-        int y = Math.max(2, this.height - 34);
+        ChatSurfaceController.onChatScreenOpened(this.width, this.height);
+        ChatPanelGeometry panel = ChatSurfaceController.panelGeometry(this.width, this.height);
+        int y = ChatUpgradeConfig.get().chatInputMode == ChatUpgradeConfig.ChatInputMode.TAKEOVER
+                ? panel.composerBounds().top() + 4
+                : Math.max(2, this.height - 34);
         Component attachmentLabel = Component.translatable("chatupgrade.input.button.attachment");
         chatupgrade$attachmentButtonWidth = chatupgrade$buttonWidthFor(attachmentLabel);
         chatupgrade$attachmentButton = Button.builder(
@@ -122,6 +130,11 @@ public abstract class ChatScreenRichInputMixin extends Screen {
             MouseButtonEvent event,
             boolean doubleClick,
             CallbackInfoReturnable<Boolean> cir) {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.pointerPressed(event.x(), event.y(), event.button())) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (!chatupgrade$emojiPopover.isVisible() || chatupgrade$isEmojiButtonClick(event.x(), event.y())) {
             return;
         }
@@ -166,6 +179,7 @@ public abstract class ChatScreenRichInputMixin extends Screen {
     @Inject(method = "removed()V", at = @At("HEAD"))
     private void chatupgrade$closeEmojiPopoverOnRemoved(CallbackInfo ci) {
         chatupgrade$emojiPopover.close();
+        ChatSurfaceController.onChatScreenClosed();
     }
 
     @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
@@ -239,6 +253,7 @@ public abstract class ChatScreenRichInputMixin extends Screen {
             float partialTick,
             CallbackInfo ci) {
         chatupgrade$refreshControls();
+        chatupgrade$layoutTakeoverBridgeControls();
         int y = chatupgrade$buttonRowY();
         chatupgrade$emojiPopover.render(
                 graphics,
@@ -383,7 +398,40 @@ public abstract class ChatScreenRichInputMixin extends Screen {
 
     @Unique
     private int chatupgrade$buttonRowY() {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            return ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds().top() + 4;
+        }
         return Math.max(2, this.height - 34);
+    }
+
+    @Unique
+    private int chatupgrade$composerLeft() {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            return ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds().left() + 6;
+        }
+        return 4;
+    }
+
+    @Unique
+    private void chatupgrade$layoutTakeoverBridgeControls() {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            return;
+        }
+        ChatPanelGeometry panel = ChatSurfaceController.panelGeometry(this.width, this.height);
+        int toolbarY = panel.composerBounds().top() + 4;
+        int left = panel.composerBounds().left() + 6;
+        int right = panel.composerBounds().right() - 6;
+        chatupgrade$attachmentButton.setX(left);
+        chatupgrade$attachmentButton.setY(toolbarY);
+        chatupgrade$emojiButton.setX(left + chatupgrade$attachmentButtonWidth + 6);
+        chatupgrade$emojiButton.setY(toolbarY);
+        chatupgrade$clearButton.setX(Math.max(left, right - 20));
+        chatupgrade$clearButton.setY(toolbarY);
+        if (input != null) {
+            input.setX(left);
+            input.setY(panel.composerBounds().bottom() - 20);
+            input.setWidth(Math.max(40, panel.composerBounds().width() - 12));
+        }
     }
 
     @Unique
@@ -391,7 +439,7 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         int width = chatupgrade$attachmentButtonWidth > 0
                 ? chatupgrade$attachmentButtonWidth
                 : chatupgrade$buttonWidthFor(Component.translatable("chatupgrade.input.button.attachment"));
-        return 4 + width + 6;
+        return chatupgrade$composerLeft() + width + 6;
     }
 
     @Unique
@@ -408,7 +456,13 @@ public abstract class ChatScreenRichInputMixin extends Screen {
 
     @Unique
     private void chatupgrade$toggleEmojiPopover() {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.EMOJI_PICKER);
+        }
         chatupgrade$emojiPopover.toggle();
+        if (!chatupgrade$emojiPopover.isVisible()) {
+            ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.NONE);
+        }
     }
 
     @Unique

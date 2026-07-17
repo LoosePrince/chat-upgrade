@@ -9,6 +9,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
 import net.minecraft.util.Mth;
@@ -125,11 +126,11 @@ public abstract class ChatScreenScrollbarDragMixin {
         if (!state.canScroll()) {
             return;
         }
-        if (!chatupgrade$isOverScrollbar(mc, chat, event.x(), event.y())) {
+        if (!ChatSurfaceController.isOverTimelineScrollbar(event.x(), event.y())) {
             return;
         }
         chatupgrade$draggingScrollbar = true;
-        chatupgrade$applyViewportScrollbarDrag(mc, state, event.y());
+        chatupgrade$applyViewportScrollbarDrag(state, event.y());
         cir.setReturnValue(true);
     }
 
@@ -153,21 +154,15 @@ public abstract class ChatScreenScrollbarDragMixin {
             chatupgrade$draggingScrollbar = false;
             return;
         }
-        chatupgrade$applyViewportScrollbarDrag(mc, state, mouseY);
+        chatupgrade$applyViewportScrollbarDrag(state, mouseY);
     }
 
     @Unique
     private static void chatupgrade$applyViewportScrollbarDrag(
-            Minecraft mc,
             RichChatViewportState state,
             double mouseY) {
-        double scale = mc.options.chatScale().get();
-        int screenHeight = mc.getWindow().getGuiScaledHeight();
-        int chatBottom = Mth.floor((screenHeight - 40.0D) / scale);
-        int visibleHeight = Math.max(1, state.visibleHeight());
-        double localY = mouseY / scale;
-        double top = chatBottom - visibleHeight;
-        double t = (localY - top) / Math.max(1.0D, visibleHeight);
+        var viewport = ChatSurfaceController.messageViewportBounds();
+        double t = (mouseY - viewport.top()) / Math.max(1.0D, viewport.height());
         t = Mth.clamp(t, 0.0D, 1.0D);
         int desired = Mth.floor((1.0D - t) * state.maxScrollPx());
         state.setScrollPx(desired);

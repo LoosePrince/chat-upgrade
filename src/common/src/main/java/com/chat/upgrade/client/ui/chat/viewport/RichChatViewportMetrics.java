@@ -53,6 +53,32 @@ public record RichChatViewportMetrics(
                 focused);
     }
 
+    public static RichChatViewportMetrics forSurface(
+            int screenHeight,
+            int maxWidth,
+            int visibleHeight,
+            int chatBottom,
+            double chatLineSpacing,
+            float textOpacity,
+            float backgroundOpacity,
+            boolean focused) {
+        int messageHeight = 9;
+        int entryHeight = (int) (messageHeight * (chatLineSpacing + 1.0));
+        int entryBottomToMessageY = (int) Math.round(8.0 * (chatLineSpacing + 1.0) - 4.0 * chatLineSpacing);
+        return new RichChatViewportMetrics(
+                screenHeight,
+                1.0D,
+                maxWidth,
+                visibleHeight,
+                chatBottom,
+                messageHeight,
+                entryHeight,
+                entryBottomToMessageY,
+                textOpacity,
+                backgroundOpacity,
+                focused);
+    }
+
     public int backgroundLeft() {
         return -4;
     }

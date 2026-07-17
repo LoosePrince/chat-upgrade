@@ -1,4 +1,7 @@
 {
+  "chatupgrade.surface.title": "聊天",
+  "chatupgrade.surface.empty": "暂无消息",
+  "chatupgrade.surface.restricted": "聊天受限",
   "chatupgrade.type.image": "图片",
   "chatupgrade.type.audio": "音频",
   "chatupgrade.type.video": "视频",

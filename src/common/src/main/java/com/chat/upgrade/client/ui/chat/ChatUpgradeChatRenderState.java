@@ -79,22 +79,39 @@ public final class ChatUpgradeChatRenderState {
         int localBottom = chatBottom;
         int localLeft = -4;
         int localRight = maxWidth + 8;
-        // Strict clip: inward rounding avoids 1px leakage at boundaries.
-        int screenLeft = Mth.ceil((localLeft + 4.0D) * scale);
-        int screenRight = Mth.floor((localRight + 4.0D) * scale);
-        int screenTop = Mth.ceil(localTop * scale);
-        int screenBottom = Mth.floor(localBottom * scale);
-        if (screenRight <= screenLeft || screenBottom <= screenTop) {
+        beginClip(
+                graphics,
+                Mth.ceil((localLeft + 4.0D) * scale),
+                Mth.ceil(localTop * scale),
+                Mth.floor((localRight + 4.0D) * scale),
+                Mth.floor(localBottom * scale));
+    }
+
+    public static void beginSurfaceRenderPass(
+            GuiGraphicsExtractor graphics,
+            int left,
+            int top,
+            int right,
+            int bottom) {
+        beginClip(graphics, left, top, right, bottom);
+    }
+
+    private static void beginClip(
+            GuiGraphicsExtractor graphics,
+            int left,
+            int top,
+            int right,
+            int bottom) {
+        if (graphics == null || right <= left || bottom <= top) {
             clipActive = false;
             return;
         }
-
-        graphics.enableScissor(screenLeft, screenTop, screenRight, screenBottom);
+        graphics.enableScissor(left, top, right, bottom);
         clipActive = true;
-        clipLeft = screenLeft;
-        clipTop = screenTop;
-        clipRight = screenRight;
-        clipBottom = screenBottom;
+        clipLeft = left;
+        clipTop = top;
+        clipRight = right;
+        clipBottom = bottom;
     }
 
     public static void endRenderPass(GuiGraphicsExtractor graphics) {

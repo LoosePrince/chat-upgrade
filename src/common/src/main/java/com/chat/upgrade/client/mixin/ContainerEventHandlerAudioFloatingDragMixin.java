@@ -6,6 +6,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -21,6 +23,12 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
             CallbackInfoReturnable<Boolean> cir) {
         Object self = this;
         if (self instanceof ChatScreen screen
+                && ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.pointerDragged(event.x(), event.y())) {
+            cir.setReturnValue(true);
+            return;
+        }
+        if (self instanceof ChatScreen screen
                 && AudioFloatingWindow.mouseDragged(event, dx, dy, screen.width, screen.height)) {
             cir.setReturnValue(true);
         }
@@ -30,6 +38,11 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
     private void chatupgrade$handleAudioFloatingRelease(
             MouseButtonEvent event,
             CallbackInfoReturnable<Boolean> cir) {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.pointerReleased(event.button())) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (AudioFloatingWindow.mouseReleased(event)) {
             cir.setReturnValue(true);
         }

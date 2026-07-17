@@ -48,6 +48,17 @@ public final class ChatUpgradeConfig {
 
     public ChatInputMode chatInputMode = ChatInputMode.TAKEOVER;
 
+    public String chatTheme = "modern_bubble";
+
+    public ChatPanelConfig chatPanel = new ChatPanelConfig();
+
+    public static final class ChatPanelConfig {
+        public int left = 4;
+        public int bottomOffset = 40;
+        public int width = 360;
+        public int height = 220;
+    }
+
     /**
      * When true, incoming image URLs are not fetched until the player clicks the
      * aqua {@code [图片: …]} placeholder
@@ -107,6 +118,8 @@ public final class ChatUpgradeConfig {
         c.videoVolumePercent = 100;
         c.uploadMode = UploadMode.AUTO;
         c.chatInputMode = ChatInputMode.TAKEOVER;
+        c.chatTheme = "modern_bubble";
+        c.chatPanel = new ChatPanelConfig();
         c.normalizeLimits();
         return c;
     }
@@ -124,6 +137,12 @@ public final class ChatUpgradeConfig {
         int beforeVideoVolume = videoVolumePercent;
         Boolean beforeSmoothScroll = smoothScrollEnabled;
         ChatInputMode beforeChatInputMode = chatInputMode;
+        String beforeChatTheme = chatTheme;
+        ChatPanelConfig beforeChatPanel = chatPanel;
+        int beforePanelLeft = beforeChatPanel == null ? -1 : beforeChatPanel.left;
+        int beforePanelBottomOffset = beforeChatPanel == null ? -1 : beforeChatPanel.bottomOffset;
+        int beforePanelWidth = beforeChatPanel == null ? -1 : beforeChatPanel.width;
+        int beforePanelHeight = beforeChatPanel == null ? -1 : beforeChatPanel.height;
         boolean chatInputModeMissing = beforeChatInputMode == null;
         if (maxReceiveBytes <= 0) {
             maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
@@ -144,13 +163,30 @@ public final class ChatUpgradeConfig {
         if (chatInputMode == null) {
             chatInputMode = ChatInputMode.TAKEOVER;
         }
+        if (chatTheme == null || chatTheme.isBlank()) {
+            chatTheme = "modern_bubble";
+        }
+        if (chatPanel == null) {
+            chatPanel = new ChatPanelConfig();
+        }
+        chatPanel.left = Math.max(0, chatPanel.left);
+        chatPanel.bottomOffset = Math.max(0, chatPanel.bottomOffset);
+        chatPanel.width = Math.max(1, chatPanel.width);
+        chatPanel.height = Math.max(1, chatPanel.height);
         return beforeReceive != maxReceiveBytes
                 || beforeUpload != maxUploadBytes
                 || beforeAudioVolume != audioVolumePercent
                 || beforeVideoVolume != videoVolumePercent
                 || beforeSmoothScroll != smoothScrollEnabled
                 || chatInputModeMissing
-                || beforeChatInputMode != chatInputMode;
+                || beforeChatInputMode != chatInputMode
+                || beforeChatTheme == null
+                || !beforeChatTheme.equals(chatTheme)
+                || beforeChatPanel != chatPanel
+                || beforePanelLeft != chatPanel.left
+                || beforePanelBottomOffset != chatPanel.bottomOffset
+                || beforePanelWidth != chatPanel.width
+                || beforePanelHeight != chatPanel.height;
     }
 
     public static ChatUpgradeConfig get() {
@@ -298,6 +334,30 @@ public final class ChatUpgradeConfig {
     public static void setChatInputModeAndSave(ChatInputMode mode) throws IOException {
         synchronized (LOCK) {
             instance.chatInputMode = mode == null ? ChatInputMode.TAKEOVER : mode;
+            writeConfigFile();
+        }
+    }
+
+    public static void setChatThemeAndSave(String themeId) throws IOException {
+        synchronized (LOCK) {
+            instance.chatTheme = themeId == null || themeId.isBlank() ? "modern_bubble" : themeId;
+            writeConfigFile();
+        }
+    }
+
+    public static void setChatPanelGeometryAndSave(
+            int left,
+            int bottomOffset,
+            int width,
+            int height) throws IOException {
+        synchronized (LOCK) {
+            if (instance.chatPanel == null) {
+                instance.chatPanel = new ChatPanelConfig();
+            }
+            instance.chatPanel.left = Math.max(0, left);
+            instance.chatPanel.bottomOffset = Math.max(0, bottomOffset);
+            instance.chatPanel.width = Math.max(1, width);
+            instance.chatPanel.height = Math.max(1, height);
             writeConfigFile();
         }
     }

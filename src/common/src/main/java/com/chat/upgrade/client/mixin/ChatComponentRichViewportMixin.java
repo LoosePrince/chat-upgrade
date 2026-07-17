@@ -3,6 +3,10 @@ package com.chat.upgrade.client.mixin;
 import com.chat.upgrade.client.ui.chat.ChatGraphicsAccessBridge;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.surface.ChatPresentationMode;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceFrame;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayout;
@@ -69,56 +73,75 @@ public abstract class ChatComponentRichViewportMixin {
             int ticks,
             ChatComponent.DisplayMode displayMode,
             Operation<Void> original) {
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode() || displayMode.showRestrictedPrompt) {
-            RichChatInteractionRouter.clear();
-            original.call(instance, graphics, screenHeight, ticks, displayMode);
-            return;
-        }
-
-        Font font = minecraft.font;
-        RichChatViewportMetrics metrics = chatupgrade$metrics(screenHeight, displayMode);
-        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics);
-        if (layout.totalHeight() <= 0) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
             RichChatInteractionRouter.clear();
             original.call(instance, graphics, screenHeight, ticks, displayMode);
             return;
         }
 
         GuiGraphicsExtractor extractor = ChatGraphicsAccessBridge.unwrap(graphics);
+        int screenWidth = extractor == null
+                ? minecraft.getWindow().getGuiScaledWidth()
+                : extractor.guiWidth();
+        ChatSurfaceFrame surfaceFrame = ChatSurfaceController.synchronize(
+                screenWidth,
+                screenHeight,
+                displayMode.foreground,
+                displayMode.showRestrictedPrompt);
+        Font font = minecraft.font;
+        RichChatViewportMetrics metrics = chatupgrade$metrics(screenHeight, displayMode, surfaceFrame);
+        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics);
+        boolean paintsTimeline = !surfaceFrame.restricted() && layout.totalHeight() > 0;
+
+        if (extractor != null) {
+            ChatSurfaceRenderer.paintPanel(extractor, font, surfaceFrame);
+            ChatSurfaceRenderer.paintTimelineState(extractor, font, surfaceFrame, layout.totalHeight() <= 0);
+        }
+
         RichChatViewportState state = RichChatViewport.state();
-        state.updateContentBounds(layout.totalHeight(), metrics.visibleHeight());
+        state.updateContentBounds(paintsTimeline ? layout.totalHeight() : 0, metrics.visibleHeight());
         state.tickSmoothOffset();
         int contentToLocalY = metrics.chatBottom() - (layout.totalHeight() - state.visualScrollPx());
 
         boolean ownsClip = false;
         if (extractor != null) {
-            ChatUpgradeChatRenderState.beginRenderPass(
-                    extractor,
-                    screenHeight,
-                    metrics.scale(),
-                    metrics.visibleHeight(),
-                    metrics.maxWidth());
+            chatupgrade$beginClip(extractor, screenHeight, metrics, surfaceFrame);
             ownsClip = true;
         }
 
+        int surfaceTranslateX = surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL
+                ? surfaceFrame.messageViewportBounds().left() + 4
+                : 4;
         graphics.updatePose(pose -> {
             pose.scale((float) metrics.scale(), (float) metrics.scale());
-            pose.translate(4.0F, 0.0F);
+            pose.translate(surfaceTranslateX, 0.0F);
         });
         try {
             Matrix3x2f activePose = chatupgrade$activePose(graphics, extractor);
             RichChatBounds viewportBounds = chatupgrade$viewportBounds(metrics);
-            if (displayMode.foreground && activePose != null) {
+            if (displayMode.foreground && paintsTimeline && activePose != null) {
                 RichChatInteractionRouter.setActiveLayout(
                         layout,
                         state,
                         activePose,
                         contentToLocalY,
                         viewportBounds);
+            } else {
+                RichChatInteractionRouter.clear();
             }
-            chatupgrade$paintMessages(graphics, extractor, font, metrics, layout, state, contentToLocalY, ticks,
-                    displayMode.foreground);
-            if (displayMode.foreground) {
+            if (paintsTimeline) {
+                chatupgrade$paintMessages(
+                        graphics,
+                        extractor,
+                        font,
+                        metrics,
+                        layout,
+                        state,
+                        contentToLocalY,
+                        ticks,
+                        displayMode.foreground);
+            }
+            if (displayMode.foreground && paintsTimeline) {
                 chatupgrade$paintScrollBar(graphics, metrics, layout, state);
                 chatupgrade$showRichHover(graphics, extractor, font);
             }
@@ -127,6 +150,30 @@ public abstract class ChatComponentRichViewportMixin {
                 ChatUpgradeChatRenderState.endRenderPass(extractor);
             }
         }
+    }
+
+    @Unique
+    private void chatupgrade$beginClip(
+            GuiGraphicsExtractor extractor,
+            int screenHeight,
+            RichChatViewportMetrics metrics,
+            ChatSurfaceFrame surfaceFrame) {
+        if (surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL) {
+            RichChatBounds viewport = surfaceFrame.messageViewportBounds();
+            ChatUpgradeChatRenderState.beginSurfaceRenderPass(
+                    extractor,
+                    viewport.left(),
+                    viewport.top(),
+                    viewport.right(),
+                    viewport.bottom());
+            return;
+        }
+        ChatUpgradeChatRenderState.beginRenderPass(
+                extractor,
+                screenHeight,
+                metrics.scale(),
+                metrics.visibleHeight(),
+                metrics.maxWidth());
     }
 
     @Unique
@@ -176,10 +223,26 @@ public abstract class ChatComponentRichViewportMixin {
     }
 
     @Unique
-    private RichChatViewportMetrics chatupgrade$metrics(int screenHeight, ChatComponent.DisplayMode displayMode) {
+    private RichChatViewportMetrics chatupgrade$metrics(
+            int screenHeight,
+            ChatComponent.DisplayMode displayMode,
+            ChatSurfaceFrame surfaceFrame) {
         float textOpacity = minecraft.options.chatOpacity().get().floatValue() * 0.9F + 0.1F;
         float backgroundOpacity = minecraft.options.textBackgroundOpacity().get().floatValue();
         double lineSpacing = minecraft.options.chatLineSpacing().get();
+        if (surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL) {
+            RichChatBounds viewport = surfaceFrame.messageViewportBounds();
+            int contentInset = 12;
+            return RichChatViewportMetrics.forSurface(
+                    screenHeight,
+                    Math.max(1, viewport.width() - contentInset),
+                    viewport.height(),
+                    viewport.bottom(),
+                    lineSpacing,
+                    textOpacity,
+                    backgroundOpacity,
+                    true);
+        }
         return RichChatViewportMetrics.fromVanilla(
                 screenHeight,
                 getScale(),
