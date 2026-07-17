@@ -5,5 +5,13 @@ public enum ChatMessageKind {
     SYSTEM,
     GAME,
     ANNOUNCEMENT,
-    ERROR
+    ERROR;
+
+    public boolean playerAuthored() {
+        return this == PLAYER;
+    }
+
+    public boolean systemLike() {
+        return this != PLAYER;
+    }
 }

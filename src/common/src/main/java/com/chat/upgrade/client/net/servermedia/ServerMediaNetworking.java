@@ -269,11 +269,14 @@ public final class ServerMediaNetworking {
                 .map(RichAttachment::fromStructured)
                 .filter(RichAttachment::hasRenderableUrl)
                 .toList();
-        Component component = buildStructuredChatMessage(
-                envelope.author().displayName(),
-                envelope.plainText(),
-                attachments);
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+        boolean takeover = ChatUpgradeChatPipelineGate.isTakeoverMode();
+        Component component = takeover
+                ? Component.literal(envelope.plainText())
+                : buildStructuredChatMessage(
+                        envelope.author().displayName(),
+                        envelope.plainText(),
+                        attachments);
+        if (!takeover) {
             renderStructuredPlainText(component);
             return;
         }
@@ -365,9 +368,10 @@ public final class ServerMediaNetworking {
         }
         if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
             InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(component);
-            RichChatIngress.record(
+            RichChatIngress.recordLegacy(
                     messageId,
                     senderName,
+                    ChatMessageKind.PLAYER,
                     emojiDecoded.modified(),
                     fallbackText,
                     attachments,

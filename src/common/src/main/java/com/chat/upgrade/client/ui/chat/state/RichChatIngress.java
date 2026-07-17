@@ -89,6 +89,60 @@ public final class RichChatIngress {
                 status));
     }
 
+    public static RichChatMessage recordLegacy(
+            String messageId,
+            ChatMessageKind kind,
+            Component component,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source) {
+        return recordLegacy(
+                messageId,
+                "",
+                kind,
+                component,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source);
+    }
+
+    public static RichChatMessage recordLegacy(
+            String messageId,
+            String senderName,
+            ChatMessageKind kind,
+            Component component,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source) {
+        ChatMessageKind classified = ChatMessageClassifier.classify(component, kind, source);
+        ChatLegacyMessageNormalizer.Normalized normalized = ChatLegacyMessageNormalizer.normalize(
+                component,
+                inlineEmojiSlots,
+                classified);
+        String suppliedName = senderName == null || senderName.isBlank()
+                ? normalized.authorName()
+                : senderName;
+        ChatAuthor author = ChatIdentityResolver.resolve(
+                ChatAuthor.legacy(suppliedName),
+                component,
+                classified);
+        return recordStructured(
+                messageId,
+                author,
+                classified,
+                0L,
+                null,
+                normalized.body(),
+                normalized.body().getString(),
+                fallbackText,
+                attachments,
+                normalized.inlineEmojiSlots(),
+                source);
+    }
+
     public static RichChatMessage recordStructured(
             String messageId,
             ChatAuthor author,

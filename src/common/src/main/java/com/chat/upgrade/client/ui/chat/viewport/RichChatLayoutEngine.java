@@ -9,8 +9,9 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
+import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjection;
+import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjector;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
-import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
 import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
 
@@ -22,6 +23,10 @@ import net.minecraft.util.FormattedCharSequence;
 
 public final class RichChatLayoutEngine {
     private static final int NODE_GAP = 2;
+    private static final int GROUP_GAP = 5;
+    private static final int MESSAGE_GAP = 1;
+    private static final int IDENTITY_GUTTER = 24;
+    private static final int AVATAR_SIZE = 18;
     private static final Component DELETED_MARKER = Component.translatable("chatupgrade.message.deleted")
             .withStyle(new ChatFormatting[] { ChatFormatting.GRAY, ChatFormatting.ITALIC });
 
@@ -47,12 +52,16 @@ public final class RichChatLayoutEngine {
         List<RichChatMessage> oldestFirst = new ArrayList<>(newestFirst);
         Collections.reverse(oldestFirst);
 
+        List<ChatTimelineProjection> timeline = ChatTimelineProjector.projectOldestFirst(oldestFirst);
         List<RichChatMessageLayout> messageLayouts = new ArrayList<>();
         List<RichChatRenderNode> allNodes = new ArrayList<>();
         List<RichChatHitBox> allHitBoxes = new ArrayList<>();
         int cursorY = 0;
-        for (RichChatMessage message : oldestFirst) {
-            RichChatMessageLayout layout = layoutMessage(font, metrics, message, cursorY);
+        for (ChatTimelineProjection projection : timeline) {
+            if (cursorY > 0) {
+                cursorY += projection.groupPosition().startsGroup() ? GROUP_GAP : MESSAGE_GAP;
+            }
+            RichChatMessageLayout layout = layoutMessage(font, metrics, projection, cursorY);
             cursorY = layout.bounds().bottom();
             if (!layout.nodes().isEmpty()) {
                 messageLayouts.add(layout);
@@ -70,28 +79,42 @@ public final class RichChatLayoutEngine {
                 metrics.textWidth());
     }
 
-    private RichChatMessageLayout layoutMessage(Font font, RichChatViewportMetrics metrics, RichChatMessage message, int top) {
+    private RichChatMessageLayout layoutMessage(
+            Font font,
+            RichChatViewportMetrics metrics,
+            ChatTimelineProjection timeline,
+            int top) {
+        RichChatMessage message = timeline.message();
         List<RichChatRenderNode> nodes = new ArrayList<>();
         List<RichChatHitBox> hitBoxes = new ArrayList<>();
         Component textComponent = textComponent(message);
         boolean hasText = !textComponent.getString().isBlank() || message.attachments().isEmpty();
+        boolean playerMessage = timeline.kind().playerAuthored();
+        int contentLeft = metrics.textLeft() + (playerMessage ? IDENTITY_GUTTER : 0);
+        int contentWidth = Math.max(1, metrics.textWidth() - (playerMessage ? IDENTITY_GUTTER : 0));
+        RichChatBounds identityBounds = timeline.showIdentity()
+                ? RichChatBounds.ofSize(metrics.textLeft(), top, AVATAR_SIZE, AVATAR_SIZE)
+                : null;
         int cursorY = top;
+        if (timeline.showIdentity()) {
+            cursorY += metrics.entryHeight();
+        }
         int order = 0;
         ArrayDeque<InlineEmojiSlot> emojiQueue = new ArrayDeque<>(message.inlineEmojiSlots());
 
         if (hasText) {
-            List<FormattedCharSequence> lines = font.split(textComponent, metrics.textWidth());
+            List<FormattedCharSequence> lines = font.split(textComponent, contentWidth);
             if (lines.isEmpty()) {
                 lines = List.of(FormattedCharSequence.EMPTY);
             }
             for (FormattedCharSequence line : lines) {
                 RichChatBounds lineBounds = RichChatBounds.ofSize(
-                        metrics.textLeft(),
+                        contentLeft,
                         cursorY,
-                        metrics.textWidth(),
+                        contentWidth,
                         metrics.entryHeight());
                 List<InlineEmojiSlot> lineEmojiSlots = InlineEmojiCoordinator.consumeForLine(line, emojiQueue);
-                RichChatRenderNode node = message.source() == RichChatMessageSource.LOCAL_SYSTEM
+                RichChatRenderNode node = timeline.kind().systemLike()
                         ? RichChatRenderNode.system(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots)
                         : RichChatRenderNode.text(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots);
                 nodes.add(node);
@@ -107,11 +130,11 @@ public final class RichChatLayoutEngine {
                 cursorY += NODE_GAP;
             }
             RichChatMediaBox attachmentLayout = RichChatMediaSizing.measure(
-                    metrics.textWidth(),
+                    contentWidth,
                     metrics.entryHeight(),
                     attachment);
             RichChatBounds attachmentBounds = RichChatBounds.ofSize(
-                    metrics.textLeft(),
+                    contentLeft,
                     cursorY,
                     attachmentLayout.width(),
                     attachmentLayout.height());
@@ -137,7 +160,7 @@ public final class RichChatLayoutEngine {
                 top,
                 metrics.backgroundRight() - metrics.backgroundLeft(),
                 Math.max(0, cursorY - top));
-        return new RichChatMessageLayout(message, messageBounds, nodes, hitBoxes);
+        return new RichChatMessageLayout(message, timeline, messageBounds, identityBounds, nodes, hitBoxes);
     }
 
     private static List<RichChatHitBox> styledTextHitBoxes(

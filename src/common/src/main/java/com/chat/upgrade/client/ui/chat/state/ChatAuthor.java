@@ -36,6 +36,32 @@ public record ChatAuthor(
         return styled.isBlank() ? fallbackName : styled;
     }
 
+    public String visibleName() {
+        String name = searchableName();
+        if (!team.present()) {
+            return name;
+        }
+        String prefix = team.prefix();
+        String suffix = team.suffix();
+        if (!prefix.isBlank() && name.startsWith(prefix)) {
+            prefix = "";
+        }
+        if (!suffix.isBlank() && name.endsWith(suffix)) {
+            suffix = "";
+        }
+        return prefix + name + suffix;
+    }
+
+    public String identityKey() {
+        if (playerId != null) {
+            return "player:" + playerId;
+        }
+        String name = searchableName();
+        return name.isBlank() || "?".equals(name)
+                ? ""
+                : "name:" + name;
+    }
+
     private static String safe(@Nullable String value) {
         return value == null ? "" : value.trim();
     }

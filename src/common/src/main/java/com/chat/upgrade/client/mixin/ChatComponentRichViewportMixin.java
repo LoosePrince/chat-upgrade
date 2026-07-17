@@ -282,6 +282,7 @@ public abstract class ChatComponentRichViewportMixin {
                     metrics.backgroundRight(),
                     localMessage.bottom(),
                     ARGB.black(alpha * metrics.backgroundOpacity()));
+            chatupgrade$paintIdentity(extractor, font, metrics, messageLayout, contentToLocalY, alpha);
             for (RichChatRenderNode node : messageLayout.nodes()) {
                 if (!node.bounds().intersectsVerticalRange(visibleTop, visibleBottom)) {
                     continue;
@@ -289,6 +290,47 @@ public abstract class ChatComponentRichViewportMixin {
                 chatupgrade$paintNode(graphics, extractor, font, metrics, node, contentToLocalY, alpha);
             }
         }
+    }
+
+    @Unique
+    private void chatupgrade$paintIdentity(
+            GuiGraphicsExtractor extractor,
+            Font font,
+            RichChatViewportMetrics metrics,
+            RichChatMessageLayout layout,
+            int contentToLocalY,
+            float alpha) {
+        if (extractor == null || layout.identityBounds() == null || !layout.timeline().showIdentity()) {
+            return;
+        }
+        RichChatBounds avatar = layout.identityBounds().translateY(contentToLocalY);
+        int avatarColor = ARGB.color(
+                Math.clamp(Math.round(alpha * 255.0F), 0, 255),
+                layout.timeline().avatar().backgroundRgb());
+        int foreground = ARGB.color(
+                Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
+                layout.timeline().avatar().foregroundRgb());
+        extractor.fill(avatar.left(), avatar.top(), avatar.right(), avatar.bottom(), avatarColor);
+        extractor.outline(avatar.left(), avatar.top(), avatar.width(), avatar.height(), ARGB.white(alpha * 0.7F));
+        String glyph = layout.timeline().avatar().glyph();
+        int glyphX = avatar.left() + Math.max(1, (avatar.width() - font.width(glyph)) / 2);
+        int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
+        extractor.text(font, glyph, glyphX, glyphY, foreground, false);
+
+        String authorName = layout.timeline().author().visibleName();
+        int nameRgb = layout.timeline().author().team().colorRgb() >= 0
+                ? layout.timeline().author().team().colorRgb()
+                : 0xDDE7F5;
+        int nameColor = ARGB.color(
+                Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
+                nameRgb);
+        extractor.text(
+                font,
+                authorName,
+                metrics.textLeft() + 24,
+                avatar.top(),
+                nameColor,
+                false);
     }
 
     @Unique

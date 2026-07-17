@@ -72,16 +72,18 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @ModifyVariable(method = "addPlayerMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component chatupgrade$parsePlayerMessage(Component original) {
-        return chatupgrade$processIncoming(original);
+        return chatupgrade$processIncoming(original, com.chat.upgrade.client.ui.chat.state.ChatMessageKind.PLAYER);
     }
 
     @ModifyVariable(method = "addServerSystemMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component chatupgrade$parseSystemMessage(Component original) {
-        return chatupgrade$processIncoming(original);
+        return chatupgrade$processIncoming(original, com.chat.upgrade.client.ui.chat.state.ChatMessageKind.SYSTEM);
     }
 
     @Unique
-    private Component chatupgrade$processIncoming(Component original) {
+    private Component chatupgrade$processIncoming(
+            Component original,
+            com.chat.upgrade.client.ui.chat.state.ChatMessageKind kind) {
         if (RichChatProjectionCoordinator.hasPending()) {
             InlineEmojiCoordinator.clearPendingSlots();
             return original;
@@ -113,9 +115,9 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(emojiDecoded.modified());
         if (decoded.attachment().isPresent() && decoded.attachment().get().hasRenderableUrl()) {
             RichAttachment attachment = decoded.attachment().get();
-            RichChatIngress.record(
+            RichChatIngress.recordLegacy(
                     "",
-                    "",
+                    kind,
                     decoded.modified(),
                     decoded.modified().getString(),
                     List.of(attachment),
@@ -125,9 +127,9 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             return decoded.modified();
         }
         if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            RichChatIngress.record(
+            RichChatIngress.recordLegacy(
                     "",
-                    "",
+                    kind,
                     emojiDecoded.modified(),
                     emojiDecoded.modified().getString(),
                     List.of(),

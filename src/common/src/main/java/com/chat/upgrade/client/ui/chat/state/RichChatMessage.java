@@ -118,7 +118,7 @@ public record RichChatMessage(
     }
 
     public boolean authoredByLocalPlayer() {
-        return author.localPlayer();
+        return author.playerId() != null && author.localPlayer();
     }
 
     public boolean hasRenderableAttachment() {
@@ -130,6 +130,25 @@ public record RichChatMessage(
                 .filter(RichAttachment::hasRenderableUrl)
                 .findFirst()
                 .orElse(null);
+    }
+
+    public RichChatMessage withIdentity(ChatAuthor nextAuthor, ChatMessageKind nextKind) {
+        return new RichChatMessage(
+                messageId,
+                nextAuthor,
+                nextKind,
+                serverTimestampMs,
+                replyTo,
+                addedTime,
+                component,
+                originalComponent,
+                plainText,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source,
+                signature,
+                status);
     }
 
     public RichChatMessage withReplyTo(@Nullable ChatReplySummary nextReplyTo) {
@@ -191,9 +210,7 @@ public record RichChatMessage(
     }
 
     private static ChatMessageKind defaultKind(@Nullable RichChatMessageSource source) {
-        return source == RichChatMessageSource.LOCAL_SYSTEM
-                ? ChatMessageKind.SYSTEM
-                : ChatMessageKind.PLAYER;
+        return ChatMessageClassifier.defaultKind(source);
     }
 
     private static int currentGuiTicks() {
