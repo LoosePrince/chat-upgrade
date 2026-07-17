@@ -3,6 +3,7 @@ package com.chat.upgrade.net;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.platform.net.NetworkRegistrar;
 
+import io.netty.buffer.ByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -10,6 +11,17 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
 public final class ServerMediaPayloads {
+
+    private static final StreamCodec<ByteBuf, String> STRUCTURED_JSON_CODEC =
+            ByteBufCodecs.stringUtf8(StructuredChatProtocolLimits.MAX_WIRE_JSON_CHARS);
+    private static final StreamCodec<ByteBuf, String> STRUCTURED_NONCE_CODEC =
+            ByteBufCodecs.stringUtf8(StructuredChatProtocolLimits.MAX_CLIENT_NONCE_CHARS);
+    private static final StreamCodec<ByteBuf, String> STRUCTURED_TEXT_CODEC =
+            ByteBufCodecs.stringUtf8(StructuredChatProtocolLimits.MAX_FALLBACK_TEXT_CHARS);
+    private static final StreamCodec<ByteBuf, String> STRUCTURED_NAME_CODEC =
+            ByteBufCodecs.stringUtf8(StructuredChatProtocolLimits.MAX_DISPLAY_NAME_CHARS);
+    private static final StreamCodec<ByteBuf, String> STRUCTURED_MESSAGE_ID_CODEC =
+            ByteBufCodecs.stringUtf8(StructuredChatProtocolLimits.MAX_MESSAGE_ID_CHARS);
 
     private ServerMediaPayloads() {
     }
@@ -27,11 +39,15 @@ public final class ServerMediaPayloads {
         r.registerC2SType(C2SRequestAttachmentMeta.TYPE, C2SRequestAttachmentMeta.CODEC);
         r.registerC2SType(C2SChatInputMode.TYPE, C2SChatInputMode.CODEC);
         r.registerC2SType(C2SStructuredChatMessage.TYPE, C2SStructuredChatMessage.CODEC);
+        r.registerC2SType(C2SStructuredChatV2.TYPE, C2SStructuredChatV2.CODEC);
+        r.registerC2SType(C2SRetractChatMessage.TYPE, C2SRetractChatMessage.CODEC);
 
         r.registerS2CType(S2CCapability.TYPE, S2CCapability.CODEC);
         r.registerS2CType(S2CAttachmentCapability.TYPE, S2CAttachmentCapability.CODEC);
         r.registerS2CType(S2CStructuredChatAttachment.TYPE, S2CStructuredChatAttachment.CODEC);
         r.registerS2CType(S2CStructuredChatMessage.TYPE, S2CStructuredChatMessage.CODEC);
+        r.registerS2CType(S2CStructuredChatV2.TYPE, S2CStructuredChatV2.CODEC);
+        r.registerS2CType(S2CChatMutation.TYPE, S2CChatMutation.CODEC);
         r.registerS2CType(S2CUploadAck.TYPE, S2CUploadAck.CODEC);
         r.registerS2CType(S2CAttachmentAck.TYPE, S2CAttachmentAck.CODEC);
         r.registerS2CType(S2CAttachmentMeta.TYPE, S2CAttachmentMeta.CODEC);
@@ -187,17 +203,17 @@ public final class ServerMediaPayloads {
         public static final Type<C2SStructuredChatMessage> TYPE = payloadType("c2s_structured_chat_message");
         public static final StreamCodec<RegistryFriendlyByteBuf, C2SStructuredChatMessage> CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_INT, C2SStructuredChatMessage::schemaVersion,
-                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::clientNonce,
-                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::plainText,
-                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::segmentsJson,
-                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::attachmentsJson,
-                ByteBufCodecs.STRING_UTF8, C2SStructuredChatMessage::fallbackText,
+                STRUCTURED_NONCE_CODEC, C2SStructuredChatMessage::clientNonce,
+                STRUCTURED_TEXT_CODEC, C2SStructuredChatMessage::plainText,
+                STRUCTURED_JSON_CODEC, C2SStructuredChatMessage::segmentsJson,
+                STRUCTURED_JSON_CODEC, C2SStructuredChatMessage::attachmentsJson,
+                STRUCTURED_TEXT_CODEC, C2SStructuredChatMessage::fallbackText,
                 ByteBufCodecs.VAR_INT, C2SStructuredChatMessage::compatFlags,
                 C2SStructuredChatMessage::new);
 
         public static C2SStructuredChatMessage fromMessage(StructuredChatMessage message) {
-            if (message == null) {
-                throw new IllegalArgumentException("message must not be null");
+            if (!StructuredChatProtocolLimits.accepts(message)) {
+                throw new IllegalArgumentException("structured chat message exceeds protocol limits");
             }
             return new C2SStructuredChatMessage(
                     message.schemaVersion(),
@@ -209,17 +225,70 @@ public final class ServerMediaPayloads {
                     message.compatFlags());
         }
 
-        public StructuredChatMessage toMessage() {
-            return new StructuredChatMessage(
+        public java.util.Optional<StructuredChatMessage> toMessage() {
+            java.util.Optional<java.util.List<StructuredChatSegment>> segments =
+                    StructuredChatWireCodec.decodeSegments(segmentsJson);
+            java.util.Optional<java.util.List<StructuredAttachment>> attachments =
+                    StructuredChatWireCodec.decodeAttachments(attachmentsJson);
+            if (schemaVersion < 1
+                    || schemaVersion > StructuredChatMessage.CURRENT_SCHEMA_VERSION
+                    || segments.isEmpty()
+                    || attachments.isEmpty()) {
+                return java.util.Optional.empty();
+            }
+            StructuredChatMessage message = new StructuredChatMessage(
                     schemaVersion,
                     clientNonce,
                     "",
                     plainText,
-                    StructuredChatWireCodec.decodeSegments(segmentsJson),
-                    StructuredChatWireCodec.decodeAttachments(attachmentsJson),
+                    segments.get(),
+                    attachments.get(),
                     fallbackText,
                     compatFlags);
+            return StructuredChatProtocolLimits.accepts(message)
+                    ? java.util.Optional.of(message)
+                    : java.util.Optional.empty();
         }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record C2SStructuredChatV2(String envelopeJson) implements CustomPacketPayload {
+        public C2SStructuredChatV2 {
+            envelopeJson = safeWire(envelopeJson);
+        }
+
+        public static final Type<C2SStructuredChatV2> TYPE = payloadType("c2s_structured_chat_v2");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SStructuredChatV2> CODEC = StreamCodec.composite(
+                STRUCTURED_JSON_CODEC, C2SStructuredChatV2::envelopeJson,
+                C2SStructuredChatV2::new);
+
+        public static C2SStructuredChatV2 fromSubmission(StructuredChatSubmission submission) {
+            return new C2SStructuredChatV2(StructuredChatWireCodec.encodeSubmission(submission));
+        }
+
+        public java.util.Optional<StructuredChatSubmission> toSubmission() {
+            return StructuredChatWireCodec.decodeSubmission(envelopeJson);
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record C2SRetractChatMessage(String messageId) implements CustomPacketPayload {
+        public C2SRetractChatMessage {
+            messageId = safeWire(messageId).trim();
+        }
+
+        public static final Type<C2SRetractChatMessage> TYPE = payloadType("c2s_retract_chat_message");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SRetractChatMessage> CODEC = StreamCodec.composite(
+                STRUCTURED_MESSAGE_ID_CODEC, C2SRetractChatMessage::messageId,
+                C2SRetractChatMessage::new);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {
@@ -323,18 +392,18 @@ public final class ServerMediaPayloads {
         public static final Type<S2CStructuredChatMessage> TYPE = payloadType("s2c_structured_chat_message");
         public static final StreamCodec<RegistryFriendlyByteBuf, S2CStructuredChatMessage> CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_INT, S2CStructuredChatMessage::schemaVersion,
-                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::clientNonce,
-                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::senderName,
-                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::plainText,
-                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::segmentsJson,
-                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::attachmentsJson,
-                ByteBufCodecs.STRING_UTF8, S2CStructuredChatMessage::fallbackText,
+                STRUCTURED_NONCE_CODEC, S2CStructuredChatMessage::clientNonce,
+                STRUCTURED_NAME_CODEC, S2CStructuredChatMessage::senderName,
+                STRUCTURED_TEXT_CODEC, S2CStructuredChatMessage::plainText,
+                STRUCTURED_JSON_CODEC, S2CStructuredChatMessage::segmentsJson,
+                STRUCTURED_JSON_CODEC, S2CStructuredChatMessage::attachmentsJson,
+                STRUCTURED_TEXT_CODEC, S2CStructuredChatMessage::fallbackText,
                 ByteBufCodecs.VAR_INT, S2CStructuredChatMessage::compatFlags,
                 S2CStructuredChatMessage::new);
 
         public static S2CStructuredChatMessage fromMessage(StructuredChatMessage message) {
-            if (message == null) {
-                throw new IllegalArgumentException("message must not be null");
+            if (!StructuredChatProtocolLimits.accepts(message)) {
+                throw new IllegalArgumentException("structured chat message exceeds protocol limits");
             }
             return new S2CStructuredChatMessage(
                     message.schemaVersion(),
@@ -347,16 +416,77 @@ public final class ServerMediaPayloads {
                     message.compatFlags());
         }
 
-        public StructuredChatMessage toMessage() {
-            return new StructuredChatMessage(
+        public java.util.Optional<StructuredChatMessage> toMessage() {
+            java.util.Optional<java.util.List<StructuredChatSegment>> segments =
+                    StructuredChatWireCodec.decodeSegments(segmentsJson);
+            java.util.Optional<java.util.List<StructuredAttachment>> attachments =
+                    StructuredChatWireCodec.decodeAttachments(attachmentsJson);
+            if (schemaVersion < 1
+                    || schemaVersion > StructuredChatMessage.CURRENT_SCHEMA_VERSION
+                    || segments.isEmpty()
+                    || attachments.isEmpty()) {
+                return java.util.Optional.empty();
+            }
+            StructuredChatMessage message = new StructuredChatMessage(
                     schemaVersion,
                     clientNonce,
                     senderName,
                     plainText,
-                    StructuredChatWireCodec.decodeSegments(segmentsJson),
-                    StructuredChatWireCodec.decodeAttachments(attachmentsJson),
+                    segments.get(),
+                    attachments.get(),
                     fallbackText,
                     compatFlags);
+            return StructuredChatProtocolLimits.accepts(message)
+                    ? java.util.Optional.of(message)
+                    : java.util.Optional.empty();
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CStructuredChatV2(String envelopeJson) implements CustomPacketPayload {
+        public S2CStructuredChatV2 {
+            envelopeJson = safeWire(envelopeJson);
+        }
+
+        public static final Type<S2CStructuredChatV2> TYPE = payloadType("s2c_structured_chat_v2");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CStructuredChatV2> CODEC = StreamCodec.composite(
+                STRUCTURED_JSON_CODEC, S2CStructuredChatV2::envelopeJson,
+                S2CStructuredChatV2::new);
+
+        public static S2CStructuredChatV2 fromEnvelope(StructuredChatEnvelope envelope) {
+            return new S2CStructuredChatV2(StructuredChatWireCodec.encodeEnvelope(envelope));
+        }
+
+        public java.util.Optional<StructuredChatEnvelope> toEnvelope() {
+            return StructuredChatWireCodec.decodeEnvelope(envelopeJson);
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CChatMutation(String envelopeJson) implements CustomPacketPayload {
+        public S2CChatMutation {
+            envelopeJson = safeWire(envelopeJson);
+        }
+
+        public static final Type<S2CChatMutation> TYPE = payloadType("s2c_chat_mutation");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CChatMutation> CODEC = StreamCodec.composite(
+                STRUCTURED_JSON_CODEC, S2CChatMutation::envelopeJson,
+                S2CChatMutation::new);
+
+        public static S2CChatMutation fromMutation(StructuredChatMutation mutation) {
+            return new S2CChatMutation(StructuredChatWireCodec.encodeMutation(mutation));
+        }
+
+        public java.util.Optional<StructuredChatMutation> toMutation() {
+            return StructuredChatWireCodec.decodeMutation(envelopeJson);
         }
 
         @Override

@@ -16,7 +16,10 @@ import net.minecraft.network.chat.MessageSignature;
 
 public record RichChatMessage(
         String messageId,
-        String senderName,
+        ChatAuthor author,
+        ChatMessageKind kind,
+        long serverTimestampMs,
+        @Nullable ChatReplySummary replyTo,
         int addedTime,
         Component component,
         Component originalComponent,
@@ -38,7 +41,10 @@ public record RichChatMessage(
             RichChatMessageSource source) {
         this(
                 messageId,
-                senderName,
+                ChatAuthor.legacy(senderName),
+                defaultKind(source),
+                0L,
+                null,
                 currentGuiTicks(),
                 component,
                 component,
@@ -51,9 +57,42 @@ public record RichChatMessage(
                 RichChatMessageStatus.VISIBLE);
     }
 
+    public RichChatMessage(
+            String messageId,
+            String senderName,
+            int addedTime,
+            Component component,
+            Component originalComponent,
+            String plainText,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source,
+            @Nullable MessageSignature signature,
+            RichChatMessageStatus status) {
+        this(
+                messageId,
+                ChatAuthor.legacy(senderName),
+                defaultKind(source),
+                0L,
+                null,
+                addedTime,
+                component,
+                originalComponent,
+                plainText,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source,
+                signature,
+                status);
+    }
+
     public RichChatMessage {
         messageId = normalizeId(messageId);
-        senderName = safeName(senderName);
+        author = author == null ? ChatAuthor.system() : author;
+        kind = kind == null ? defaultKind(source) : kind;
+        serverTimestampMs = Math.max(0L, serverTimestampMs);
         component = component == null ? Component.empty() : component;
         originalComponent = originalComponent == null ? component : originalComponent;
         plainText = safeText(plainText);
@@ -62,6 +101,24 @@ public record RichChatMessage(
         inlineEmojiSlots = List.copyOf(Objects.requireNonNullElse(inlineEmojiSlots, List.of()));
         source = source == null ? RichChatMessageSource.VANILLA_TEXT : source;
         status = status == null ? RichChatMessageStatus.VISIBLE : status;
+        if (status == RichChatMessageStatus.DELETED) {
+            replyTo = null;
+            component = Component.empty();
+            originalComponent = Component.empty();
+            plainText = "";
+            fallbackText = "";
+            attachments = List.of();
+            inlineEmojiSlots = List.of();
+            signature = null;
+        }
+    }
+
+    public String senderName() {
+        return author.searchableName();
+    }
+
+    public boolean authoredByLocalPlayer() {
+        return author.localPlayer();
     }
 
     public boolean hasRenderableAttachment() {
@@ -75,10 +132,32 @@ public record RichChatMessage(
                 .orElse(null);
     }
 
+    public RichChatMessage withReplyTo(@Nullable ChatReplySummary nextReplyTo) {
+        return new RichChatMessage(
+                messageId,
+                author,
+                kind,
+                serverTimestampMs,
+                nextReplyTo,
+                addedTime,
+                component,
+                originalComponent,
+                plainText,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source,
+                signature,
+                status);
+    }
+
     public RichChatMessage withStatus(RichChatMessageStatus nextStatus) {
         return new RichChatMessage(
                 messageId,
-                senderName,
+                author,
+                kind,
+                serverTimestampMs,
+                replyTo,
                 addedTime,
                 component,
                 originalComponent,
@@ -95,7 +174,10 @@ public record RichChatMessage(
         Component safeComponent = nextComponent == null ? Component.empty() : nextComponent;
         return new RichChatMessage(
                 messageId,
-                senderName,
+                author,
+                kind,
+                serverTimestampMs,
+                replyTo,
                 addedTime,
                 safeComponent,
                 originalComponent,
@@ -106,6 +188,12 @@ public record RichChatMessage(
                 source,
                 signature,
                 status);
+    }
+
+    private static ChatMessageKind defaultKind(@Nullable RichChatMessageSource source) {
+        return source == RichChatMessageSource.LOCAL_SYSTEM
+                ? ChatMessageKind.SYSTEM
+                : ChatMessageKind.PLAYER;
     }
 
     private static int currentGuiTicks() {

@@ -89,6 +89,36 @@ public final class RichChatIngress {
                 status));
     }
 
+    public static RichChatMessage recordStructured(
+            String messageId,
+            ChatAuthor author,
+            ChatMessageKind kind,
+            long serverTimestampMs,
+            @Nullable ChatReplySummary replyTo,
+            Component component,
+            String plainText,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source) {
+        return RichChatStateStore.append(new RichChatMessage(
+                messageId,
+                author,
+                kind,
+                serverTimestampMs,
+                replyTo,
+                currentGuiTicks(),
+                component,
+                component,
+                plainText,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source,
+                null,
+                RichChatMessageStatus.VISIBLE));
+    }
+
     public static RichChatMessage recordVanilla(
             Component component,
             @Nullable MessageSignature signature,

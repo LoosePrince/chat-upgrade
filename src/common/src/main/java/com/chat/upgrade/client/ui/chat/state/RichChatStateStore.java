@@ -3,12 +3,16 @@ package com.chat.upgrade.client.ui.chat.state;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.UnaryOperator;
 
 public final class RichChatStateStore {
     private static final int MAX_MESSAGES = 500;
+    private static final int MAX_DELETED_MESSAGE_IDS = 512;
     private static final Deque<RichChatMessage> MESSAGES = new ArrayDeque<>();
+    private static final Set<String> DELETED_MESSAGE_IDS = new LinkedHashSet<>();
     private static long version;
 
     private RichChatStateStore() {
@@ -18,20 +22,26 @@ public final class RichChatStateStore {
         if (message == null) {
             throw new IllegalArgumentException("message must not be null");
         }
-        removeById(message.messageId());
-        MESSAGES.addFirst(message);
+        RichChatMessage stored = DELETED_MESSAGE_IDS.contains(message.messageId())
+                ? message.withStatus(RichChatMessageStatus.DELETED)
+                : message;
+        removeById(stored.messageId());
+        MESSAGES.addFirst(stored);
         while (MESSAGES.size() > MAX_MESSAGES) {
             MESSAGES.removeLast();
         }
         version++;
-        return message;
+        return stored;
     }
 
     public static synchronized boolean replace(RichChatMessage message) {
         if (message == null) {
             throw new IllegalArgumentException("message must not be null");
         }
-        return update(message.messageId(), ignored -> message);
+        RichChatMessage replacement = DELETED_MESSAGE_IDS.contains(message.messageId())
+                ? message.withStatus(RichChatMessageStatus.DELETED)
+                : message;
+        return update(replacement.messageId(), ignored -> replacement);
     }
 
     public static synchronized boolean update(String messageId, UnaryOperator<RichChatMessage> updater) {
@@ -61,7 +71,36 @@ public final class RichChatStateStore {
     }
 
     public static synchronized boolean delete(String messageId) {
-        return update(messageId, message -> message.withStatus(RichChatMessageStatus.DELETED));
+        if (messageId == null || messageId.isBlank()) {
+            return false;
+        }
+        String normalizedId = messageId.trim();
+        rememberDeletedId(normalizedId);
+        Deque<RichChatMessage> next = new ArrayDeque<>();
+        boolean targetFound = false;
+        boolean changed = false;
+        for (RichChatMessage message : MESSAGES) {
+            RichChatMessage updated = message;
+            if (normalizedId.equals(message.messageId())) {
+                updated = message.withStatus(RichChatMessageStatus.DELETED);
+                targetFound = true;
+            } else if (message.replyTo() != null && normalizedId.equals(message.replyTo().messageId())) {
+                updated = message.withReplyTo(new ChatReplySummary(
+                        normalizedId,
+                        message.replyTo().author(),
+                        ""));
+            }
+            next.addLast(updated);
+            changed |= updated != message;
+        }
+        if (!changed) {
+            version++;
+            return false;
+        }
+        MESSAGES.clear();
+        MESSAGES.addAll(next);
+        version++;
+        return targetFound;
     }
 
     public static synchronized List<RichChatMessage> snapshotNewestFirst() {
@@ -74,7 +113,17 @@ public final class RichChatStateStore {
 
     public static synchronized void clear() {
         MESSAGES.clear();
+        DELETED_MESSAGE_IDS.clear();
         version++;
+    }
+
+    private static void rememberDeletedId(String messageId) {
+        DELETED_MESSAGE_IDS.remove(messageId);
+        DELETED_MESSAGE_IDS.add(messageId);
+        while (DELETED_MESSAGE_IDS.size() > MAX_DELETED_MESSAGE_IDS) {
+            String eldest = DELETED_MESSAGE_IDS.iterator().next();
+            DELETED_MESSAGE_IDS.remove(eldest);
+        }
     }
 
     private static void removeById(String messageId) {

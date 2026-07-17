@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -21,14 +22,22 @@ import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.ui.chat.state.ChatAuthor;
+import com.chat.upgrade.client.ui.chat.state.ChatMessageKind;
+import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
+import com.chat.upgrade.client.ui.chat.state.ChatTeamSnapshot;
 import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionService;
+import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.StructuredAttachment;
+import com.chat.upgrade.net.StructuredChatAuthor;
+import com.chat.upgrade.net.StructuredChatEnvelope;
 import com.chat.upgrade.net.StructuredChatMessage;
+import com.chat.upgrade.net.StructuredReplySummary;
 
 import com.chat.upgrade.platform.net.Net;
 import com.chat.upgrade.platform.net.NetworkRegistrar;
@@ -55,6 +64,7 @@ public final class ServerMediaNetworking {
         ATTACHMENTS.forEach((id, fut) -> fut.complete(Optional.empty()));
         ATTACHMENTS.clear();
         ServerMediaClient.clearRuntimeState();
+        RichChatIngress.clear();
         RichChatProjectionCoordinator.clear();
         RichChatProjectionService.clear();
         UpgradePhantomCoordinator.clear();
@@ -96,7 +106,19 @@ public final class ServerMediaNetworking {
         });
 
         r.clientHandler(ServerMediaPayloads.S2CStructuredChatMessage.TYPE, (payload, context) -> {
-            context.execute(() -> handleStructuredChatMessage(payload));
+            payload.toMessage().ifPresent(message -> context.execute(() -> handleStructuredChatMessage(message)));
+        });
+
+        r.clientHandler(ServerMediaPayloads.S2CStructuredChatV2.TYPE, (payload, context) -> {
+            payload.toEnvelope().ifPresent(envelope -> context.execute(() -> handleStructuredChatV2(envelope)));
+        });
+
+        r.clientHandler(ServerMediaPayloads.S2CChatMutation.TYPE, (payload, context) -> {
+            payload.toMutation().ifPresent(mutation -> context.execute(() -> {
+                if (com.chat.upgrade.net.StructuredChatMutation.RETRACTED.equals(mutation.mutation())) {
+                    RichChatStateStore.delete(mutation.messageId());
+                }
+            }));
         });
 
         r.clientHandler(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) -> {
@@ -218,8 +240,7 @@ public final class ServerMediaNetworking {
                 RichChatMessageSource.STRUCTURED_PACKET);
     }
 
-    private static void handleStructuredChatMessage(ServerMediaPayloads.S2CStructuredChatMessage payload) {
-        StructuredChatMessage message = payload.toMessage();
+    private static void handleStructuredChatMessage(StructuredChatMessage message) {
         List<RichAttachment> attachments = message.attachments().stream()
                 .peek(ServerMediaClient::rememberAttachment)
                 .map(RichAttachment::fromStructured)
@@ -240,6 +261,85 @@ public final class ServerMediaNetworking {
                 message.fallbackText(),
                 attachments,
                 RichChatMessageSource.STRUCTURED_PACKET);
+    }
+
+    private static void handleStructuredChatV2(StructuredChatEnvelope envelope) {
+        List<RichAttachment> attachments = envelope.attachments().stream()
+                .peek(ServerMediaClient::rememberAttachment)
+                .map(RichAttachment::fromStructured)
+                .filter(RichAttachment::hasRenderableUrl)
+                .toList();
+        Component component = buildStructuredChatMessage(
+                envelope.author().displayName(),
+                envelope.plainText(),
+                attachments);
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            renderStructuredPlainText(component);
+            return;
+        }
+        InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(component);
+        RichChatIngress.recordStructured(
+                envelope.messageId(),
+                toClientAuthor(envelope.author()),
+                toClientKind(envelope.kind()),
+                envelope.serverTimestampMs(),
+                toClientReply(envelope.replyTo()),
+                emojiDecoded.modified(),
+                envelope.plainText(),
+                envelope.fallbackText(),
+                attachments,
+                emojiDecoded.slots(),
+                RichChatMessageSource.STRUCTURED_PACKET);
+        attachments.forEach(ServerMediaNetworking::preloadStructuredAttachmentMedia);
+    }
+
+    private static ChatAuthor toClientAuthor(StructuredChatAuthor author) {
+        UUID playerId = null;
+        try {
+            if (author != null && !author.playerUuid().isBlank()) {
+                playerId = UUID.fromString(author.playerUuid());
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean localPlayer = playerId != null
+                && minecraft != null
+                && minecraft.player != null
+                && playerId.equals(minecraft.player.getUUID());
+        StructuredChatAuthor safeAuthor = author == null ? StructuredChatAuthor.legacy("") : author;
+        return new ChatAuthor(
+                playerId,
+                Component.literal(safeAuthor.displayName()),
+                safeAuthor.displayName(),
+                new ChatTeamSnapshot(
+                        safeAuthor.teamName(),
+                        safeAuthor.teamPrefix(),
+                        safeAuthor.teamSuffix(),
+                        safeAuthor.teamColorRgb()),
+                localPlayer);
+    }
+
+    private static ChatMessageKind toClientKind(String kind) {
+        if (kind == null) {
+            return ChatMessageKind.PLAYER;
+        }
+        return switch (kind.toLowerCase(java.util.Locale.ROOT)) {
+            case "system" -> ChatMessageKind.SYSTEM;
+            case "game" -> ChatMessageKind.GAME;
+            case "announcement" -> ChatMessageKind.ANNOUNCEMENT;
+            case "error" -> ChatMessageKind.ERROR;
+            default -> ChatMessageKind.PLAYER;
+        };
+    }
+
+    private static @Nullable ChatReplySummary toClientReply(@Nullable StructuredReplySummary reply) {
+        if (reply == null) {
+            return null;
+        }
+        return new ChatReplySummary(
+                reply.messageId(),
+                ChatAuthor.legacy(reply.authorDisplayName()),
+                reply.excerpt());
     }
 
     private static void renderStructuredPlainText(Component component) {

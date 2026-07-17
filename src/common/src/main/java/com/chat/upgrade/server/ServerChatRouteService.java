@@ -1,15 +1,24 @@
 package com.chat.upgrade.server;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
+import com.chat.upgrade.net.StructuredChatAuthor;
+import com.chat.upgrade.net.StructuredChatEnvelope;
 import com.chat.upgrade.net.StructuredChatMessage;
+import com.chat.upgrade.net.StructuredChatMutation;
+import com.chat.upgrade.net.StructuredChatProtocolLimits;
+import com.chat.upgrade.net.StructuredChatSubmission;
+import com.chat.upgrade.net.StructuredReplySummary;
 import com.chat.upgrade.server.store.StoredMedia;
 
 import com.chat.upgrade.platform.net.Net;
@@ -23,12 +32,20 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.PlayerList;
+import net.minecraft.world.scores.PlayerTeam;
 
 public final class ServerChatRouteService {
+    private static final int ROUTE_STRUCTURED_V2 = -1;
     private static final int ROUTE_STRUCTURED_MESSAGE = 0;
     private static final int ROUTE_STRUCTURED_ATTACHMENT = 1;
     private static final int ROUTE_BRACKET_COMPAT = 2;
     private static final int ROUTE_VANILLA = 3;
+    private static final int MAX_RECENT_MESSAGES = 512;
+    private static final int MAX_REPLY_EXCERPT_CHARS = 96;
+    private static final long RETRACTED_TOMBSTONE_TTL_MS = 60L * 60L * 1000L;
+    private static final Map<String, RecentMessage> RECENT_MESSAGES = new LinkedHashMap<>();
+    private static final Map<String, Long> RETRACTED_MESSAGES = new LinkedHashMap<>();
+    private static MinecraftServer activeServer;
 
     private static final Pattern CHATUPGRADE_PAYLOAD = Pattern.compile(
             "\\[\\[(?:ChatUpgrade|CICode),(.*?)]]",
@@ -42,67 +59,127 @@ public final class ServerChatRouteService {
         if (descriptor == null) {
             return false;
         }
-        MinecraftServer server = senderPlayer.level().getServer();
-        if (server == null) {
-            return false;
-        }
-        String sender = senderPlayer.getName().getString();
-        PlayerList playerList = server.getPlayerList();
-        for (ServerPlayer target : playerList.getPlayers()) {
-            int route = routeFor(target);
-            if (route == ROUTE_STRUCTURED_MESSAGE
-                    && !shouldKeepVanillaPlainText(target, descriptor)
-                    && sendStructuredMessage(target, structuredFromDescriptor(sender, descriptor))) {
-                continue;
-            }
-            if ((route == ROUTE_STRUCTURED_MESSAGE || route == ROUTE_STRUCTURED_ATTACHMENT)
-                    && sendStructuredAttachment(target, sender, descriptor)) {
-                continue;
-            }
-            Component out = switch (route) {
-                case ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_BRACKET_COMPAT ->
-                    buildBracketProtocolMessage(sender, descriptor.bracketMessage());
-                default -> buildVanillaMessage(sender, descriptor);
-            };
-            target.sendSystemMessage(out, false);
-        }
+        StructuredChatMessage legacy = structuredFromDescriptor("", descriptor);
+        routeStructuredV2(senderPlayer, StructuredChatSubmission.fromLegacy(legacy));
         return true;
     }
 
     public static void routeStructured(ServerPlayer senderPlayer, StructuredChatMessage message) {
+        if (message != null) {
+            routeStructuredV2(senderPlayer, StructuredChatSubmission.fromLegacy(message));
+        }
+    }
+
+    public static boolean routeStructuredV2(ServerPlayer senderPlayer, StructuredChatSubmission submission) {
         MinecraftServer server = senderPlayer.level().getServer();
-        if (server == null || message == null) {
+        if (server == null || !StructuredChatProtocolLimits.accepts(submission)) {
+            return false;
+        }
+        ensureServerScope(server);
+        if (!attachmentsAvailable(submission)) {
+            senderPlayer.sendSystemMessage(
+                    Component.translatable("chatupgrade.message.attachment_unavailable").withStyle(ChatFormatting.RED),
+                    false);
+            return false;
+        }
+        StructuredReplySummary reply = resolveReply(submission.replyToMessageId()).orElse(null);
+        if (!submission.replyToMessageId().isBlank() && reply == null) {
+            senderPlayer.sendSystemMessage(
+                    Component.translatable("chatupgrade.reply.target_unavailable").withStyle(ChatFormatting.RED),
+                    false);
+            return false;
+        }
+        StructuredChatEnvelope envelope = createEnvelope(senderPlayer, submission, reply);
+        remember(envelope, senderPlayer.getUUID());
+        broadcast(server.getPlayerList(), envelope);
+        return true;
+    }
+
+    public static boolean retract(ServerPlayer senderPlayer, String messageId) {
+        String normalizedId = messageId == null ? "" : messageId.trim();
+        if (!StructuredChatProtocolLimits.validMessageId(normalizedId)) {
+            return false;
+        }
+        MinecraftServer server = senderPlayer.level().getServer();
+        if (server == null) {
+            return false;
+        }
+        ensureServerScope(server);
+        RecentMessage recent;
+        synchronized (RECENT_MESSAGES) {
+            recent = RECENT_MESSAGES.get(normalizedId);
+            if (recent == null || !recent.authorId().equals(senderPlayer.getUUID())) {
+                return false;
+            }
+            RECENT_MESSAGES.remove(normalizedId);
+        }
+        StructuredChatMutation mutation = StructuredChatMutation.retracted(normalizedId, System.currentTimeMillis());
+        synchronized (RECENT_MESSAGES) {
+            rememberRetraction(normalizedId, mutation.serverTimestampMs());
+        }
+        for (ServerPlayer target : server.getPlayerList().getPlayers()) {
+            if (Net.canSendToClient(target, ServerMediaPayloads.S2CChatMutation.TYPE)) {
+                Net.sendToClient(target, ServerMediaPayloads.S2CChatMutation.fromMutation(mutation));
+            }
+        }
+        return true;
+    }
+
+    public static void replayRecentMutations(ServerPlayer player) {
+        if (player == null || !Net.canSendToClient(player, ServerMediaPayloads.S2CChatMutation.TYPE)) {
             return;
         }
-        String sender = senderPlayer.getName().getString();
-        StructuredChatMessage routedMessage = message.withSenderName(sender);
-        AttachmentRouteDescriptor firstAttachment = firstAttachmentDescriptor(routedMessage);
-        PlayerList playerList = server.getPlayerList();
+        MinecraftServer server = player.level().getServer();
+        if (server == null) {
+            return;
+        }
+        ensureServerScope(server);
+        long now = System.currentTimeMillis();
+        synchronized (RECENT_MESSAGES) {
+            pruneRetractions(now);
+            RETRACTED_MESSAGES.forEach((messageId, timestampMs) ->
+                    Net.sendToClient(player, ServerMediaPayloads.S2CChatMutation.fromMutation(
+                            StructuredChatMutation.retracted(messageId, timestampMs))));
+        }
+    }
+
+    private static void broadcast(PlayerList playerList, StructuredChatEnvelope envelope) {
+        StructuredChatMessage legacyMessage = legacyProjection(envelope);
+        AttachmentRouteDescriptor firstAttachment = firstAttachmentDescriptor(legacyMessage);
         for (ServerPlayer target : playerList.getPlayers()) {
             int route = routeFor(target);
+            if (route == ROUTE_STRUCTURED_V2
+                    && !shouldKeepVanillaPlainText(target, legacyMessage)) {
+                Net.sendToClient(target, ServerMediaPayloads.S2CStructuredChatV2.fromEnvelope(envelope));
+                continue;
+            }
             if (route == ROUTE_STRUCTURED_MESSAGE
-                    && !shouldKeepVanillaPlainText(target, routedMessage)
-                    && sendStructuredMessage(target, routedMessage)) {
+                    && !shouldKeepVanillaPlainText(target, legacyMessage)
+                    && sendStructuredMessage(target, legacyMessage)) {
                 continue;
             }
             if (firstAttachment != null
                     && route == ROUTE_STRUCTURED_ATTACHMENT
-                    && sendStructuredAttachment(target, sender, firstAttachment)) {
+                    && sendStructuredAttachment(target, envelope.author().displayName(), firstAttachment)) {
                 continue;
             }
             Component out = switch (route) {
-                case ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_BRACKET_COMPAT ->
-                    buildBracketProtocolMessage(sender,
-                            firstAttachment == null ? textFallback(routedMessage) : firstAttachment.bracketMessage());
+                case ROUTE_STRUCTURED_V2, ROUTE_STRUCTURED_MESSAGE, ROUTE_STRUCTURED_ATTACHMENT, ROUTE_BRACKET_COMPAT ->
+                    buildBracketProtocolMessage(
+                            envelope.author().displayName(),
+                            firstAttachment == null ? textFallback(legacyMessage) : firstAttachment.bracketMessage());
                 default -> firstAttachment == null
-                        ? Component.literal("<" + sender + "> " + routedMessage.fallbackText())
-                        : buildVanillaMessage(sender, firstAttachment);
+                        ? Component.literal("<" + envelope.author().displayName() + "> " + legacyMessage.fallbackText())
+                        : buildVanillaMessage(envelope.author().displayName(), firstAttachment);
             };
             target.sendSystemMessage(out, false);
         }
     }
 
     private static int routeFor(ServerPlayer target) {
+        if (Net.canSendToClient(target, ServerMediaPayloads.S2CStructuredChatV2.TYPE)) {
+            return ROUTE_STRUCTURED_V2;
+        }
         if (Net.canSendToClient(target, ServerMediaPayloads.S2CStructuredChatMessage.TYPE)) {
             return ROUTE_STRUCTURED_MESSAGE;
         }
@@ -113,6 +190,157 @@ public final class ServerChatRouteService {
             return ROUTE_BRACKET_COMPAT;
         }
         return ROUTE_VANILLA;
+    }
+
+    private static StructuredChatEnvelope createEnvelope(
+            ServerPlayer sender,
+            StructuredChatSubmission submission,
+            StructuredReplySummary reply) {
+        long timestamp = System.currentTimeMillis();
+        int compatFlags = StructuredChatMessage.COMPAT_VANILLA_SAFE_TEXT;
+        if (submission.hasAttachments()) {
+            compatFlags |= StructuredChatMessage.COMPAT_BRACKET_PROTOCOL;
+        }
+        return new StructuredChatEnvelope(
+                StructuredChatEnvelope.CURRENT_SCHEMA_VERSION,
+                UUID.randomUUID().toString(),
+                submission.clientNonce(),
+                timestamp,
+                authorSnapshot(sender),
+                "player",
+                submission.plainText(),
+                submission.segments(),
+                submission.attachments(),
+                submissionFallback(submission),
+                compatFlags,
+                reply);
+    }
+
+    private static StructuredChatAuthor authorSnapshot(ServerPlayer sender) {
+        PlayerTeam team = sender.getTeam();
+        String teamName = team == null ? "" : team.getName();
+        String prefix = team == null ? "" : team.getPlayerPrefix().getString();
+        String suffix = team == null ? "" : team.getPlayerSuffix().getString();
+        //? if >=26.2 {
+        int color = team == null
+                ? StructuredChatAuthor.NO_TEAM_COLOR
+                : team.getColor()
+                        .map(net.minecraft.world.scores.TeamColor::rgb)
+                        .orElse(StructuredChatAuthor.NO_TEAM_COLOR);
+        //? } else {
+        /* int color = team == null || team.getColor().getColor() == null */
+        /*         ? StructuredChatAuthor.NO_TEAM_COLOR */
+        /*         : team.getColor().getColor(); */
+        //? }
+        return new StructuredChatAuthor(
+                sender.getUUID().toString(),
+                sender.getDisplayName().getString(),
+                teamName,
+                prefix,
+                suffix,
+                color);
+    }
+
+    private static StructuredChatMessage legacyProjection(StructuredChatEnvelope envelope) {
+        String readableText = withReplyFallback(envelope.replyTo(), envelope.plainText());
+        String readableFallback = withReplyFallback(envelope.replyTo(), envelope.fallbackText());
+        return new StructuredChatMessage(
+                StructuredChatMessage.CURRENT_SCHEMA_VERSION,
+                envelope.clientNonce(),
+                envelope.author().displayName(),
+                readableText,
+                envelope.segments(),
+                envelope.attachments(),
+                readableFallback,
+                envelope.compatFlags());
+    }
+
+    private static String submissionFallback(StructuredChatSubmission submission) {
+        if (submission.attachments().isEmpty()) {
+            return submission.plainText();
+        }
+        return buildBracketFallbackPayload(submission.plainText(), submission.attachments().getFirst());
+    }
+
+    private static String withReplyFallback(StructuredReplySummary reply, String body) {
+        String safeBody = body == null ? "" : body;
+        if (reply == null) {
+            return safeBody;
+        }
+        String quote = "↪ " + reply.authorDisplayName() + ": " + reply.excerpt();
+        return safeBody.isBlank() ? quote : quote + "\n" + safeBody;
+    }
+
+    private static Optional<StructuredReplySummary> resolveReply(String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            return Optional.empty();
+        }
+        synchronized (RECENT_MESSAGES) {
+            RecentMessage message = RECENT_MESSAGES.get(messageId.trim());
+            return message == null
+                    ? Optional.empty()
+                    : Optional.of(new StructuredReplySummary(
+                            messageId,
+                            message.authorDisplayName(),
+                            message.excerpt()));
+        }
+    }
+
+    private static void remember(StructuredChatEnvelope envelope, UUID authorId) {
+        String excerpt = envelope.plainText().replaceAll("\\s+", " ").trim();
+        if (excerpt.isBlank() && !envelope.attachments().isEmpty()) {
+            excerpt = "[" + typeLabel(envelope.attachments().getFirst().typeWire()) + "]";
+        }
+        if (excerpt.length() > MAX_REPLY_EXCERPT_CHARS) {
+            excerpt = excerpt.substring(0, MAX_REPLY_EXCERPT_CHARS - 1) + "…";
+        }
+        synchronized (RECENT_MESSAGES) {
+            RECENT_MESSAGES.put(envelope.messageId(), new RecentMessage(
+                    authorId,
+                    envelope.author().displayName(),
+                    excerpt));
+            while (RECENT_MESSAGES.size() > MAX_RECENT_MESSAGES) {
+                String eldest = RECENT_MESSAGES.keySet().iterator().next();
+                RECENT_MESSAGES.remove(eldest);
+            }
+        }
+    }
+
+    private static void ensureServerScope(MinecraftServer server) {
+        synchronized (RECENT_MESSAGES) {
+            if (activeServer == server) {
+                return;
+            }
+            RECENT_MESSAGES.clear();
+            RETRACTED_MESSAGES.clear();
+            activeServer = server;
+        }
+    }
+
+    private static boolean attachmentsAvailable(StructuredChatSubmission submission) {
+        for (StructuredAttachment attachment : submission.attachments()) {
+            if (attachment.hasMedia()) {
+                Optional<StoredMedia> stored = ServerMediaService.get(attachment.mediaId());
+                if (stored.isEmpty() || !normalizeType(attachment.typeWire()).equals(stored.get().typeWire())) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static void rememberRetraction(String messageId, long timestampMs) {
+        RETRACTED_MESSAGES.put(messageId, timestampMs);
+        pruneRetractions(timestampMs);
+        while (RETRACTED_MESSAGES.size() > MAX_RECENT_MESSAGES) {
+            String eldest = RETRACTED_MESSAGES.keySet().iterator().next();
+            RETRACTED_MESSAGES.remove(eldest);
+        }
+    }
+
+    private static void pruneRetractions(long nowMs) {
+        long cutoff = Math.max(0L, nowMs - RETRACTED_TOMBSTONE_TTL_MS);
+        RETRACTED_MESSAGES.entrySet().removeIf(entry -> entry.getValue() < cutoff);
     }
 
     private static boolean shouldKeepVanillaPlainText(ServerPlayer target, StructuredChatMessage message) {
@@ -307,6 +535,9 @@ public final class ServerChatRouteService {
             }
         }
         return out.append(Component.literal(" [url]").withStyle(urlStyle));
+    }
+
+    private record RecentMessage(UUID authorId, String authorDisplayName, String excerpt) {
     }
 
     private static String buildHoverText(AttachmentRouteDescriptor descriptor) {

@@ -48,6 +48,10 @@ public final class ServerMediaServerNetworking {
         r.serverHandler(ServerMediaPayloads.C2SChatInputMode.TYPE, ServerMediaServerNetworking::handleChatInputMode);
         r.serverHandler(ServerMediaPayloads.C2SStructuredChatMessage.TYPE,
                 ServerMediaServerNetworking::handleStructuredChatMessagePacket);
+        r.serverHandler(ServerMediaPayloads.C2SStructuredChatV2.TYPE,
+                ServerMediaServerNetworking::handleStructuredChatV2Packet);
+        r.serverHandler(ServerMediaPayloads.C2SRetractChatMessage.TYPE,
+                ServerMediaServerNetworking::handleRetractChatMessagePacket);
     }
 
     // --- Lifecycle hooks (wired by each loader to its native events) ---
@@ -63,6 +67,7 @@ public final class ServerMediaServerNetworking {
     public static void onPlayerJoin(ServerPlayer player) {
         COMPAT_TEXT_VANILLA_PLAYERS.remove(player.getUUID());
         sendCapability(player);
+        ServerChatRouteService.replayRecentMutations(player);
     }
 
     public static void onPlayerDisconnect(ServerPlayer player) {
@@ -155,7 +160,26 @@ public final class ServerMediaServerNetworking {
 
     private static void handleStructuredChatMessagePacket(
             ServerMediaPayloads.C2SStructuredChatMessage payload, ServerPlayContext context) {
-        context.execute(() -> ServerChatRouteService.routeStructured(context.player(), payload.toMessage()));
+        payload.toMessage().ifPresent(message ->
+                context.execute(() -> ServerChatRouteService.routeStructured(context.player(), message)));
+    }
+
+    private static void handleStructuredChatV2Packet(
+            ServerMediaPayloads.C2SStructuredChatV2 payload, ServerPlayContext context) {
+        payload.toSubmission().ifPresent(submission ->
+                context.execute(() -> ServerChatRouteService.routeStructuredV2(context.player(), submission)));
+    }
+
+    private static void handleRetractChatMessagePacket(
+            ServerMediaPayloads.C2SRetractChatMessage payload, ServerPlayContext context) {
+        context.execute(() -> {
+            if (!ServerChatRouteService.retract(context.player(), payload.messageId())) {
+                context.player().sendSystemMessage(
+                        net.minecraft.network.chat.Component.translatable("chatupgrade.retract.denied")
+                                .withStyle(net.minecraft.ChatFormatting.RED),
+                        false);
+            }
+        });
     }
 
     public static boolean isCompatTextVanillaPlayer(ServerPlayer player) {

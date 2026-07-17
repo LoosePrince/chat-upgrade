@@ -15,6 +15,7 @@ import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
 import com.chat.upgrade.net.StructuredChatMessage;
+import com.chat.upgrade.net.StructuredChatSubmission;
 
 import com.chat.upgrade.platform.net.Net;
 
@@ -191,6 +192,10 @@ public final class AttachmentSendController {
     }
 
     public static boolean sendTextOnlyTakeover(String typedMessage) {
+        return sendTextOnlyTakeover(typedMessage, "");
+    }
+
+    public static boolean sendTextOnlyTakeover(String typedMessage, String replyToMessageId) {
         if (!isConnected()) {
             return false;
         }
@@ -198,31 +203,49 @@ public final class AttachmentSendController {
         if (text.isEmpty()) {
             return true;
         }
-        if (shouldUseStructuredSend()
-                && sendStructuredChatMessage(StructuredChatMessage.textOnly(nextClientNonce(), text))) {
+        StructuredChatMessage legacy = StructuredChatMessage.textOnly(nextClientNonce(), text);
+        if (sendStructuredSubmission(StructuredChatSubmission.fromLegacy(legacy).replyingTo(replyToMessageId))) {
+            return true;
+        }
+        if (shouldUseLegacyStructuredSend() && sendStructuredChatMessage(legacy)) {
             return true;
         }
         return sendChat(text);
     }
 
-    private static boolean sendRichMessage(AttachmentDraft draft, String uploadedUrl, String typedMessage) {
-        if (shouldUseStructuredSend()) {
-            StructuredAttachment attachment = null;
-            try {
-                attachment = buildStructuredAttachment(draft, uploadedUrl);
-                String fallback = buildBracketFallbackMessage(draft, uploadedUrl, typedMessage);
-                StructuredChatMessage message = StructuredChatMessage.withSingleAttachment(
-                        nextClientNonce(),
-                        typedMessage,
-                        attachment,
-                        fallback);
-                if (sendStructuredChatMessage(message)) {
-                    submitMetadataIfAvailable(draft, uploadedUrl);
-                    return true;
-                }
-            } catch (IllegalArgumentException | IllegalStateException ex) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: cannot build structured chat message: {}", ex.getMessage());
+    public static boolean retractMessage(String messageId) {
+        if (!isConnected() || messageId == null || messageId.isBlank()) {
+            return false;
+        }
+        try {
+            if (!Net.canSendToServer(ServerMediaPayloads.C2SRetractChatMessage.TYPE)) {
+                return false;
             }
+            Net.sendToServer(new ServerMediaPayloads.C2SRetractChatMessage(messageId));
+            return true;
+        } catch (Exception ex) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to request message retraction: {}", ex.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean sendRichMessage(AttachmentDraft draft, String uploadedUrl, String typedMessage) {
+        StructuredAttachment attachment = null;
+        try {
+            attachment = buildStructuredAttachment(draft, uploadedUrl);
+            String fallback = buildBracketFallbackMessage(draft, uploadedUrl, typedMessage);
+            StructuredChatMessage message = StructuredChatMessage.withSingleAttachment(
+                    nextClientNonce(),
+                    typedMessage,
+                    attachment,
+                    fallback);
+            if (sendStructuredSubmission(StructuredChatSubmission.fromLegacy(message))
+                    || (shouldUseLegacyStructuredSend() && sendStructuredChatMessage(message))) {
+                submitMetadataIfAvailable(draft, uploadedUrl);
+                return true;
+            }
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: cannot build structured chat message: {}", ex.getMessage());
         }
         if (!sendChat(buildBracketFallbackMessage(draft, uploadedUrl, typedMessage))) {
             return false;
@@ -231,13 +254,29 @@ public final class AttachmentSendController {
         return true;
     }
 
-    private static boolean shouldUseStructuredSend() {
+    private static boolean shouldUseLegacyStructuredSend() {
         if (ChatUpgradeConfig.get().chatInputMode != ChatUpgradeConfig.ChatInputMode.TAKEOVER) {
             return false;
         }
         try {
             return Net.canSendToServer(ServerMediaPayloads.C2SStructuredChatMessage.TYPE);
         } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean sendStructuredSubmission(StructuredChatSubmission submission) {
+        if (ChatUpgradeConfig.get().chatInputMode != ChatUpgradeConfig.ChatInputMode.TAKEOVER) {
+            return false;
+        }
+        try {
+            if (!Net.canSendToServer(ServerMediaPayloads.C2SStructuredChatV2.TYPE)) {
+                return false;
+            }
+            Net.sendToServer(ServerMediaPayloads.C2SStructuredChatV2.fromSubmission(submission));
+            return true;
+        } catch (Exception ex) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to send structured chat v2 submission: {}", ex.getMessage());
             return false;
         }
     }

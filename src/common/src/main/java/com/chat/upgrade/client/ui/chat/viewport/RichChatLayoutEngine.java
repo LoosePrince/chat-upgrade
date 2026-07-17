@@ -22,7 +22,7 @@ import net.minecraft.util.FormattedCharSequence;
 
 public final class RichChatLayoutEngine {
     private static final int NODE_GAP = 2;
-    private static final Component DELETED_MARKER = Component.translatable("chat.deleted_marker")
+    private static final Component DELETED_MARKER = Component.translatable("chatupgrade.message.deleted")
             .withStyle(new ChatFormatting[] { ChatFormatting.GRAY, ChatFormatting.ITALIC });
 
     public RichChatLayout layoutFromStore(Font font, RichChatViewportMetrics metrics) {
