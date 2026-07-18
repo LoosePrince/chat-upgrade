@@ -1,5 +1,6 @@
 package com.chat.upgrade.net;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -47,18 +48,35 @@ public record StructuredChatMessage(
             StructuredAttachment attachment,
             @Nullable String fallbackText) {
         Objects.requireNonNull(attachment, "attachment");
+        return withAttachments(clientNonce, plainText, List.of(attachment), fallbackText);
+    }
+
+    public static StructuredChatMessage withAttachments(
+            @Nullable String clientNonce,
+            @Nullable String plainText,
+            List<StructuredAttachment> attachments,
+            @Nullable String fallbackText) {
+        Objects.requireNonNull(attachments, "attachments");
+        if (attachments.isEmpty()) {
+            throw new IllegalArgumentException("structured chat message requires an attachment");
+        }
         String text = safeWire(plainText);
-        String attachmentId = attachment.attachmentId() == null ? "" : attachment.attachmentId();
-        List<StructuredChatSegment> outSegments = text.isBlank()
-                ? List.of(StructuredChatSegment.attachment(attachmentId))
-                : List.of(StructuredChatSegment.text(text), StructuredChatSegment.attachment(attachmentId));
+        List<StructuredChatSegment> outSegments = new ArrayList<>();
+        if (!text.isBlank()) {
+            outSegments.add(StructuredChatSegment.text(text));
+        }
+        for (StructuredAttachment attachment : attachments) {
+            Objects.requireNonNull(attachment, "attachment");
+            String attachmentId = attachment.attachmentId() == null ? "" : attachment.attachmentId();
+            outSegments.add(StructuredChatSegment.attachment(attachmentId));
+        }
         return new StructuredChatMessage(
                 CURRENT_SCHEMA_VERSION,
                 clientNonce,
                 "",
                 text,
                 outSegments,
-                List.of(attachment),
+                attachments,
                 fallbackText,
                 COMPAT_BRACKET_PROTOCOL | COMPAT_VANILLA_SAFE_TEXT);
     }

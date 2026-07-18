@@ -1,5 +1,6 @@
 package com.chat.upgrade.client.ui.chat.scene;
 
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
 import com.chat.upgrade.client.ui.chat.surface.ChatLayoutPolicy;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
@@ -63,6 +64,7 @@ public final class ChatSceneRenderer {
             if (extractor != null) {
                 paintMessageDecoration(extractor, message, scene.surface().theme(), contentToLocalY, alpha,
                         metrics.backgroundOpacity());
+                paintTextSelection(extractor, font, message, contentToLocalY, alpha);
                 paintIdentity(extractor, font, metrics, message, scene.surface().theme(), contentToLocalY, alpha);
             }
             for (RichChatRenderNode node : message.nodes()) {
@@ -155,6 +157,45 @@ public final class ChatSceneRenderer {
             }
             case NATIVE_CARD -> ChatThemePainter.paintBox(graphics, full, 0, 0, fill, border);
         }
+    }
+
+    private static void paintTextSelection(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            RichChatMessageLayout message,
+            int contentToLocalY,
+            float alpha) {
+        int selectionFill = ChatThemePainter.withOpacity(0x805A8DFF, alpha);
+        for (RichChatRenderNode node : message.nodes()) {
+            if (node.text() == null) {
+                continue;
+            }
+            ChatTextSelectionState.LineSelection selection = ChatTextSelectionState.selectionFor(
+                    message.message().messageId(),
+                    node.order());
+            if (selection == null) {
+                continue;
+            }
+            String plain = plainText(node.text());
+            int start = Math.clamp(selection.startIndex(), 0, plain.length());
+            int end = Math.clamp(selection.endIndex(), start, plain.length());
+            if (end <= start) {
+                continue;
+            }
+            RichChatBounds line = node.bounds().translateY(contentToLocalY);
+            int left = line.left() + selection.startPixel();
+            int right = line.left() + selection.endPixel();
+            graphics.fill(left, line.top(), Math.max(left + 1, right), line.bottom(), selectionFill);
+        }
+    }
+
+    private static String plainText(net.minecraft.util.FormattedCharSequence text) {
+        StringBuilder plain = new StringBuilder();
+        text.accept((index, style, codePoint) -> {
+            plain.appendCodePoint(codePoint);
+            return true;
+        });
+        return plain.toString();
     }
 
     private static void paintIdentity(

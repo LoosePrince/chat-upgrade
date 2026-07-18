@@ -116,7 +116,7 @@ src/
 | --- | --- | --- |
 | 初始化与命令 | `src/common/.../client/ChatUpgradeClientBootstrap.java`、`ChatUpgradeCommands.java`；加载器入口见 `src/fabric`、`src/neoforge` | 客户端公共初始化、命令树、插件预热、资源清理。 |
 | 配置 | `src/common/.../client/ChatUpgradeConfig.java` | 客户端配置、稳定主题 ID、范围归一化、保存/重载。 |
-| Composer 状态 | `src/common/.../client/ui/chat/input` | 当前附件草稿、回复目标、剪贴板/文件来源与发送控制；完整多附件 composer 尚未完成。 |
+| Composer 状态 | `src/common/.../client/ui/chat/input` | 有序多附件草稿、回复目标、剪贴板/文件来源、批次上传与快照提交控制。 |
 | 聊天事实与投影 | `src/common/.../client/ui/chat/state` | 统一消息事实、撤回 tombstone、身份/分类/分组 timeline 投影。 |
 | 类型化交互 | `src/common/.../client/ui/chat/interaction` | 统一手势目标、类型化动作、右键消息菜单和 Minecraft `Style` 兼容适配。 |
 | Surface 与主题 | `src/common/.../client/ui/chat/surface` | presentation、面板几何、不可变 frame、主题 tokens 与布局策略。 |
@@ -163,15 +163,16 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Draft as AttachmentDraft
+    participant Draft as AttachmentDraft 批次
     participant Upload as UploadRouter
     participant Send as AttachmentSendController
     participant Server as ServerChatRouteService
     participant Store as RichChatStateStore
 
-    Draft->>Upload: 上传图片/音频/视频
-    Upload-->>Send: 返回 URL 或 chat-upgrade://media/<type>/<mediaId>
-    Send->>Server: 结构化消息 + bracket fallback
+    Draft->>Send: 捕获有序草稿与回复目标快照
+    Send->>Upload: 并发上传未完成附件
+    Upload-->>Send: 按原顺序返回 URL / mediaId
+    Send->>Server: 单次结构化消息 + 多附件 + bracket fallback
     Server->>Store: 接收端写入统一状态
 ```
 
@@ -193,5 +194,5 @@ sequenceDiagram
 - `ChatComponentRichViewportMixin` 保持薄适配，只处理 Minecraft 生命周期、裁切、pose 和共享场景调用。
 - `COMPAT_TEXT_VANILLA` 的原版文本布局/绘制必须与 TAKEOVER metrics、坐标和主题隔离。
 - 回复身份、撤回权限和删除事实由服务端确认；UI 不得伪造。
-- composer 回复目标、右键菜单和类型化动作由独立交互模块维护，scene renderer 只消费场景与主题，不持有交互状态。
-- 多附件 composer、命令建议 surface、真实皮肤头像和更完整的键盘手势仍是后续模块。
+- composer 的有序附件批次、回复目标、右键菜单和类型化动作由独立交互模块维护；scene renderer 只消费场景与主题，不持有交互状态。
+- 命令建议 surface、真实皮肤头像和更完整的键盘手势仍是后续模块。

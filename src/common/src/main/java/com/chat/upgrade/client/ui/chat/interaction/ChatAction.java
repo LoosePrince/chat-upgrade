@@ -74,6 +74,30 @@ public sealed interface ChatAction {
         }
     }
 
+    record Mention(String authorName) implements ChatAction {
+        public Mention {
+            authorName = safe(authorName);
+        }
+    }
+
+    record ShowProfile(String authorKey) implements ChatAction {
+        public ShowProfile {
+            authorKey = safe(authorKey);
+        }
+    }
+
+    record HideMessage(String messageId) implements ChatAction {
+        public HideMessage {
+            messageId = safe(messageId);
+        }
+    }
+
+    record ToggleBlockAuthor(String authorKey) implements ChatAction {
+        public ToggleBlockAuthor {
+            authorKey = safe(authorKey);
+        }
+    }
+
     record CopyText(String text) implements ChatAction {
         public CopyText {
             text = text == null ? "" : text;
@@ -82,6 +106,12 @@ public sealed interface ChatAction {
 
     record Retract(String messageId) implements ChatAction {
         public Retract {
+            messageId = safe(messageId);
+        }
+    }
+
+    record DebugInfo(String messageId) implements ChatAction {
+        public DebugInfo {
             messageId = safe(messageId);
         }
     }

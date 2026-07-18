@@ -72,6 +72,9 @@ public final class ChatUpgradeConfig {
     /** Enable smooth chat scrolling (default on). */
     public Boolean smoothScrollEnabled;
 
+    /** Show diagnostic-only message actions in takeover context menus. */
+    public boolean debugChatActions;
+
     /**
      * Maximum HTTP response body size when downloading an image for chat preview.
      * Default 2 MiB; clamped to {@link #ABSOLUTE_MAX_TRANSFER_BYTES} when loading
@@ -113,6 +116,7 @@ public final class ChatUpgradeConfig {
         c.manualAudioReveal = false;
         c.manualVideoReveal = false;
         c.smoothScrollEnabled = true;
+        c.debugChatActions = false;
         c.maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         c.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
         c.audioVolumePercent = 100;
@@ -287,6 +291,13 @@ public final class ChatUpgradeConfig {
     public static void setSmoothScrollEnabledAndSave(boolean value) throws IOException {
         synchronized (LOCK) {
             instance.smoothScrollEnabled = value;
+            writeConfigFile();
+        }
+    }
+
+    public static void setDebugChatActionsAndSave(boolean value) throws IOException {
+        synchronized (LOCK) {
+            instance.debugChatActions = value;
             writeConfigFile();
         }
     }

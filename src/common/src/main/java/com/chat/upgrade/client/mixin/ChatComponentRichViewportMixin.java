@@ -69,7 +69,8 @@ public abstract class ChatComponentRichViewportMixin {
             ChatComponent.DisplayMode displayMode,
             Operation<Void> original) {
         if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            RichChatInteractionRouter.clear();
+            RichChatInteractionRouter.cancelPointerCapture();
+            RichChatInteractionRouter.clearActiveLayout();
             original.call(instance, graphics, screenHeight, ticks, displayMode);
             return;
         }
@@ -122,7 +123,7 @@ public abstract class ChatComponentRichViewportMixin {
                         contentToLocalY,
                         viewportBounds);
             } else {
-                RichChatInteractionRouter.clear();
+                RichChatInteractionRouter.clearActiveLayout();
             }
             if (paintsTimeline) {
                 ChatSceneRenderer.paintTimeline(
@@ -204,6 +205,12 @@ public abstract class ChatComponentRichViewportMixin {
             return;
         }
         Vector2f local = focused.chatupgrade$localMousePos();
+        RichChatInteractionRouter.renderHoverActionBar(
+                extractor,
+                font,
+                ChatSurfaceController.state().theme(),
+                local.x,
+                local.y);
         boolean tooltip = RichChatInteractionRouter.showTooltipForLocalHover(
                 extractor,
                 font,

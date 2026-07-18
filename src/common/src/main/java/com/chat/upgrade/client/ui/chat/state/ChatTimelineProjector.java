@@ -1,5 +1,7 @@
 package com.chat.upgrade.client.ui.chat.state;
 
+import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -17,6 +19,7 @@ public final class ChatTimelineProjector {
         }
         List<ResolvedMessage> resolved = messages.stream()
                 .map(ChatTimelineProjector::resolve)
+                .filter(resolvedMessage -> ChatMessageVisibilityStore.isVisible(resolvedMessage.message()))
                 .toList();
         List<ChatTimelineProjection> projected = new ArrayList<>(resolved.size());
         for (int index = 0; index < resolved.size(); index++) {

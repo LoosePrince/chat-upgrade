@@ -203,6 +203,9 @@ config/chat-upgrade/server-media.json
 | TAKEOVER 消息右键菜单 | 仅当前可见消息可打开菜单；回复、复制和本人消息撤回项按消息事实显示。 |
 | TAKEOVER 回复发送 | composer 显示目标摘要；纯文本和附件都携带同一 `replyToMessageId`，发送成功后清除目标。 |
 | TAKEOVER 回复降级保护 | V2 不可用时不把回复静默发送成无回复语义的 legacy/bracket/vanilla 消息。 |
+| TAKEOVER 多附件发送 | 最多 8 个附件显示为独立 chip；未上传项并发上传，全部成功后以单条结构化消息按原顺序发送；失败项不会卡在上传中。 |
+| TAKEOVER 多附件降级保护 | V2/V1 结构化发送都不可用时保留已上传草稿并报错，不退回只保留首附件语义的 bracket 路由。 |
+| TAKEOVER 回复期间追加附件 | 上传批次只消费发送开始时的草稿和回复目标；期间新增的附件与新回复目标保留。 |
 | TAKEOVER 主题热切换 | `modern_bubble` / `compact_feed` / `native_enhanced` 共用同一场景、布局和渲染管线；下一帧生效且消息事实不变。 |
 | COMPAT 纯文本 | 继续使用原版 `ChatComponent -> GuiMessage` 布局和绘制，不受 TAKEOVER metrics、坐标与主题影响。 |
 | COMPAT 附件 | 富媒体附件仍可显示。 |

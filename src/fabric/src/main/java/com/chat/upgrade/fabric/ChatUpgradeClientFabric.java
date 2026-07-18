@@ -23,12 +23,9 @@ public final class ChatUpgradeClientFabric implements ClientModInitializer {
         ServerMediaNetworking.registerClientHandlers(new FabricNetworkRegistrar());
 
         ClientTickEvents.END_CLIENT_TICK.register(ChatUpgradeClientBootstrap::onClientTick);
-        ClientLifecycleEvents.CLIENT_STOPPING.register(
-                client -> ChatUpgradeClientBootstrap.clearAllMediaRuntimeState());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
-            ServerMediaNetworking.onClientDisconnect();
-            ChatUpgradeClientBootstrap.clearAllMediaRuntimeState();
-        }));
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> ServerMediaNetworking.onClientDisconnect());
+        ClientPlayConnectionEvents.DISCONNECT.register(
+                (handler, client) -> client.execute(ServerMediaNetworking::onClientDisconnect));
         ClientPlayConnectionEvents.JOIN.register(
                 (handler, sender, client) -> client.execute(ServerMediaNetworking::onClientJoin));
 

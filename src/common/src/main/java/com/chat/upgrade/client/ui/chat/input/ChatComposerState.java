@@ -1,68 +1,161 @@
 package com.chat.upgrade.client.ui.chat.input;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
+import com.chat.upgrade.net.StructuredChatProtocolLimits;
 
 public final class ChatComposerState {
-    private AttachmentDraft attachmentDraft;
-    private ChatReplySummary replyTarget;
+    public static final int MAX_DRAFTS = StructuredChatProtocolLimits.MAX_ATTACHMENTS;
 
+    private List<AttachmentDraft> drafts = List.of();
+    private ChatReplySummary replyTarget;
+    private boolean uploadBatchActive;
+
+    public synchronized List<AttachmentDraft> drafts() {
+        return List.copyOf(drafts);
+    }
+
+    /**
+     * Compatibility view for callers that only need to inspect the first draft.
+     */
     public synchronized Optional<AttachmentDraft> draft() {
-        return Optional.ofNullable(attachmentDraft);
+        return drafts.stream().findFirst();
     }
 
     public synchronized boolean hasDraft() {
-        return attachmentDraft != null;
+        return !drafts.isEmpty();
     }
 
     public synchronized boolean isUploading() {
-        return attachmentDraft != null && attachmentDraft.status() == AttachmentDraft.Status.UPLOADING;
+        return uploadBatchActive || drafts.stream().anyMatch(draft -> draft.status() == AttachmentDraft.Status.UPLOADING);
     }
 
-    public synchronized boolean isCurrent(AttachmentDraft expected) {
-        return attachmentDraft == expected;
+    public synchronized boolean canAddDraft() {
+        return drafts.size() < MAX_DRAFTS;
     }
 
-    public synchronized void setDraft(AttachmentDraft nextDraft) {
-        attachmentDraft = nextDraft;
+    public synchronized boolean addDraft(AttachmentDraft nextDraft) {
+        if (nextDraft == null || !canAddDraft() || containsIdentity(nextDraft)) {
+            return false;
+        }
+        List<AttachmentDraft> next = new ArrayList<>(drafts);
+        next.add(nextDraft);
+        drafts = List.copyOf(next);
+        return true;
     }
 
     public synchronized Optional<AttachmentDraft> clearDraft() {
-        AttachmentDraft previous = attachmentDraft;
-        attachmentDraft = null;
-        return Optional.ofNullable(previous);
+        if (isUploading()) {
+            return Optional.empty();
+        }
+        Optional<AttachmentDraft> previous = draft();
+        drafts = List.of();
+        return previous;
     }
 
-    public synchronized boolean clearIfCurrent(AttachmentDraft expected) {
-        if (attachmentDraft != expected) {
+    public synchronized void clearForScreenClose() {
+        drafts = List.of();
+        replyTarget = null;
+        uploadBatchActive = false;
+    }
+
+    public synchronized boolean removeDraft(AttachmentDraft expected) {
+        if (expected == null || expected.status() == AttachmentDraft.Status.UPLOADING) {
             return false;
         }
-        attachmentDraft = null;
+        int index = indexOfIdentity(expected);
+        if (index < 0) {
+            return false;
+        }
+        List<AttachmentDraft> next = new ArrayList<>(drafts);
+        next.remove(index);
+        drafts = List.copyOf(next);
         return true;
+    }
+
+    public synchronized boolean moveDraftBefore(AttachmentDraft expected, AttachmentDraft target) {
+        if (expected == null || target == null || expected == target || isUploading()) {
+            return false;
+        }
+        int from = indexOfIdentity(expected);
+        int to = indexOfIdentity(target);
+        if (from < 0 || to < 0) {
+            return false;
+        }
+        List<AttachmentDraft> next = new ArrayList<>(drafts);
+        AttachmentDraft moved = next.remove(from);
+        int insertion = from < to ? to - 1 : to;
+        next.add(insertion, moved);
+        drafts = List.copyOf(next);
+        return true;
+    }
+
+    public synchronized boolean moveDraftToEnd(AttachmentDraft expected) {
+        if (expected == null || expected.status() == AttachmentDraft.Status.UPLOADING || isUploading()) {
+            return false;
+        }
+        int from = indexOfIdentity(expected);
+        if (from < 0 || from == drafts.size() - 1) {
+            return false;
+        }
+        List<AttachmentDraft> next = new ArrayList<>(drafts);
+        next.add(next.remove(from));
+        drafts = List.copyOf(next);
+        return true;
+    }
+
+    public synchronized boolean containsAll(List<AttachmentDraft> expected) {
+        return expected != null && expected.stream().allMatch(this::containsIdentity);
+    }
+
+    public synchronized boolean containsIdentity(AttachmentDraft expected) {
+        return expected != null && indexOfIdentity(expected) >= 0;
     }
 
     public synchronized boolean replaceIfCurrent(AttachmentDraft expected, AttachmentDraft replacement) {
-        if (attachmentDraft != expected) {
+        int index = indexOfIdentity(expected);
+        if (index < 0 || replacement == null) {
             return false;
         }
-        attachmentDraft = replacement;
+        List<AttachmentDraft> next = new ArrayList<>(drafts);
+        next.set(index, replacement);
+        drafts = List.copyOf(next);
         return true;
     }
 
-    public synchronized Optional<AttachmentDraft> markUploading(AttachmentDraft expected) {
-        if (attachmentDraft != expected || !attachmentDraft.isSendable()) {
+    public synchronized Optional<List<AttachmentDraft>> beginUploadBatch(List<AttachmentDraft> expected) {
+        if (expected == null || expected.size() != drafts.size() || uploadBatchActive) {
             return Optional.empty();
         }
-        attachmentDraft = attachmentDraft.uploading();
-        return Optional.of(attachmentDraft);
+        List<AttachmentDraft> next = new ArrayList<>(drafts.size());
+        for (int i = 0; i < expected.size(); i++) {
+            AttachmentDraft current = drafts.get(i);
+            if (current != expected.get(i) || !current.isSendable()) {
+                return Optional.empty();
+            }
+            next.add(current.uploading());
+        }
+        drafts = List.copyOf(next);
+        uploadBatchActive = true;
+        return Optional.of(drafts);
     }
 
-    public synchronized Optional<AttachmentDraft> currentUploadingDraft() {
-        if (attachmentDraft == null || attachmentDraft.status() != AttachmentDraft.Status.UPLOADING) {
-            return Optional.empty();
+    public synchronized void endUploadBatch() {
+        uploadBatchActive = false;
+    }
+
+    public synchronized boolean clearIfCurrent(AttachmentDraft expected) {
+        int index = indexOfIdentity(expected);
+        if (index < 0) {
+            return false;
         }
-        return Optional.of(attachmentDraft);
+        List<AttachmentDraft> next = new ArrayList<>(drafts);
+        next.remove(index);
+        drafts = List.copyOf(next);
+        return true;
     }
 
     public synchronized Optional<ChatReplySummary> replyTarget() {
@@ -89,5 +182,14 @@ public final class ChatComposerState {
         }
         replyTarget = null;
         return true;
+    }
+
+    private int indexOfIdentity(AttachmentDraft expected) {
+        for (int i = 0; i < drafts.size(); i++) {
+            if (drafts.get(i) == expected) {
+                return i;
+            }
+        }
+        return -1;
     }
 }

@@ -7,10 +7,12 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
+import com.chat.upgrade.client.ChatUpgradeClientBootstrap;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.image.ImageLoader;
@@ -22,6 +24,7 @@ import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.state.ChatAuthor;
 import com.chat.upgrade.client.ui.chat.state.ChatMessageKind;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
@@ -52,26 +55,28 @@ public final class ServerMediaNetworking {
     private static final ConcurrentHashMap<Long, CompletableFuture<Optional<String>>> UPLOADS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Long, CompletableFuture<Optional<StructuredAttachment>>> ATTACHMENTS = new ConcurrentHashMap<>();
     private static final SecureRandom RNG = new SecureRandom();
+    private static final AtomicBoolean SESSION_OPEN = new AtomicBoolean(false);
     private static volatile boolean capabilityAnnounced = false;
 
     private ServerMediaNetworking() {
     }
 
     public static void onClientDisconnect() {
+        if (!SESSION_OPEN.compareAndSet(true, false)) {
+            return;
+        }
         INCOMING.clear();
         UPLOADS.forEach((id, fut) -> fut.complete(Optional.empty()));
         UPLOADS.clear();
         ATTACHMENTS.forEach((id, fut) -> fut.complete(Optional.empty()));
         ATTACHMENTS.clear();
-        ServerMediaClient.clearRuntimeState();
-        RichChatIngress.clear();
-        RichChatProjectionCoordinator.clear();
-        RichChatProjectionService.clear();
-        UpgradePhantomCoordinator.clear();
         capabilityAnnounced = false;
+        ChatUpgradeClientBootstrap.clearAllRuntimeState();
     }
 
     public static void onClientJoin() {
+        ChatUpgradeClientBootstrap.clearAllRuntimeState();
+        SESSION_OPEN.set(true);
         sendChatInputMode();
     }
 
@@ -117,6 +122,7 @@ public final class ServerMediaNetworking {
             payload.toMutation().ifPresent(mutation -> context.execute(() -> {
                 if (com.chat.upgrade.net.StructuredChatMutation.RETRACTED.equals(mutation.mutation())) {
                     RichChatStateStore.delete(mutation.messageId());
+                    ChatTextSelectionState.clearIfMessage(mutation.messageId());
                 }
             }));
         });

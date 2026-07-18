@@ -11,7 +11,17 @@ import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
+import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
+import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
+import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
+import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
 import net.minecraft.client.Minecraft;
 
@@ -66,6 +76,25 @@ public final class ChatUpgradeClientBootstrap {
             ImageLoader.invalidateTextureCache();
             VideoLoader.invalidateVideoCache();
         }
+    }
+
+    public static void clearAllRuntimeState() {
+        clearAllChatRuntimeState();
+        clearAllMediaRuntimeState();
+    }
+
+    public static void clearAllChatRuntimeState() {
+        RichChatIngress.clear();
+        RichChatProjectionCoordinator.clear();
+        RichChatInteractionRouter.clear();
+        ChatMessageVisibilityStore.clearSession();
+        ChatTextSelectionState.clear();
+        RichChatViewport.invalidateAll();
+        RichChatViewport.state().clear();
+        ChatUpgradeChatRenderState.cancelWheelOverscroll();
+        UpgradePhantomCoordinator.clear();
+        ChatSurfaceController.onChatScreenClosed();
+        ChatGestureArena.resetPointerState();
     }
 
     public static void clearAllMediaRuntimeState() {

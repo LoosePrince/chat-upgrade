@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 
 public final class ChatSurfaceController {
@@ -59,6 +60,9 @@ public final class ChatSurfaceController {
     public static void onChatScreenClosed() {
         boolean changed = pointerOperation != PointerOperation.NONE;
         clearPointerOperation();
+        ChatGestureArena.resetPointerState();
+        STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
+        STATE.setFocusOwner(ChatSurfaceState.FocusOwner.NONE);
         STATE.setPresentationMode(ChatPresentationMode.CLOSED_HUD);
         if (changed) {
             persistGeometry();
@@ -74,18 +78,32 @@ public final class ChatSurfaceController {
     }
 
     public static boolean pointerPressed(double pointerX, double pointerY, int button) {
-        if (button != 0 || STATE.presentationMode() != ChatPresentationMode.OPEN_PANEL) {
+        if (button != 0 || STATE.presentationMode() != ChatPresentationMode.OPEN_PANEL
+                || pointerOperation != PointerOperation.NONE) {
             return false;
         }
         ChatPanelGeometry geometry = STATE.panelGeometry();
         int edges = geometry.resizeEdgesAt(pointerX, pointerY);
         if (edges != ChatPanelGeometry.EDGE_NONE) {
+            if (!ChatGestureArena.tryCapture(
+                    ChatGestureArena.Owner.PANEL,
+                    ChatSurfaceController::cancelPointerOperation)) {
+                return false;
+            }
             beginPointerOperation(PointerOperation.RESIZE, geometry, pointerX, pointerY, edges);
             STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
             STATE.setFocusOwner(ChatSurfaceState.FocusOwner.TIMELINE);
             return true;
         }
+        if (isOverTimelineScrollbar(pointerX, pointerY)) {
+            return false;
+        }
         if (geometry.headerBounds().contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
+            if (!ChatGestureArena.tryCapture(
+                    ChatGestureArena.Owner.PANEL,
+                    ChatSurfaceController::cancelPointerOperation)) {
+                return false;
+            }
             beginPointerOperation(PointerOperation.MOVE, geometry, pointerX, pointerY, ChatPanelGeometry.EDGE_NONE);
             STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
             STATE.setFocusOwner(ChatSurfaceState.FocusOwner.TIMELINE);
@@ -137,6 +155,9 @@ public final class ChatSurfaceController {
             return false;
         }
         RichChatBounds viewport = STATE.panelGeometry().messageViewportBounds();
+        if (STATE.panelGeometry().resizeEdgesAt(pointerX, pointerY) != ChatPanelGeometry.EDGE_NONE) {
+            return false;
+        }
         int left = Math.max(viewport.left(), viewport.right() - 8);
         return pointerX >= left && pointerX <= viewport.right()
                 && pointerY >= viewport.top() && pointerY <= viewport.bottom();
@@ -183,10 +204,20 @@ public final class ChatSurfaceController {
         resizeEdges = edges;
     }
 
+    private static void cancelPointerOperation() {
+        if (pointerOperation == PointerOperation.NONE) {
+            return;
+        }
+        clearPointerOperation();
+        STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
+        persistGeometry();
+    }
+
     private static void clearPointerOperation() {
         pointerOperation = PointerOperation.NONE;
         pointerStartGeometry = null;
         resizeEdges = ChatPanelGeometry.EDGE_NONE;
+        ChatGestureArena.release(ChatGestureArena.Owner.PANEL);
     }
 
     private static void persistGeometry() {

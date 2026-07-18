@@ -171,7 +171,7 @@ public final class AttachmentDraft {
     }
 
     public AttachmentDraft uploading() {
-        return withStatus(Status.UPLOADING, null, null);
+        return withStatus(Status.UPLOADING, uploadedUrl, null);
     }
 
     public AttachmentDraft uploaded(String url) {

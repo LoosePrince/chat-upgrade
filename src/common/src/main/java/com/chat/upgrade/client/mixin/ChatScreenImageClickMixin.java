@@ -2,6 +2,7 @@ package com.chat.upgrade.client.mixin;
 
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -31,6 +32,7 @@ public abstract class ChatScreenImageClickMixin {
         if (ChatUpgradeChatPipelineGate.shouldUseRichViewportInteractions()) {
             Style richViewportStyle = RichChatInteractionRouter.styleForScreenClick((int) event.x(), (int) event.y());
             if (richViewportStyle != null) {
+                ChatTextSelectionState.clear();
                 return richViewportStyle;
             }
             return null;

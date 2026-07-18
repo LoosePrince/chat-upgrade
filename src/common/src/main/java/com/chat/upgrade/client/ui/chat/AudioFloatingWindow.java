@@ -6,6 +6,7 @@ import com.chat.upgrade.client.ChatUpgradeFormatters;
 import com.chat.upgrade.client.media.audio.AudioEntry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 
 import net.minecraft.client.Minecraft;
@@ -40,9 +41,9 @@ public final class AudioFloatingWindow {
         if (targetUrl == null || targetUrl.isBlank()) {
             return;
         }
+        ChatGestureArena.cancel(ChatGestureArena.Owner.FLOATING_AUDIO);
         if (visible && targetUrl.equals(url)) {
             visible = false;
-            dragging = false;
             return;
         }
         url = targetUrl;
@@ -65,9 +66,17 @@ public final class AudioFloatingWindow {
         return visible && url != null && !url.isBlank();
     }
 
+    public static boolean contains(double pointerX, double pointerY, int screenWidth, int screenHeight) {
+        if (!isVisible()) {
+            return false;
+        }
+        clampToScreen(screenWidth, screenHeight);
+        return inside(pointerX, pointerY, x, y, x + WIDTH, y + HEIGHT);
+    }
+
     public static void clear() {
+        ChatGestureArena.cancel(ChatGestureArena.Owner.FLOATING_AUDIO);
         visible = false;
-        dragging = false;
         url = null;
         displayName = null;
     }
@@ -150,6 +159,7 @@ public final class AudioFloatingWindow {
         if (inside(event.x(), event.y(), rects.removeL, rects.top, rects.removeR, rects.bottom)) {
             visible = false;
             dragging = false;
+            ChatGestureArena.release(ChatGestureArena.Owner.FLOATING_AUDIO);
             return true;
         }
         int barX0 = x + PAD;
@@ -162,6 +172,11 @@ public final class AudioFloatingWindow {
             return true;
         }
         if (inside(event.x(), event.y(), x, y, x + WIDTH, y + DRAG_H)) {
+            if (!ChatGestureArena.tryCapture(
+                    ChatGestureArena.Owner.FLOATING_AUDIO,
+                    AudioFloatingWindow::cancelDrag)) {
+                return false;
+            }
             dragging = true;
             dragOffsetX = (int) event.x() - x;
             dragOffsetY = (int) event.y() - y;
@@ -171,7 +186,10 @@ public final class AudioFloatingWindow {
     }
 
     public static boolean mouseDragged(MouseButtonEvent event, double dx, double dy, int screenWidth, int screenHeight) {
-        if (!isVisible() || !dragging || event.button() != 0) {
+        if (!isVisible()
+                || !dragging
+                || !ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.FLOATING_AUDIO)
+                || event.button() != 0) {
             return false;
         }
         x = (int) event.x() - dragOffsetX;
@@ -180,12 +198,18 @@ public final class AudioFloatingWindow {
         return true;
     }
 
+    public static void cancelDrag() {
+        dragging = false;
+    }
+
     public static boolean mouseReleased(MouseButtonEvent event) {
         if (!isVisible()) {
             return false;
         }
-        if (event.button() == 0 && dragging) {
+        if (event.button() == 0 && dragging
+                && ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.FLOATING_AUDIO)) {
             dragging = false;
+            ChatGestureArena.release(ChatGestureArena.Owner.FLOATING_AUDIO);
             return true;
         }
         return false;

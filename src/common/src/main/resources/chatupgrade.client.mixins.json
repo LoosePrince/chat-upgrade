@@ -23,6 +23,7 @@
     "ChatScreenAudioFloatingWindowMixin",
     "ChatScreenRichInputMixin",
     "ContainerEventHandlerAudioFloatingDragMixin",
+    "EditBoxHighlightAccessor",
     "MouseHandlerActiveButtonAccessor"
   ],
   "injectors": {

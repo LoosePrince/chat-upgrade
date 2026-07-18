@@ -17,6 +17,7 @@ import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
+import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceThemeId;
 import com.chat.upgrade.client.upload.LocalImageSources;
 import com.chat.upgrade.client.upload.UploadRouter;
@@ -150,6 +151,12 @@ public final class ChatUpgradeCommands {
                                     .then(arg("name", StringArgumentType.greedyString())
                                             .executes(ctx -> uploadVideoViaFilePicker(sink(ctx),
                                                     Optional.of(StringArgumentType.getString(ctx, "name")))))))
+                    .then(lit("visibility")
+                            .then(lit("unblock")
+                                    .then(arg("author", StringArgumentType.greedyString())
+                                            .executes(ctx -> unblockAuthor(
+                                                    sink(ctx),
+                                                    StringArgumentType.getString(ctx, "author"))))))
                     .then(lit("config")
                             .then(lit("uploadmode")
                                     .then(arg("mode", StringArgumentType.word())
@@ -191,6 +198,10 @@ public final class ChatUpgradeCommands {
                             .then(lit("smoothscroll")
                                     .then(arg("enabled", BoolArgumentType.bool())
                                             .executes(ctx -> setSmoothScrollEnabled(sink(ctx),
+                                                    BoolArgumentType.getBool(ctx, "enabled")))))
+                            .then(lit("debugactions")
+                                    .then(arg("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> setDebugChatActions(sink(ctx),
                                                     BoolArgumentType.getBool(ctx, "enabled")))))
                             .then(lit("reload")
                                     .executes(ctx -> reloadConfig(sink(ctx))))
@@ -243,6 +254,17 @@ public final class ChatUpgradeCommands {
             return true;
         }
         return false;
+    }
+
+    private static int unblockAuthor(CommandSink sink, String authorKey) {
+        if (!ChatMessageVisibilityStore.unblockAuthor(authorKey)) {
+            sink.error(Component.translatable("chatupgrade.visibility.author_not_blocked")
+                    .withStyle(ChatFormatting.YELLOW));
+            return 0;
+        }
+        sink.feedback(Component.translatable("chatupgrade.action.unblock.done")
+                .withStyle(ChatFormatting.GREEN));
+        return 1;
     }
 
     private static int pluginStatus(CommandSink sink) {
@@ -537,6 +559,20 @@ public final class ChatUpgradeCommands {
             ChatUpgradeConfig.setSmoothScrollEnabledAndSave(enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.smooth_scroll.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            sink.error(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setDebugChatActions(CommandSink sink, boolean enabled) {
+        try {
+            ChatUpgradeConfig.setDebugChatActionsAndSave(enabled);
+            sink.feedback(Component.translatable(
+                    "chatupgrade.config.debug_actions.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;

@@ -1,7 +1,9 @@
 package com.chat.upgrade.client.ui.chat.viewport;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix3x2f;
@@ -14,6 +16,7 @@ import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
+import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
@@ -22,8 +25,15 @@ import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
 import com.chat.upgrade.client.ui.chat.interaction.ChatAction;
 import com.chat.upgrade.client.ui.chat.interaction.ChatActionStyleAdapter;
+import com.chat.upgrade.client.ui.chat.interaction.ChatContextMenu;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureTarget;
+import com.chat.upgrade.client.ui.chat.interaction.ChatHitTarget;
+import com.chat.upgrade.client.ui.chat.interaction.ChatMessageActionBar;
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 
@@ -42,21 +52,44 @@ import net.minecraft.util.Util;
 public final class RichChatInteractionRouter {
     private static final List<ActiveHitBox> ACTIVE_HIT_BOXES = new ArrayList<>();
     private static final List<ActiveMessage> ACTIVE_MESSAGES = new ArrayList<>();
-    private static final String EMOJI_ACTION_PREFIX = "emoji:";
     private static final int EMOJI_PREVIEW_MIN_SIZE = 48;
     private static final int EMOJI_PREVIEW_MAX_SIZE = 96;
     private static final int EMOJI_PREVIEW_GAP = 8;
     private static @Nullable Matrix3x2fc activePose;
     private static @Nullable RichChatBounds activeViewportBounds;
+    private static @Nullable MediaCapture mediaCapture;
 
     private RichChatInteractionRouter() {
     }
 
     public static void clear() {
+        clearActiveLayout();
+        ChatGestureArena.cancel();
+    }
+
+    public static void clearActiveLayout() {
         ACTIVE_HIT_BOXES.clear();
         ACTIVE_MESSAGES.clear();
         activePose = null;
         activeViewportBounds = null;
+        cancelLayoutBoundPointerCapture();
+    }
+
+    public static void cancelAllPointerCapture() {
+        mediaCapture = null;
+        ChatGestureArena.cancel();
+        ChatTextSelectionState.clear();
+    }
+
+    public static void cancelPointerCapture() {
+        cancelLayoutBoundPointerCapture();
+        ChatGestureArena.cancel(ChatGestureArena.Owner.TIMELINE_SCROLL);
+    }
+
+    private static void cancelLayoutBoundPointerCapture() {
+        ChatGestureArena.cancel(ChatGestureArena.Owner.MEDIA);
+        ChatGestureArena.cancel(ChatGestureArena.Owner.TEXT_SELECTION);
+        ChatTextSelectionState.clear();
     }
 
     public static void setActiveLayout(
@@ -124,6 +157,209 @@ public final class RichChatInteractionRouter {
                 local.y);
     }
 
+    public static boolean beginPointerAtScreen(int screenX, int screenY) {
+        if (RichChatViewport.state().canScroll()
+                && ChatSurfaceController.isOverTimelineScrollbar(screenX, screenY)) {
+            return false;
+        }
+        if (ChatGestureArena.hasCapture()) {
+            return true;
+        }
+        Vector2f local = localPositionForScreen(screenX, screenY);
+        if (local == null || !isInsideActiveViewport(local.x, local.y)) {
+            return beginBlankScroll(screenX, screenY);
+        }
+        ActiveMessage activeMessage = activeMessageAtLocal(local.x, local.y);
+        RichChatHitBox hitBox = hitBoxAtLocal(local.x, local.y);
+        if (hitBox != null && hitBox.style() != null && hitBox.style().getClickEvent() != null) {
+            return false;
+        }
+        if (hitBox != null && hitBox.attachment() != null) {
+            ActiveHitBox activeHitBox = activeHitBoxAtLocal(local.x, local.y);
+            if (activeHitBox != null && beginMediaCapture(activeHitBox, local.x, local.y)) {
+                return true;
+            }
+            return false;
+        }
+        if (activeMessage == null) {
+            return beginBlankScroll(screenX, screenY);
+        }
+        TextSelectionPoint selectionPoint = selectionPointAt(activeMessage, local.x, local.y, false);
+        if (selectionPoint == null) {
+            return beginBlankScroll(screenX, screenY);
+        }
+        if (!ChatGestureArena.tryCapture(
+                ChatGestureArena.Owner.TEXT_SELECTION,
+                ChatTextSelectionState::cancel)) {
+            return false;
+        }
+        ChatTextSelectionState.begin(
+                activeMessage.layout().message(),
+                selectableLines(activeMessage),
+                selectionPoint.lineIndex(),
+                selectionPoint.charIndex());
+        return true;
+    }
+
+    public static boolean updatePointerAtScreen(int screenX, int screenY) {
+        if (ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.MEDIA)) {
+            if (mediaCapture != null) {
+                seekMediaCapture(screenX, screenY);
+            }
+            return true;
+        }
+        if (ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.TEXT_SELECTION)) {
+            if (ChatTextSelectionState.isSelecting()) {
+                ActiveMessage activeMessage = activeMessageById(ChatTextSelectionState.messageId());
+                Vector2f local = localPositionForCapturedScreen(screenX, screenY);
+                if (activeMessage != null && local != null) {
+                    TextSelectionPoint selectionPoint = selectionPointAt(activeMessage, local.x, local.y, true);
+                    if (selectionPoint != null) {
+                        ChatTextSelectionState.update(selectionPoint.lineIndex(), selectionPoint.charIndex());
+                    }
+                }
+            }
+            return true;
+        }
+        return ChatGestureArena.update(screenX, screenY);
+    }
+
+    public static boolean finishPointerAtScreen() {
+        if (ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.MEDIA)) {
+            mediaCapture = null;
+            ChatGestureArena.release(ChatGestureArena.Owner.MEDIA);
+            return true;
+        }
+        if (ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.TEXT_SELECTION)) {
+            ChatTextSelectionState.finish();
+            ChatGestureArena.release(ChatGestureArena.Owner.TEXT_SELECTION);
+            return true;
+        }
+        return ChatGestureArena.finish();
+    }
+
+    public static boolean hasPointerCapture() {
+        return ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.MEDIA)
+                || ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.TEXT_SELECTION)
+                || ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.TIMELINE_SCROLL);
+    }
+
+    private static boolean beginBlankScroll(int screenX, int screenY) {
+        if (ChatSurfaceController.state().presentationMode()
+                != com.chat.upgrade.client.ui.chat.surface.ChatPresentationMode.OPEN_PANEL
+                || !ChatSurfaceController.messageViewportBounds().contains(screenX, screenY)) {
+            return false;
+        }
+        ChatTextSelectionState.clear();
+        return ChatGestureArena.beginBlankScroll(screenX, screenY);
+    }
+
+    private static void seekMediaCapture(int screenX, int screenY) {
+        Vector2f local = localPositionForScreen(screenX, screenY);
+        MediaCapture capture = mediaCapture;
+        if (local == null || capture == null) {
+            return;
+        }
+        double ratio = capture.ratioAt(local.x, local.y);
+        if (ratio < 0.0D) {
+            return;
+        }
+        if (capture.type() == InlineResourceType.AUDIO) {
+            AudioPlayerService.seek(capture.url(), ratio);
+        } else if (capture.type() == InlineResourceType.VIDEO) {
+            VideoPlayerService.seek(capture.url(), ratio);
+        }
+    }
+
+    private static boolean beginMediaCapture(ActiveHitBox activeHitBox, float localX, float localY) {
+        RichChatHitBox hitBox = activeHitBox.hitBox();
+        RichAttachment attachment = hitBox.attachment();
+        if (attachment == null || !attachment.hasRenderableUrl()) {
+            return false;
+        }
+        if (attachment.type() == InlineResourceType.IMAGE) {
+            return false;
+        }
+        String url = attachment.requireRenderableUrl();
+        RichChatBounds bounds = activeHitBox.localBounds();
+        double ratio = progressRatio(bounds, attachment.type(), url, localX, localY);
+        if (ratio < 0.0D) {
+            return false;
+        }
+        if (!ChatGestureArena.tryCapture(
+                ChatGestureArena.Owner.MEDIA,
+                () -> mediaCapture = null)) {
+            return false;
+        }
+        ChatTextSelectionState.clear();
+        mediaCapture = new MediaCapture(attachment.type(), url, bounds);
+        seekMediaCaptureAtRatio(ratio);
+        return true;
+    }
+
+    private static void seekMediaCaptureAtRatio(double ratio) {
+        MediaCapture capture = mediaCapture;
+        if (capture == null) {
+            return;
+        }
+        if (capture.type() == InlineResourceType.AUDIO) {
+            AudioPlayerService.seek(capture.url(), ratio);
+        } else if (capture.type() == InlineResourceType.VIDEO) {
+            VideoPlayerService.seek(capture.url(), ratio);
+        }
+    }
+
+    private static double progressRatio(
+            RichChatBounds bounds,
+            InlineResourceType type,
+            String url,
+            float localX,
+            float localY) {
+        if (type == InlineResourceType.AUDIO) {
+            AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(bounds.left(), bounds.top());
+            int barX0 = bounds.left() + UpgradeHudInlinePaint.AUDIO_PAD_X;
+            int barX1 = bounds.right() - UpgradeHudInlinePaint.AUDIO_PAD_X;
+            int barY0 = bounds.top() + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
+            int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
+            if (inside(localX, localY, barX0, barY0 - 4, barX1, barY1 + 4)
+                    && !inside(localX, localY, rects.playLeft(), rects.top(), rects.popRight(), rects.bottom())) {
+                return Math.clamp((localX - barX0) / Math.max(1.0D, barX1 - barX0), 0.0D, 1.0D);
+            }
+            return -1.0D;
+        }
+        if (type == InlineResourceType.VIDEO) {
+            int controlY = bounds.top() + VideoUiLayout.CONTROL_TOP;
+            int btnX0 = bounds.left() + VideoUiLayout.PAD_X;
+            int btnX1 = btnX0 + VideoUiLayout.BTN_W;
+            if (inside(localX, localY, btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H)) {
+                return -1.0D;
+            }
+            Font font = Minecraft.getInstance().font;
+            String left = ChatUpgradeFormatters.formatMs(Math.max(0L, VideoPlayerService.positionMs(url)));
+            String right = ChatUpgradeFormatters.formatMs(Math.max(0L, VideoPlayerService.durationMs(url)));
+            int leftX = btnX1 + 4;
+            int rightX = bounds.right() - VideoUiLayout.PAD_X - font.width(right);
+            int barX0 = leftX + font.width(left) + 4;
+            int barX1 = rightX - 4;
+            int barY0 = bounds.top() + VideoUiLayout.PROGRESS_TOP;
+            int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
+            if (barX1 > barX0 && inside(localX, localY, barX0, barY0 - 4, barX1, barY1 + 4)) {
+                return Math.clamp((localX - barX0) / Math.max(1.0D, barX1 - barX0), 0.0D, 1.0D);
+            }
+        }
+        return -1.0D;
+    }
+
+    private static @Nullable ActiveHitBox activeHitBoxAtLocal(float localX, float localY) {
+        for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
+            ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
+            if (active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+                return active;
+            }
+        }
+        return null;
+    }
+
     private static @Nullable ActiveMessage activeMessageAtLocal(float localX, float localY) {
         for (int i = ACTIVE_MESSAGES.size() - 1; i >= 0; i--) {
             ActiveMessage active = ACTIVE_MESSAGES.get(i);
@@ -144,8 +380,76 @@ public final class RichChatInteractionRouter {
         return null;
     }
 
+    private static List<ChatTextSelectionState.SelectableLine> selectableLines(ActiveMessage activeMessage) {
+        int contentToLocalY = activeMessage.localBounds().top() - activeMessage.layout().bounds().top();
+        List<ChatTextSelectionState.SelectableLine> lines = new ArrayList<>();
+        for (RichChatRenderNode node : activeMessage.layout().nodes()) {
+            if (node.text() == null
+                    || (node.kind() != RichChatRenderNodeKind.REPLY
+                            && node.kind() != RichChatRenderNodeKind.TEXT
+                            && node.kind() != RichChatRenderNodeKind.SYSTEM
+                            && node.kind() != RichChatRenderNodeKind.DELETED)) {
+                continue;
+            }
+            lines.add(ChatTextSelectionState.SelectableLine.fromRendered(
+                    node.order(),
+                    node.bounds().translateY(contentToLocalY),
+                    node.text(),
+                    Minecraft.getInstance().font));
+        }
+        lines.sort(Comparator.comparingInt(ChatTextSelectionState.SelectableLine::order));
+        return List.copyOf(lines);
+    }
+
+    private static @Nullable TextSelectionPoint selectionPointAt(
+            ActiveMessage activeMessage,
+            float localX,
+            float localY,
+            boolean clampOutside) {
+        List<ChatTextSelectionState.SelectableLine> lines = selectableLines(activeMessage);
+        if (lines.isEmpty()) {
+            return null;
+        }
+        int lineIndex = lineIndexAt(lines, localY, clampOutside);
+        if (lineIndex < 0) {
+            return null;
+        }
+        ChatTextSelectionState.SelectableLine line = lines.get(lineIndex);
+        if (!clampOutside
+                && (localX < line.bounds().left()
+                        || localX > line.bounds().left() + line.renderedWidth())) {
+            return null;
+        }
+        return new TextSelectionPoint(
+                lineIndex,
+                line.charIndexAt(localX - line.bounds().left()));
+    }
+
+    private static int lineIndexAt(
+            List<ChatTextSelectionState.SelectableLine> lines,
+            float localY,
+            boolean clampOutside) {
+        for (int index = 0; index < lines.size(); index++) {
+            RichChatBounds bounds = lines.get(index).bounds();
+            if (localY >= bounds.top() && localY < bounds.bottom()) {
+                return index;
+            }
+            if (clampOutside && localY < bounds.top()) {
+                return index;
+            }
+        }
+        return clampOutside ? lines.size() - 1 : -1;
+    }
+
     private static @Nullable Vector2f localPositionForScreen(int screenX, int screenY) {
-        if (!ChatUpgradeChatRenderState.isInClipBounds(screenX, screenY) || activePose == null) {
+        if (!ChatUpgradeChatRenderState.isInClipBounds(screenX, screenY)) {
+            return null;
+        }
+        return localPositionForCapturedScreen(screenX, screenY);
+    }
+
+    private static @Nullable Vector2f localPositionForCapturedScreen(int screenX, int screenY) {
+        if (activePose == null) {
             return null;
         }
         Matrix3x2f inv = new Matrix3x2f(activePose);
@@ -153,8 +457,64 @@ public final class RichChatInteractionRouter {
         return inv.transformPosition(new Vector2f(screenX, screenY));
     }
 
+    public static boolean renderHoverActionBar(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            ChatTheme theme,
+            float localX,
+            float localY) {
+        if (graphics == null || font == null || theme == null || !isInsideActiveViewport(localX, localY)) {
+            return false;
+        }
+        ActiveMessage active = activeMessageAtLocal(localX, localY);
+        if (active == null) {
+            return false;
+        }
+        ChatMessageActionBar.render(
+                graphics,
+                font,
+                theme,
+                active.layout().message(),
+                active.localBounds(),
+                localX,
+                localY);
+        return ChatMessageActionBar.tooltipAt(
+                active.layout().message(),
+                active.localBounds(),
+                font,
+                localX,
+                localY) != null;
+    }
+
+    public static Optional<ChatContextMenu.Selection> hoverActionAtScreen(int screenX, int screenY) {
+        Vector2f local = localPositionForScreen(screenX, screenY);
+        if (local == null || !isInsideActiveViewport(local.x, local.y)) {
+            return Optional.empty();
+        }
+        ActiveMessage active = activeMessageAtLocal(local.x, local.y);
+        if (active == null) {
+            return Optional.empty();
+        }
+        return ChatMessageActionBar.actionAt(
+                active.layout().message(),
+                active.localBounds(),
+                Minecraft.getInstance().font,
+                local.x,
+                local.y);
+    }
+
     public static boolean hasActionAtLocal(float localX, float localY) {
-        return styleForLocalClick(localX, localY) != null;
+        if (styleForLocalClick(localX, localY) != null) {
+            return true;
+        }
+        ActiveMessage active = activeMessageAtLocal(localX, localY);
+        return active != null
+                && ChatMessageActionBar.actionAt(
+                        active.layout().message(),
+                        active.localBounds(),
+                        Minecraft.getInstance().font,
+                        localX,
+                        localY).isPresent();
     }
 
     public static @Nullable Style styleForLocalClick(float localX, float localY) {
@@ -189,6 +549,19 @@ public final class RichChatInteractionRouter {
         if (gfx == null || font == null || !isInsideActiveViewport(localX, localY)) {
             return false;
         }
+        ActiveMessage hoveredMessage = activeMessageAtLocal(localX, localY);
+        if (hoveredMessage != null) {
+            String actionTooltip = ChatMessageActionBar.tooltipAt(
+                    hoveredMessage.layout().message(),
+                    hoveredMessage.localBounds(),
+                    font,
+                    localX,
+                    localY);
+            if (actionTooltip != null && !actionTooltip.isBlank()) {
+                gfx.setTooltipForNextFrame(font, font.split(Component.literal(actionTooltip), 210), screenX, screenY);
+                return true;
+            }
+        }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
             if (!active.localBounds().contains(Math.round(localX), Math.round(localY))) {
@@ -216,7 +589,7 @@ public final class RichChatInteractionRouter {
     }
 
     private static boolean isEmojiHitBox(RichChatHitBox hitBox) {
-        return hitBox != null && hitBox.actionKey().startsWith(EMOJI_ACTION_PREFIX);
+        return hitBox != null && hitBox.target() instanceof ChatHitTarget.Emoji;
     }
 
     private static boolean showEmojiPreviewForLocalHover(
@@ -509,6 +882,15 @@ public final class RichChatInteractionRouter {
     }
 
     private record VideoAction(VideoActionKind kind, double ratio) {
+    }
+
+    private record MediaCapture(InlineResourceType type, String url, RichChatBounds bounds) {
+        double ratioAt(float localX, float localY) {
+            return progressRatio(bounds, type, url, localX, localY);
+        }
+    }
+
+    private record TextSelectionPoint(int lineIndex, int charIndex) {
     }
 
     private record ActiveMessage(RichChatMessageLayout layout, RichChatBounds localBounds) {

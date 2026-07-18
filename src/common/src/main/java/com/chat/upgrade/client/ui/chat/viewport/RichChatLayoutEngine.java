@@ -9,6 +9,7 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
+import com.chat.upgrade.client.ui.chat.interaction.ChatHitTarget;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjection;
 import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjector;
@@ -214,9 +215,7 @@ public final class RichChatLayoutEngine {
                     hitBoxKind(attachmentLayout.kind()),
                     message.messageId(),
                     attachmentBounds,
-                    attachment,
-                    null,
-                    attachmentActionKey(attachment)));
+                    new ChatHitTarget.Attachment(attachment)));
             cursorY += attachmentLayout.height();
             visualRight = Math.max(visualRight, attachmentBounds.right());
             order++;
@@ -262,7 +261,6 @@ public final class RichChatLayoutEngine {
         }
         List<RichChatHitBox> hitBoxes = new ArrayList<>();
         int cursorX = lineBounds.left();
-        int runIndex = 0;
         for (StyledTextRun run : runs) {
             int width = font.width(run.text());
             if (width > 0 && hasInteractiveStyle(run.style())) {
@@ -270,12 +268,9 @@ public final class RichChatLayoutEngine {
                         RichChatHitBoxKind.TEXT,
                         messageId,
                         RichChatBounds.ofSize(cursorX, lineBounds.top(), width, lineBounds.height()),
-                        null,
-                        run.style(),
-                        "text:" + messageId + ":" + runIndex));
+                        new ChatHitTarget.StyledText(run.style())));
             }
             cursorX += width;
-            runIndex++;
         }
         return hitBoxes;
     }
@@ -338,9 +333,7 @@ public final class RichChatLayoutEngine {
                     RichChatHitBoxKind.IMAGE,
                     messageId,
                     RichChatBounds.ofSize(x, y, size, size),
-                    attachment,
-                    null,
-                    "emoji:" + slot.token() + ":" + slot.iconUrl()));
+                    new ChatHitTarget.Emoji(attachment)));
         }
         return hitBoxes;
     }
@@ -379,12 +372,5 @@ public final class RichChatLayoutEngine {
             case ATTACHMENT_FAILED -> RichChatHitBoxKind.RETRY;
             case ATTACHMENT_PENDING, DELETED, REPLY, TEXT, SYSTEM -> RichChatHitBoxKind.ATTACHMENT;
         };
-    }
-
-    private static String attachmentActionKey(RichAttachment attachment) {
-        if (!attachment.hasRenderableUrl()) {
-            return "pending";
-        }
-        return attachment.type().toWire() + ":" + attachment.requireRenderableUrl();
     }
 }

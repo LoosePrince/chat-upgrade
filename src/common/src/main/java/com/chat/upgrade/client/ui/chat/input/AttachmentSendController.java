@@ -1,8 +1,11 @@
 package com.chat.upgrade.client.ui.chat.input;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
@@ -16,6 +19,7 @@ import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
 import com.chat.upgrade.net.StructuredChatMessage;
+import com.chat.upgrade.net.StructuredChatProtocolLimits;
 import com.chat.upgrade.net.StructuredChatSubmission;
 
 import com.chat.upgrade.platform.net.Net;
@@ -39,6 +43,7 @@ public final class AttachmentSendController {
         SENT,
         UPLOAD_FAILED,
         NOT_CONNECTED,
+        UNSUPPORTED,
         STALE_DRAFT
     }
 
@@ -57,71 +62,107 @@ public final class AttachmentSendController {
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(resultSink, "resultSink");
 
-        Optional<AttachmentDraft> draftOpt = state.draft();
-        if (draftOpt.isEmpty()) {
+        List<AttachmentDraft> drafts = state.drafts();
+        if (drafts.isEmpty()) {
             return SendStartResult.NO_ATTACHMENT;
         }
-        AttachmentDraft draft = draftOpt.get();
         ChatReplySummary replyTarget = state.replyTarget().orElse(null);
-        if (draft.status() == AttachmentDraft.Status.UPLOADING) {
+        if (drafts.stream().anyMatch(draft -> draft.status() == AttachmentDraft.Status.UPLOADING)) {
             return SendStartResult.UPLOAD_IN_PROGRESS;
         }
-        if (!draft.isSendable()) {
+        if (drafts.stream().anyMatch(draft -> !draft.isSendable())) {
             return SendStartResult.NOT_SENDABLE;
         }
         if (!isConnected()) {
             return SendStartResult.NOT_CONNECTED;
         }
-        if (draft.sizeBytes() > ChatUpgradeConfig.get().maxUploadBytes) {
-            state.replaceIfCurrent(draft, draft.failed(Component.translatable(
-                    "chatupgrade.upload.too_large",
-                    ChatUpgradeConfig.formatBytesHuman(ChatUpgradeConfig.get().maxUploadBytes),
-                    ChatUpgradeConfig.formatBytesHuman(draft.sizeBytes())).getString()));
+        long totalBytes = drafts.stream().mapToLong(AttachmentDraft::sizeBytes).sum();
+        if (drafts.stream().anyMatch(draft -> draft.sizeBytes() > ChatUpgradeConfig.get().maxUploadBytes)) {
+            for (AttachmentDraft draft : drafts) {
+                if (draft.sizeBytes() > ChatUpgradeConfig.get().maxUploadBytes) {
+                    state.replaceIfCurrent(draft, draft.failed(Component.translatable(
+                            "chatupgrade.upload.too_large",
+                            ChatUpgradeConfig.formatBytesHuman(ChatUpgradeConfig.get().maxUploadBytes),
+                            ChatUpgradeConfig.formatBytesHuman(draft.sizeBytes())).getString()));
+                }
+            }
             return SendStartResult.TOO_LARGE;
         }
-
-        if (draft.uploadedUrl().isPresent()) {
-            finishAlreadyUploaded(state, draft, typedMessage, replyTarget, resultSink);
-            return SendStartResult.STARTED;
-        }
-
-        Optional<AttachmentDraft> uploadingDraftOpt = state.markUploading(draft);
-        if (uploadingDraftOpt.isEmpty()) {
+        if (totalBytes <= 0) {
             return SendStartResult.NOT_SENDABLE;
         }
-        AttachmentDraft uploadingDraft = uploadingDraftOpt.get();
-        UploadRouter.uploadBytes(
-                uploadingDraft.type(),
-                uploadingDraft.data(),
-                uploadingDraft.fileName(),
-                uploadingDraft.contentType().orElse(null))
-                .handle((urlOpt, error) -> {
-                    Optional<String> safeUrlOpt = error == null && urlOpt != null ? urlOpt : Optional.empty();
-                    runOnClient(() -> finishUpload(
-                            state,
-                            uploadingDraft,
-                            typedMessage,
-                            replyTarget,
-                            safeUrlOpt,
-                            resultSink));
-                    return null;
-                });
+
+        List<AttachmentDraft> snapshot = List.copyOf(drafts);
+        Optional<List<AttachmentDraft>> uploadingBatch = state.beginUploadBatch(snapshot);
+        if (uploadingBatch.isEmpty()) {
+            return SendStartResult.NOT_SENDABLE;
+        }
+        List<AttachmentDraft> uploadingDrafts = uploadingBatch.get();
+        List<CompletableFuture<Optional<String>>> uploads = uploadingDrafts.stream()
+                .map(draft -> draft.uploadedUrl().isPresent()
+                        ? CompletableFuture.completedFuture(Optional.of(draft.uploadedUrl().orElseThrow()))
+                        : UploadRouter.uploadBytes(
+                                draft.type(),
+                                draft.data(),
+                                draft.fileName(),
+                                draft.contentType().orElse(null))
+                                .handle((urlOpt, error) -> error == null && urlOpt != null
+                                        ? urlOpt
+                                        : Optional.<String>empty()))
+                .toList();
+        CompletableFuture.allOf(uploads.toArray(new CompletableFuture<?>[0]))
+                .thenRun(() -> runOnClient(() -> finishUploads(
+                        state,
+                        uploadingDrafts,
+                        typedMessage,
+                        replyTarget,
+                        uploads,
+                        resultSink)));
         return SendStartResult.STARTED;
     }
 
     public static String buildBracketFallbackMessage(AttachmentDraft draft, String uploadedUrl, String typedMessage) {
-        RichAttachment attachment = RichAttachment.localDraft(uploadedUrl, draft.displayName(), draft.type());
-        return buildBracketFallbackMessage(RichMessageDraft.withAttachment(typedMessage, attachment));
+        return buildBracketFallbackMessage(List.of(draft), List.of(uploadedUrl), typedMessage);
+    }
+
+    public static String buildBracketFallbackMessage(
+            List<AttachmentDraft> drafts,
+            List<String> uploadedUrls,
+            String typedMessage) {
+        if (drafts == null || uploadedUrls == null || drafts.size() != uploadedUrls.size()) {
+            throw new IllegalArgumentException("drafts and uploadedUrls must have the same size");
+        }
+        StringBuilder payload = new StringBuilder(normalizeTypedMessage(typedMessage));
+        for (int i = 0; i < drafts.size(); i++) {
+            RichAttachment attachment = RichAttachment.localDraft(
+                    uploadedUrls.get(i),
+                    drafts.get(i).displayName(),
+                    drafts.get(i).type());
+            String bracket = UpgradeBracketCodec.buildSendPayload(
+                    attachment.requireRenderableUrl(),
+                    attachment.displayName(),
+                    attachment.type());
+            if (payload.length() > 0) {
+                payload.append(' ');
+            }
+            payload.append(bracket);
+        }
+        return payload.toString();
     }
 
     public static String buildBracketFallbackMessage(RichMessageDraft messageDraft) {
-        RichAttachment attachment = messageDraft.attachment().orElseThrow();
-        String payload = UpgradeBracketCodec.buildSendPayload(
-                attachment.requireRenderableUrl(),
-                attachment.displayName(),
-                attachment.type());
-        String prefix = normalizeTypedMessage(messageDraft.text());
-        return prefix.isEmpty() ? payload : prefix + " " + payload;
+        StringBuilder payload = new StringBuilder(normalizeTypedMessage(messageDraft.text()));
+        for (RichAttachment attachment : messageDraft.attachments()) {
+            String bracket = UpgradeBracketCodec.buildSendPayload(
+                    attachment.requireRenderableUrl(),
+                    attachment.displayName(),
+                    attachment.type());
+            if (payload.length() > 0) {
+                payload.append(' ');
+            }
+            payload.append(bracket);
+        }
+        return payload.toString();
     }
 
     public static Component uploadHint() {
@@ -150,60 +191,67 @@ public final class AttachmentSendController {
         return Component.translatable("chatupgrade.upload.failed.third_party", action).withStyle(ChatFormatting.RED);
     }
 
-    private static void finishAlreadyUploaded(
+    private static void finishUploads(
             ChatComposerState state,
-            AttachmentDraft draft,
+            List<AttachmentDraft> uploadingDrafts,
             String typedMessage,
             ChatReplySummary replyTarget,
+            List<CompletableFuture<Optional<String>>> uploads,
             ResultSink resultSink) {
-        String url = draft.uploadedUrl().orElseThrow();
-        runOnClient(() -> {
-            if (!state.isCurrent(draft)) {
-                resultSink.accept(SendFinishResult.STALE_DRAFT, Optional.empty());
-                return;
-            }
-            if (sendRichMessage(draft, url, typedMessage, replyMessageId(replyTarget))) {
-                state.clearIfCurrent(draft);
-                state.clearReplyIfCurrent(replyTarget);
-                resultSink.accept(SendFinishResult.SENT, Optional.empty());
-                return;
-            }
-            resultSink.accept(
-                    SendFinishResult.NOT_CONNECTED,
-                    Optional.of(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED)));
-        });
-    }
-
-    private static void finishUpload(
-            ChatComposerState state,
-            AttachmentDraft uploadingDraft,
-            String typedMessage,
-            ChatReplySummary replyTarget,
-            Optional<String> urlOpt,
-            ResultSink resultSink) {
-        if (!state.isCurrent(uploadingDraft)) {
+        if (!state.containsAll(uploadingDrafts)) {
+            state.endUploadBatch();
             resultSink.accept(SendFinishResult.STALE_DRAFT, Optional.empty());
             return;
         }
-        if (urlOpt.isEmpty()) {
-            state.replaceIfCurrent(uploadingDraft, uploadingDraft.failed(uploadFailedMessage().getString()));
+        List<String> urls = new ArrayList<>();
+        boolean failedUpload = false;
+        for (int i = 0; i < uploads.size(); i++) {
+            Optional<String> url = uploads.get(i).join().filter(value -> !value.isBlank());
+            if (url.isEmpty()) {
+                failedUpload = true;
+                urls.add("");
+                continue;
+            }
+            urls.add(url.get());
+        }
+        if (failedUpload) {
+            for (int i = 0; i < uploadingDrafts.size(); i++) {
+                AttachmentDraft current = uploadingDrafts.get(i);
+                if (urls.get(i).isBlank()) {
+                    state.replaceIfCurrent(current, current.failed(uploadFailedMessage().getString()));
+                } else {
+                    state.replaceIfCurrent(current, current.uploaded(urls.get(i)));
+                }
+            }
+            state.endUploadBatch();
             resultSink.accept(SendFinishResult.UPLOAD_FAILED, Optional.of(uploadFailedMessage()));
             return;
         }
-        AttachmentDraft uploadedDraft = uploadingDraft.uploaded(urlOpt.get());
-        if (!sendRichMessage(
-                uploadedDraft,
-                urlOpt.get(),
+        SendFinishResult sendResult = sendRichMessage(
+                uploadingDrafts,
+                urls,
                 typedMessage,
-                replyMessageId(replyTarget))) {
-            state.replaceIfCurrent(uploadingDraft, uploadedDraft);
-            resultSink.accept(
-                    SendFinishResult.NOT_CONNECTED,
-                    Optional.of(Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED)));
+                replyMessageId(replyTarget));
+        if (sendResult != SendFinishResult.SENT) {
+            for (int i = 0; i < uploadingDrafts.size(); i++) {
+                AttachmentDraft current = uploadingDrafts.get(i);
+                state.replaceIfCurrent(current, current.uploaded(urls.get(i)));
+            }
+            Component failure = sendResult == SendFinishResult.UNSUPPORTED
+                    ? Component.translatable("chatupgrade.input.error.structured_required").withStyle(ChatFormatting.RED)
+                    : Component.translatable("chatupgrade.error.not_connected").withStyle(ChatFormatting.RED);
+            state.endUploadBatch();
+            resultSink.accept(sendResult, Optional.of(failure));
             return;
         }
-        state.clearIfCurrent(uploadingDraft);
+        for (AttachmentDraft draft : uploadingDrafts) {
+            state.clearIfCurrent(draft);
+        }
         state.clearReplyIfCurrent(replyTarget);
+        for (int i = 0; i < uploadingDrafts.size(); i++) {
+            submitMetadataIfAvailable(uploadingDrafts.get(i), urls.get(i));
+        }
+        state.endUploadBatch();
         resultSink.accept(SendFinishResult.SENT, Optional.empty());
     }
 
@@ -249,42 +297,41 @@ public final class AttachmentSendController {
         }
     }
 
-    private static boolean sendRichMessage(
-            AttachmentDraft draft,
-            String uploadedUrl,
+    private static SendFinishResult sendRichMessage(
+            List<AttachmentDraft> drafts,
+            List<String> uploadedUrls,
             String typedMessage,
             String replyToMessageId) {
         String replyId = replyToMessageId == null ? "" : replyToMessageId.trim();
-        StructuredAttachment attachment = null;
         try {
-            attachment = buildStructuredAttachment(draft, uploadedUrl);
-            String fallback = buildBracketFallbackMessage(draft, uploadedUrl, typedMessage);
-            StructuredChatMessage message = StructuredChatMessage.withSingleAttachment(
+            List<StructuredAttachment> attachments = buildStructuredAttachments(drafts, uploadedUrls);
+            String fallback = buildBracketFallbackMessage(drafts, uploadedUrls, typedMessage);
+            StructuredChatMessage message = StructuredChatMessage.withAttachments(
                     nextClientNonce(),
                     typedMessage,
-                    attachment,
+                    attachments,
                     fallback);
-            if (sendStructuredSubmission(StructuredChatSubmission.fromLegacy(message).replyingTo(replyId))) {
-                submitMetadataIfAvailable(draft, uploadedUrl);
-                return true;
+            StructuredChatSubmission submission = StructuredChatSubmission.fromLegacy(message).replyingTo(replyId);
+            if (!StructuredChatProtocolLimits.accepts(submission)) {
+                return SendFinishResult.UNSUPPORTED;
+            }
+            if (sendStructuredSubmission(submission)) {
+                return SendFinishResult.SENT;
             }
             if (replyId.isBlank()
                     && shouldUseLegacyStructuredSend()
                     && sendStructuredChatMessage(message)) {
-                submitMetadataIfAvailable(draft, uploadedUrl);
-                return true;
+                return SendFinishResult.SENT;
             }
         } catch (IllegalArgumentException | IllegalStateException ex) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: cannot build structured chat message: {}", ex.getMessage());
         }
-        if (!replyId.isBlank()) {
-            return false;
+        if (drafts.size() > 1 || !replyId.isBlank()) {
+            return isConnected() ? SendFinishResult.UNSUPPORTED : SendFinishResult.NOT_CONNECTED;
         }
-        if (!sendChat(buildBracketFallbackMessage(draft, uploadedUrl, typedMessage))) {
-            return false;
-        }
-        submitMetadataIfAvailable(draft, uploadedUrl);
-        return true;
+        return sendChat(buildBracketFallbackMessage(drafts, uploadedUrls, typedMessage))
+                ? SendFinishResult.SENT
+                : SendFinishResult.NOT_CONNECTED;
     }
 
     private static boolean shouldUseLegacyStructuredSend() {
@@ -347,6 +394,19 @@ public final class AttachmentSendController {
         } catch (IllegalArgumentException | IllegalStateException ex) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: cannot submit attachment metadata: {}", ex.getMessage());
         }
+    }
+
+    private static List<StructuredAttachment> buildStructuredAttachments(
+            List<AttachmentDraft> drafts,
+            List<String> uploadedUrls) {
+        if (drafts == null || uploadedUrls == null || drafts.size() != uploadedUrls.size()) {
+            throw new IllegalArgumentException("drafts and uploadedUrls must have the same size");
+        }
+        List<StructuredAttachment> attachments = new ArrayList<>();
+        for (int i = 0; i < drafts.size(); i++) {
+            attachments.add(buildStructuredAttachment(drafts.get(i), uploadedUrls.get(i)));
+        }
+        return List.copyOf(attachments);
     }
 
     private static StructuredAttachment buildStructuredAttachment(AttachmentDraft draft, String uploadedUrl) {

@@ -9,6 +9,8 @@ import net.minecraft.client.input.MouseButtonEvent;
 import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
@@ -126,9 +128,13 @@ public abstract class ChatScreenScrollbarDragMixin {
         if (!state.canScroll()) {
             return;
         }
-        if (!ChatSurfaceController.isOverTimelineScrollbar(event.x(), event.y())) {
+        if (!ChatSurfaceController.isOverTimelineScrollbar(event.x(), event.y())
+                || !ChatGestureArena.tryCapture(
+                        ChatGestureArena.Owner.SCROLLBAR,
+                        this::chatupgrade$cancelViewportScrollbarDrag)) {
             return;
         }
+        ChatTextSelectionState.clear();
         chatupgrade$draggingScrollbar = true;
         chatupgrade$applyViewportScrollbarDrag(state, event.y());
         cir.setReturnValue(true);
@@ -142,19 +148,40 @@ public abstract class ChatScreenScrollbarDragMixin {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
             chatupgrade$draggingScrollbar = false;
+            ChatGestureArena.release(ChatGestureArena.Owner.SCROLLBAR);
             return;
         }
         MouseButtonInfo activeButton = ((MouseHandlerActiveButtonAccessor) mc.mouseHandler).chatupgrade$getActiveButton();
         if (activeButton == null || activeButton.button() != 0) {
             chatupgrade$draggingScrollbar = false;
+            ChatGestureArena.release(ChatGestureArena.Owner.SCROLLBAR);
             return;
         }
         RichChatViewportState state = RichChatViewport.state();
         if (!state.canScroll()) {
             chatupgrade$draggingScrollbar = false;
+            ChatGestureArena.release(ChatGestureArena.Owner.SCROLLBAR);
             return;
         }
         chatupgrade$applyViewportScrollbarDrag(state, mouseY);
+    }
+
+    @Inject(method = "mouseReleased(Lnet/minecraft/client/input/MouseButtonEvent;)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$finishViewportScrollbarDrag(
+            MouseButtonEvent event,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (event.button() != 0
+                || !ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.SCROLLBAR)) {
+            return;
+        }
+        chatupgrade$cancelViewportScrollbarDrag();
+        ChatGestureArena.release(ChatGestureArena.Owner.SCROLLBAR);
+        cir.setReturnValue(true);
+    }
+
+    @Unique
+    private void chatupgrade$cancelViewportScrollbarDrag() {
+        chatupgrade$draggingScrollbar = false;
     }
 
     @Unique

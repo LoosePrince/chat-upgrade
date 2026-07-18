@@ -1,5 +1,9 @@
 package com.chat.upgrade.client.ui.chat.input;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
@@ -9,8 +13,18 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
 
 public final class ChatComposerRenderer {
+    private static final int CHIP_HEIGHT = 16;
+    private static final int CHIP_GAP = 3;
+    private static final int CHIP_MIN_WIDTH = 42;
+    private static final int CHIP_MAX_WIDTH = 112;
+    private static final int CHIP_REMOVE_WIDTH = 14;
+
+    public record AttachmentChip(AttachmentDraft draft, RichChatBounds bounds, RichChatBounds removeBounds) {
+    }
+
     private ChatComposerRenderer() {
     }
 
@@ -57,38 +71,180 @@ public final class ChatComposerRenderer {
         return close.contains((int) Math.round(mouseX), (int) Math.round(mouseY));
     }
 
-    public static void paintAttachmentChip(
+    public static void paintInput(
             GuiGraphicsExtractor graphics,
             Font font,
             ChatTheme theme,
-            AttachmentDraft draft,
+            RichChatBounds composerBounds,
+            String value,
+            boolean focused,
+            int cursorPosition,
+            int highlightPosition) {
+        if (graphics == null || font == null || theme == null || composerBounds == null) {
+            return;
+        }
+        RichChatBounds inputBounds = RichChatBounds.ofSize(
+                composerBounds.left() + 6,
+                composerBounds.bottom() - 21,
+                Math.max(1, composerBounds.width() - 12),
+                18);
+        ChatThemeTokens.Surface surface = theme.tokens().surface();
+        graphics.fill(
+                inputBounds.left(),
+                inputBounds.top(),
+                inputBounds.right(),
+                inputBounds.bottom(),
+                surface.panelBackground());
+        graphics.outline(
+                inputBounds.left(),
+                inputBounds.top(),
+                inputBounds.width(),
+                inputBounds.height(),
+                focused ? surface.title() : surface.panelBorder());
+
+        String text = value == null ? "" : value;
+        int cursor = Math.clamp(cursorPosition, 0, text.length());
+        int highlight = Math.clamp(highlightPosition, 0, text.length());
+        int selectionStart = Math.min(cursor, highlight);
+        int selectionEnd = Math.max(cursor, highlight);
+        int contentLeft = inputBounds.left() + 4;
+        int contentTop = inputBounds.top() + 5;
+        int availableWidth = Math.max(1, inputBounds.width() - 8);
+        int visibleStart = 0;
+        String beforeCursor = text.substring(0, cursor);
+        if (font.width(beforeCursor) > availableWidth) {
+            String tail = font.plainSubstrByWidth(beforeCursor, availableWidth, true);
+            visibleStart = Math.max(0, cursor - tail.length());
+        }
+        String visible = text.substring(visibleStart);
+        if (font.width(visible) > availableWidth) {
+            visible = font.plainSubstrByWidth(visible, availableWidth);
+        }
+        int visibleEnd = visibleStart + visible.length();
+        String displayed = visible;
+        int textColor = theme.tokens().message().text();
+        if (displayed.isEmpty()) {
+            graphics.text(
+                    font,
+                    Component.translatable("chatupgrade.input.hint").getString(),
+                    contentLeft,
+                    contentTop,
+                    surface.muted(),
+                    false);
+        } else {
+            if (selectionEnd > visibleStart && selectionStart < visibleEnd) {
+                int selectedFrom = Math.max(selectionStart, visibleStart) - visibleStart;
+                int selectedTo = Math.min(selectionEnd, visibleEnd) - visibleStart;
+                int selectedLeft = contentLeft + font.width(displayed.substring(0, selectedFrom));
+                int selectedRight = contentLeft + font.width(displayed.substring(0, selectedTo));
+                graphics.fill(
+                        selectedLeft,
+                        inputBounds.top() + 2,
+                        Math.max(selectedLeft + 1, selectedRight),
+                        inputBounds.bottom() - 2,
+                        0x805A8DFF);
+            }
+            graphics.text(font, displayed, contentLeft, contentTop, textColor, false);
+        }
+        int cursorOffset = Math.clamp(cursor - visibleStart, 0, displayed.length());
+        int cursorX = contentLeft + font.width(displayed.substring(0, cursorOffset));
+        if (focused && (Util.getMillis() / 500L) % 2L == 0L) {
+            graphics.fill(
+                    cursorX,
+                    inputBounds.top() + 3,
+                    cursorX + 1,
+                    inputBounds.bottom() - 3,
+                    surface.title());
+        }
+    }
+    public static void paintAttachmentChips(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            ChatTheme theme,
+            List<AttachmentDraft> drafts,
             int left,
             int right,
             int top) {
-        if (graphics == null || font == null || theme == null || draft == null || right <= left + 12) {
+        if (graphics == null || font == null || theme == null || drafts == null || drafts.isEmpty()) {
             return;
         }
-        ChatThemeTokens tokens = theme.tokens();
-        int background = draft.status() == AttachmentDraft.Status.FAILED
-                ? tokens.message().errorBackground()
-                : tokens.media().pendingBackground();
-        int outline = switch (draft.status()) {
-            case READY -> tokens.message().playerBorder();
-            case UPLOADING -> tokens.message().announcementBorder();
-            case UPLOADED -> tokens.message().replyBorder();
-            case FAILED -> tokens.message().errorBorder();
-        };
-        graphics.fill(left, top, right, top + 16, background);
-        graphics.outline(left, top, right - left, 16, outline);
-        String label = chipLabel(draft);
-        int maxTextWidth = Math.max(12, right - left - 8);
-        if (font.width(label) > maxTextWidth) {
-            label = font.plainSubstrByWidth(label, maxTextWidth - font.width("…")) + "…";
+        for (AttachmentChip chip : attachmentChips(font, drafts, left, right, top)) {
+            paintAttachmentChip(graphics, font, theme, chip);
         }
-        int textColor = draft.status() == AttachmentDraft.Status.FAILED
-                ? tokens.media().failureText()
-                : tokens.media().text();
-        graphics.text(font, label, left + 4, top + 4, textColor, false);
+    }
+
+    public static Optional<AttachmentDraft> attachmentAt(
+            Font font,
+            List<AttachmentDraft> drafts,
+            int left,
+            int right,
+            int top,
+            double mouseX,
+            double mouseY) {
+        return attachmentAt(font, drafts, left, right, top, mouseX, mouseY, true);
+    }
+
+    public static Optional<AttachmentDraft> attachmentChipAt(
+            Font font,
+            List<AttachmentDraft> drafts,
+            int left,
+            int right,
+            int top,
+            double mouseX,
+            double mouseY) {
+        return attachmentAt(font, drafts, left, right, top, mouseX, mouseY, false);
+    }
+
+    private static Optional<AttachmentDraft> attachmentAt(
+            Font font,
+            List<AttachmentDraft> drafts,
+            int left,
+            int right,
+            int top,
+            double mouseX,
+            double mouseY,
+            boolean removeOnly) {
+        if (font == null || drafts == null || drafts.isEmpty()) {
+            return Optional.empty();
+        }
+        int x = (int) Math.round(mouseX);
+        int y = (int) Math.round(mouseY);
+        return attachmentChips(font, drafts, left, right, top).stream()
+                .filter(chip -> (removeOnly ? chip.removeBounds() : chip.bounds()).contains(x, y))
+                .map(AttachmentChip::draft)
+                .findFirst();
+    }
+
+    public static List<AttachmentChip> attachmentChips(
+            Font font,
+            List<AttachmentDraft> drafts,
+            int left,
+            int right,
+            int top) {
+        if (font == null || drafts == null || right <= left) {
+            return List.of();
+        }
+        List<AttachmentChip> chips = new ArrayList<>();
+        int cursor = left;
+        int gapWidth = CHIP_GAP * Math.max(0, drafts.size() - 1);
+        int slotWidth = Math.max(1, (right - left - gapWidth) / Math.max(1, drafts.size()));
+        for (AttachmentDraft draft : drafts) {
+            String label = chipLabel(draft);
+            int desiredWidth = Math.clamp(
+                    font.width(label) + CHIP_REMOVE_WIDTH + 9,
+                    CHIP_MIN_WIDTH,
+                    CHIP_MAX_WIDTH);
+            int width = Math.max(1, Math.min(desiredWidth, slotWidth));
+            RichChatBounds bounds = RichChatBounds.ofSize(cursor, top, width, CHIP_HEIGHT);
+            RichChatBounds remove = RichChatBounds.ofSize(
+                    Math.max(bounds.left(), bounds.right() - CHIP_REMOVE_WIDTH),
+                    bounds.top(),
+                    Math.min(CHIP_REMOVE_WIDTH, bounds.width()),
+                    bounds.height());
+            chips.add(new AttachmentChip(draft, bounds, remove));
+            cursor = bounds.right() + CHIP_GAP;
+        }
+        return List.copyOf(chips);
     }
 
     public static Component typeName(InlineResourceType type) {
@@ -105,6 +261,39 @@ public final class ChatComposerRenderer {
                 composerBounds.top() + 3,
                 Math.max(1, composerBounds.width() - 12),
                 16);
+    }
+
+    private static void paintAttachmentChip(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            ChatTheme theme,
+            AttachmentChip chip) {
+        AttachmentDraft draft = chip.draft();
+        RichChatBounds bounds = chip.bounds();
+        ChatThemeTokens tokens = theme.tokens();
+        int background = draft.status() == AttachmentDraft.Status.FAILED
+                ? tokens.message().errorBackground()
+                : tokens.media().pendingBackground();
+        int outline = switch (draft.status()) {
+            case READY -> tokens.message().playerBorder();
+            case UPLOADING -> tokens.message().announcementBorder();
+            case UPLOADED -> tokens.message().replyBorder();
+            case FAILED -> tokens.message().errorBorder();
+        };
+        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), background);
+        graphics.outline(bounds.left(), bounds.top(), bounds.width(), bounds.height(), outline);
+        int textWidth = Math.max(1, chip.removeBounds().left() - bounds.left() - 6);
+        String label = font.plainSubstrByWidth(chipLabel(draft), textWidth);
+        graphics.text(font, label, bounds.left() + 4, bounds.top() + 4, chipTextColor(tokens, draft), false);
+        if (draft.status() != AttachmentDraft.Status.UPLOADING) {
+            graphics.text(font, "×", chip.removeBounds().left() + 3, bounds.top() + 4, chipTextColor(tokens, draft), false);
+        }
+    }
+
+    private static int chipTextColor(ChatThemeTokens tokens, AttachmentDraft draft) {
+        return draft.status() == AttachmentDraft.Status.FAILED
+                ? tokens.media().failureText()
+                : tokens.media().text();
     }
 
     private static String chipLabel(AttachmentDraft draft) {

@@ -7,6 +7,7 @@ import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import net.minecraft.client.Minecraft;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.lifecycle.ClientStoppingEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.network.event.RegisterClientPayloadHandlersEvent;
@@ -30,10 +31,10 @@ public final class ChatUpgradeNeoForgeClient {
                 event -> ChatUpgradeClientBootstrap.onClientTick(Minecraft.getInstance()));
         NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingIn.class,
                 event -> ServerMediaNetworking.onClientJoin());
-        NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingOut.class, event -> {
-            ServerMediaNetworking.onClientDisconnect();
-            ChatUpgradeClientBootstrap.clearAllMediaRuntimeState();
-        });
+        NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingOut.class,
+                event -> ServerMediaNetworking.onClientDisconnect());
+        NeoForge.EVENT_BUS.addListener(ClientStoppingEvent.class,
+                event -> ServerMediaNetworking.onClientDisconnect());
         NeoForge.EVENT_BUS.addListener(RegisterClientCommandsEvent.class,
                 event -> event.getDispatcher().register(ChatUpgradeCommands.build(new NeoForgeCommandAdapter())));
     }

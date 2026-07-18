@@ -7,6 +7,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
+import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
+import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -22,6 +26,10 @@ public abstract class ChatScreenAudioFloatingWindowMixin {
             int mouseY,
             float partialTick,
             CallbackInfo ci) {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.state().overlay() != ChatSurfaceState.Overlay.NONE) {
+            return;
+        }
         AudioFloatingWindow.render(graphics, ((ChatScreen) (Object) this).getFont(), graphics.guiWidth(), graphics.guiHeight());
     }
 
@@ -30,7 +38,12 @@ public abstract class ChatScreenAudioFloatingWindowMixin {
             MouseButtonEvent event,
             boolean doubleClick,
             CallbackInfoReturnable<Boolean> cir) {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.state().overlay() != ChatSurfaceState.Overlay.NONE) {
+            return;
+        }
         if (AudioFloatingWindow.mouseClicked(event, ((ChatScreen) (Object) this).width, ((ChatScreen) (Object) this).height)) {
+            ChatTextSelectionState.clear();
             cir.setReturnValue(true);
         }
     }

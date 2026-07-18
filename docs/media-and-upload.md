@@ -29,12 +29,14 @@ flowchart TD
 主要文件：
 
 - `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentDraft.java`
-- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentComposerState.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/ChatComposerState.java`
 - `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentDraftResolver.java`
 - `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/AttachmentSendController.java`
 - `src/common/src/main/java/com/chat/upgrade/client/mixin/ChatScreenRichInputMixin.java`
 
-当前聊天框 MVP 支持单附件草稿。
+当前聊天框支持最多 8 个有序附件草稿，与结构化协议上限一致。文件选择和剪贴板会向现有草稿集合追加附件；每个 chip 可单独移除，清除按钮用于清空整个集合。
+
+发送以一次不可变批次快照为事务边界：未上传附件并发进入 `UploadRouter`，全部成功后按原顺序生成单条结构化消息。上传期间新增的附件属于下一批，不会被当前发送误清除；任一上传失败时，成功项保留为“已上传”，失败项进入“失败”状态，用户移除失败项后可以继续发送其余附件。回复目标同样按发送开始时捕获，成功后只清除该目标；如果期间新增了附件或切换了回复目标，聊天界面会保持打开以继续编辑下一批。
 
 草稿来源：
 
@@ -73,7 +75,7 @@ flowchart TD
 | `SERVER` | 强制服务端直传；服务端能力或上传失败时直接失败，不自动回退第三方。 |
 | `THIRD_PARTY` | 强制第三方上传。 |
 
-发送附件时会同时准备结构化附件和 bracket fallback。结构化消息发送不可用或发送失败时，客户端会退回到 bracket 文本发送；但这发生在“上传已经成功拿到 URL 之后”，不代表服务端上传失败会自动改走第三方上传。
+发送附件时会同时准备结构化附件和 bracket fallback。单附件且无回复目标时，结构化消息不可用可以退回 bracket 文本；多附件或带回复目标的发送必须由 V2/V1 结构化协议完整承载，能力不足时保留“已上传”草稿并明确报错，不会静默降级丢失附件或回复语义。上传失败本身不会在同一次发送中自动改走另一种上传提供方。
 
 ## 服务端直传媒体
 

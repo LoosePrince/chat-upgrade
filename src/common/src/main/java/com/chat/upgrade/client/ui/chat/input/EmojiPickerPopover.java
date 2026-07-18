@@ -23,6 +23,7 @@ public final class EmojiPickerPopover {
     private static final int PANEL_H = 172;
     private static final int PAD = 6;
     private static final int TAB_H = 20;
+    private static final int SEARCH_H = 18;
     private static final int CELL = 24;
     private static final int GAP = 4;
     private static final int PREVIEW_W = 76;
@@ -34,6 +35,48 @@ public final class EmojiPickerPopover {
     private double groupScrollX = 0.0D;
     private @Nullable String selectedGroupId;
     private @Nullable EmojiCatalog.Item hoveredItem;
+    private String searchQuery = "";
+    private final List<String> recentTokens = new java.util.ArrayList<>();
+
+    public String searchQuery() {
+        return searchQuery;
+    }
+
+    public void setSearchQuery(@Nullable String query) {
+        String normalized = query == null ? "" : query.trim();
+        if (!normalized.equals(searchQuery)) {
+            searchQuery = normalized;
+            gridScrollY = 0.0D;
+        }
+    }
+
+    public void clearSearch() {
+        setSearchQuery("");
+    }
+
+    public boolean isSearchFocused(double mouseX, double mouseY, int screenWidth, int screenHeight,
+            int anchorX, int anchorY, int anchorWidth) {
+        Layout layout = layout(screenWidth, screenHeight, anchorX, anchorY, anchorWidth);
+        return inside(mouseX, mouseY, layout.searchX0, layout.searchY0, layout.searchX1, layout.searchY1);
+    }
+
+    public com.chat.upgrade.client.ui.chat.viewport.RichChatBounds searchBounds(
+            int screenWidth, int screenHeight, int anchorX, int anchorY, int anchorWidth) {
+        Layout layout = layout(screenWidth, screenHeight, anchorX, anchorY, anchorWidth);
+        return com.chat.upgrade.client.ui.chat.viewport.RichChatBounds.ofSize(
+                layout.searchX0, layout.searchY0, layout.searchX1 - layout.searchX0, layout.searchY1 - layout.searchY0);
+    }
+
+    public void remember(EmojiCatalog.Item item) {
+        if (item == null || item.token().isBlank()) {
+            return;
+        }
+        recentTokens.remove(item.token());
+        recentTokens.add(0, item.token());
+        while (recentTokens.size() > 24) {
+            recentTokens.removeLast();
+        }
+    }
 
     public record ClickResult(boolean handled, boolean close, @Nullable String insertionText) {
         public static ClickResult unhandled() {
@@ -94,6 +137,9 @@ public final class EmojiPickerPopover {
 
         gfx.fill(layout.x0, layout.y0, layout.x1, layout.y1, 0xF018202B);
         gfx.outline(layout.x0, layout.y0, layout.w, layout.h, 0xFF425066);
+        gfx.fill(layout.searchX0, layout.searchY0, layout.searchX1, layout.searchY1, 0xFF141A22);
+        gfx.outline(layout.searchX0, layout.searchY0, layout.searchX1 - layout.searchX0,
+                layout.searchY1 - layout.searchY0, 0xFF3A4456);
 
         if (catalog.isEmpty()) {
             gfx.centeredText(
@@ -106,7 +152,8 @@ public final class EmojiPickerPopover {
         }
 
         EmojiCatalog.Group group = selectedGroup(catalog);
-        renderGroups(gfx, font, catalog.groups(), group, mouseX, mouseY, layout);
+        List<EmojiCatalog.Group> groups = displayGroups(catalog);
+        renderGroups(gfx, font, groups, group, mouseX, mouseY, layout);
         renderGrid(gfx, font, group, mouseX, mouseY, layout);
         if (hoveredItem != null) {
             renderPreview(gfx, font, hoveredItem, screenWidth, layout);
@@ -128,18 +175,23 @@ public final class EmojiPickerPopover {
         if (!inside(event.x(), event.y(), layout.x0, layout.y0, layout.x1, layout.y1)) {
             return ClickResult.outside();
         }
+        if (inside(event.x(), event.y(), layout.searchX0, layout.searchY0, layout.searchX1, layout.searchY1)) {
+            return ClickResult.consumed();
+        }
         if (catalog.isEmpty()) {
             return ClickResult.consumed();
         }
         EmojiCatalog.Group group = selectedGroup(catalog);
-        @Nullable String groupId = hitGroup(catalog.groups(), event.x(), event.y(), layout);
+        @Nullable String groupId = hitGroup(displayGroups(catalog), event.x(), event.y(), layout);
         if (groupId != null) {
+            searchQuery = "";
             selectedGroupId = groupId;
             gridScrollY = 0.0D;
             return ClickResult.consumed();
         }
         @Nullable EmojiCatalog.Item item = hitItem(group, event.x(), event.y(), layout);
         if (item != null) {
+            remember(item);
             return ClickResult.insert("[:" + item.token() + "]");
         }
         return ClickResult.consumed();
@@ -162,8 +214,11 @@ public final class EmojiPickerPopover {
         if (!inside(mouseX, mouseY, layout.x0, layout.y0, layout.x1, layout.y1)) {
             return false;
         }
+        if (inside(mouseX, mouseY, layout.searchX0, layout.searchY0, layout.searchX1, layout.searchY1)) {
+            return true;
+        }
         if (inside(mouseX, mouseY, layout.tabX0, layout.tabY0, layout.tabX1, layout.tabY1)) {
-            groupScrollX = clamp(groupScrollX - scrollY * 28.0D, 0.0D, maxGroupScroll(catalog.groups(), layout));
+            groupScrollX = clamp(groupScrollX - scrollY * 28.0D, 0.0D, maxGroupScroll(displayGroups(catalog), layout));
             return true;
         }
         EmojiCatalog.Group group = selectedGroup(catalog);
@@ -355,7 +410,7 @@ public final class EmojiPickerPopover {
     }
 
     private EmojiCatalog.Group selectedGroup(EmojiCatalog catalog) {
-        List<EmojiCatalog.Group> groups = catalog.groups();
+        List<EmojiCatalog.Group> groups = displayGroups(catalog);
         if (groups.isEmpty()) {
             return new EmojiCatalog.Group("empty", "empty", List.of());
         }
@@ -369,6 +424,31 @@ public final class EmojiPickerPopover {
         EmojiCatalog.Group first = groups.getFirst();
         selectedGroupId = first.id();
         return first;
+    }
+
+    private List<EmojiCatalog.Group> displayGroups(EmojiCatalog catalog) {
+        List<EmojiCatalog.Item> allItems = catalog.groups().stream()
+                .flatMap(group -> group.items().stream())
+                .toList();
+        if (!searchQuery.isBlank()) {
+            String query = searchQuery.toLowerCase(java.util.Locale.ROOT);
+            List<EmojiCatalog.Item> matches = allItems.stream()
+                    .filter(item -> item.token().toLowerCase(java.util.Locale.ROOT).contains(query))
+                    .toList();
+            return List.of(new EmojiCatalog.Group("search", I18n.get("chatupgrade.emoji.picker.search"), matches));
+        }
+        List<EmojiCatalog.Group> groups = new java.util.ArrayList<>();
+        if (!recentTokens.isEmpty()) {
+            List<EmojiCatalog.Item> recent = recentTokens.stream()
+                    .map(catalog::itemByToken)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            if (!recent.isEmpty()) {
+                groups.add(new EmojiCatalog.Group("recent", I18n.get("chatupgrade.emoji.picker.recent"), recent));
+            }
+        }
+        groups.addAll(catalog.groups());
+        return List.copyOf(groups);
     }
 
     private void blitImage(GuiGraphicsExtractor gfx, ImageEntry entry, int x, int y, int size, float opacity) {
@@ -394,7 +474,7 @@ public final class EmojiPickerPopover {
 
     private Layout layout(int screenWidth, int screenHeight, int anchorX, int anchorY, int anchorWidth) {
         int w = Math.min(PANEL_W, Math.max(160, screenWidth - 8));
-        int h = Math.min(PANEL_H, Math.max(92, screenHeight - 48));
+        int h = Math.min(PANEL_H, Math.max(112, screenHeight - 48));
         int desiredX = anchorX + Math.max(0, (anchorWidth - w) / 2);
         int x0 = Math.clamp(desiredX, 4, Math.max(4, screenWidth - w - 4));
         int y0 = anchorY - h - 4;
@@ -455,6 +535,10 @@ public final class EmojiPickerPopover {
             int h,
             int x1,
             int y1,
+            int searchX0,
+            int searchY0,
+            int searchX1,
+            int searchY1,
             int tabX0,
             int tabY0,
             int tabX1,
@@ -476,13 +560,17 @@ public final class EmojiPickerPopover {
                     x0 + PAD,
                     y0 + PAD,
                     x0 + w - PAD,
-                    y0 + PAD + TAB_H,
+                    y0 + PAD + SEARCH_H,
                     x0 + PAD,
-                    y0 + PAD + TAB_H + GAP,
+                    y0 + PAD + SEARCH_H + GAP,
+                    x0 + w - PAD,
+                    y0 + PAD + SEARCH_H + GAP + TAB_H,
+                    x0 + PAD,
+                    y0 + PAD + SEARCH_H + GAP + TAB_H + GAP,
                     x0 + w - PAD,
                     y0 + h - PAD,
                     w - PAD * 2,
-                    h - PAD * 2 - TAB_H - GAP);
+                    h - PAD * 2 - SEARCH_H - TAB_H - GAP * 2);
         }
 
         static Layout empty() {

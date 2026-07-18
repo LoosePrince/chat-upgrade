@@ -240,7 +240,8 @@ TAKEOVER 已拥有完整聊天 surface，可独立定义面板 chrome、timeline
 - 面板几何来自 `ChatPanelGeometry`，左下锚定并由 `ChatSurfaceController` 持久化；屏幕大小变化时会重新归一化。
 - 所有 timeline 绘制和交互必须使用同一布局快照，不应在 renderer 内制造额外坐标。
 - 消息右键菜单、回复预览和类型化动作属于独立交互/composer 模块，不由 scene renderer 保存状态。
-- 完整多附件 composer、命令建议 surface 和更完整的键盘手势仍属于后续阶段。
+- composer 采用最多 8 项的有序附件集合；chip 的单项移除、并发上传和批次快照属于 input 模块，不由 scene renderer 保存状态。
+- 命令桥接通过原版建议与发送管线执行，视觉焦点由 composer 控制。
 - 默认头像仍是稳定色块/glyph 描述，不是真实玩家皮肤。
 - 网络协议和 fallback 策略仍要兼容服务端与旧客户端。
 - `COMPAT_TEXT_VANILLA` 必须继续隔离原版文本布局和绘制。
