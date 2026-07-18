@@ -166,19 +166,6 @@ public abstract class ChatScreenScrollbarDragMixin {
         chatupgrade$applyViewportScrollbarDrag(state, mouseY);
     }
 
-    @Inject(method = "mouseReleased(Lnet/minecraft/client/input/MouseButtonEvent;)Z", at = @At("HEAD"), cancellable = true)
-    private void chatupgrade$finishViewportScrollbarDrag(
-            MouseButtonEvent event,
-            CallbackInfoReturnable<Boolean> cir) {
-        if (event.button() != 0
-                || !ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.SCROLLBAR)) {
-            return;
-        }
-        chatupgrade$cancelViewportScrollbarDrag();
-        ChatGestureArena.release(ChatGestureArena.Owner.SCROLLBAR);
-        cir.setReturnValue(true);
-    }
-
     @Unique
     private void chatupgrade$cancelViewportScrollbarDrag() {
         chatupgrade$draggingScrollbar = false;

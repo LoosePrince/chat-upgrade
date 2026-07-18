@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.MinecraftGuiBridge;
+import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ChatUpgradeConfig;
@@ -48,7 +49,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 @Mixin(ChatScreen.class)
-public abstract class ChatScreenRichInputMixin extends Screen {
+public abstract class ChatScreenRichInputMixin extends Screen implements ChatComposerAttachmentDragAccess {
     @Shadow
     protected EditBox input;
 
@@ -381,16 +382,12 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         }
     }
 
-    @Inject(method = "mouseDragged(Lnet/minecraft/client/input/MouseButtonEvent;DD)Z", at = @At("HEAD"), cancellable = true)
-    private void chatupgrade$dragAttachmentChip(
-            MouseButtonEvent event,
-            double deltaX,
-            double deltaY,
-            CallbackInfoReturnable<Boolean> cir) {
-        if (event.button() != 0 || chatupgrade$draggedAttachment == null
+    @Override
+    public boolean chatupgrade$updateAttachmentDrag(double mouseX, double mouseY, int button) {
+        if (button != 0 || chatupgrade$draggedAttachment == null
                 || !ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.ATTACHMENT_TRAY)
                 || !ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            return;
+            return false;
         }
         ChatComposerRenderer.attachmentChipAt(
                 this.font,
@@ -398,25 +395,13 @@ public abstract class ChatScreenRichInputMixin extends Screen {
                 chatupgrade$attachmentChipX(),
                 Math.max(chatupgrade$attachmentChipX() + 24, chatupgrade$attachmentChipRight()),
                 chatupgrade$buttonRowY(),
-                event.x(),
-                event.y())
+                mouseX,
+                mouseY)
                 .ifPresent(target -> chatupgrade$composerState.moveDraftBefore(chatupgrade$draggedAttachment, target));
-        if (event.x() > chatupgrade$attachmentChipRight()) {
+        if (mouseX > chatupgrade$attachmentChipRight()) {
             chatupgrade$composerState.moveDraftToEnd(chatupgrade$draggedAttachment);
         }
-        cir.setReturnValue(true);
-    }
-
-    @Inject(method = "mouseReleased(Lnet/minecraft/client/input/MouseButtonEvent;)Z", at = @At("HEAD"), cancellable = true)
-    private void chatupgrade$releaseAttachmentChip(
-            MouseButtonEvent event,
-            CallbackInfoReturnable<Boolean> cir) {
-        if (event.button() == 0 && chatupgrade$draggedAttachment != null) {
-            chatupgrade$draggedAttachment = null;
-            ChatGestureArena.release(ChatGestureArena.Owner.ATTACHMENT_TRAY);
-            chatupgrade$refreshControls();
-            cir.setReturnValue(true);
-        }
+        return true;
     }
 
     @Inject(method = "mouseScrolled(DDDD)Z", at = @At("HEAD"), cancellable = true)

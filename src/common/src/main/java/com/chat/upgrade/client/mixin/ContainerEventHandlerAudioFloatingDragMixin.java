@@ -5,6 +5,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
@@ -32,6 +33,12 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
         if (self instanceof ChatScreen
                 && ChatUpgradeChatPipelineGate.isTakeoverMode()
                 && ChatSurfaceController.pointerDragged(event.x(), event.y())) {
+            cir.setReturnValue(true);
+            return;
+        }
+        if (self instanceof ChatScreen
+                && self instanceof ChatComposerAttachmentDragAccess attachmentDrag
+                && attachmentDrag.chatupgrade$updateAttachmentDrag(event.x(), event.y(), event.button())) {
             cir.setReturnValue(true);
             return;
         }
