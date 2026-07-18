@@ -5,11 +5,14 @@ import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.resources.Identifier;
+
 public record ChatAvatar(
         @Nullable UUID playerId,
         String glyph,
         int backgroundRgb,
-        int foregroundRgb) {
+        int foregroundRgb,
+        @Nullable Identifier skinTexture) {
     private static final int[] FALLBACK_PALETTE = {
             0x5B7DB1,
             0x7B68A6,
@@ -20,6 +23,14 @@ public record ChatAvatar(
             0x8A5F82,
             0x657A4D
     };
+
+    public ChatAvatar(
+            @Nullable UUID playerId,
+            String glyph,
+            int backgroundRgb,
+            int foregroundRgb) {
+        this(playerId, glyph, backgroundRgb, foregroundRgb, null);
+    }
 
     public ChatAvatar {
         glyph = normalizeGlyph(glyph);
@@ -37,7 +48,10 @@ public record ChatAvatar(
         int color = safeAuthor.team().colorRgb() >= 0
                 ? safeAuthor.team().colorRgb()
                 : paletteColor(identity.isBlank() ? safeKind.name() : identity);
-        return new ChatAvatar(safeAuthor.playerId(), glyph, color, 0xFFFFFF);
+        Identifier skinTexture = safeKind.playerAuthored()
+                ? ChatIdentityResolver.skinTexture(safeAuthor)
+                : null;
+        return new ChatAvatar(safeAuthor.playerId(), glyph, color, 0xFFFFFF, skinTexture);
     }
 
     public boolean playerBacked() {

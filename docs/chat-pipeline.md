@@ -6,7 +6,7 @@
 
 | 模式 | 定位 | 无附件纯文本 | 有附件消息 | 渲染策略 |
 | --- | --- | --- | --- | --- |
-| `TAKEOVER` | 默认完整接管 | 结构化发送，接收后进入统一状态层 | 结构化附件优先，bracket fallback | `RichChatViewport` 自定义渲染 |
+| `TAKEOVER` | 默认完整接管 | V2 结构化发送，接收后进入统一状态层 | V2 优先；无回复可退到 V1；仅单附件无回复可最终 bracket fallback | 完整 `ChatSurfaceController` / `ChatScene` 自定义 surface |
 | `COMPAT_TEXT_VANILLA` | 兼容其它聊天类模组 | 尽量放回原版输入/显示链路 | 仍拦截并走富媒体路径 | 原版文本 + 富媒体兼容投影 |
 
 模式判断集中在 `ChatUpgradeChatPipelineGate`。运行时不能动态禁用 mixin，因此所有入口都通过 gate 在方法内部决定是否接管。
@@ -17,29 +17,30 @@
 
 - 纯文本也进入统一协议/状态层。
 - 附件消息优先走结构化协议。
-- bracket 协议 `[[ChatUpgrade,...]]` / `[[CICode,...]]` 作为标准文本协议层，用于输入兼容和服务端降级。
+- bracket 协议 `[[ChatUpgrade,...]]` / `[[CICode,...]]` 作为标准文本兼容层；客户端主动 fallback 仅允许单附件且无回复，服务端仍可按接收端能力重建安全降级文本。
 - 渲染事实来源是 `RichChatStateStore`。
-- 聊天栏内容区由 `RichChatViewport` 绘制。
-- 文本、表情、图片、音频、视频都作为 viewport 节点处理。
-- 滚动、裁切、hover、click、tooltip 都由 viewport 交互层处理。
-- 消息右键菜单通过类型化动作设置 composer 回复目标、复制正文/附件 URL，或请求服务端撤回本人消息。
+- 原版 `ChatScreen` 只保留打开/关闭、焦点、命令建议、历史与发送桥接；可见面板、timeline、composer、菜单、弹层、滚动条和调整手柄由 TAKEOVER surface 接管。
+- 文本、表情、图片、音频、视频都作为 timeline 节点处理。
+- 滚动、裁切、hover、click、tooltip 和 pointer capture 都由统一交互层处理。
+- 消息右键菜单与 hover 动作条共享类型化目录，按消息事实提供回复、复制、提及、资料、本地隐藏、屏蔽/取消屏蔽、本人撤回和可配置的调试信息。
 
 ### TAKEOVER 输入流
 
 ```mermaid
 flowchart TD
-    A[ChatScreen 输入框] --> B{是否命令}
-    B -- 是 --> C[原版命令链路]
-    B -- 否 --> D{是否有附件草稿}
-    D -- 无附件 --> E[接管纯文本发送]
-    D -- 有附件 --> F[上传附件]
-    E --> G[C2SStructuredChatMessage]
-    F --> H[StructuredAttachment + fallback bracket]
-    H --> G
-    G --> I[服务端统一路由]
+    A[TAKEOVER composer / 隐藏原版输入桥] --> B{是否命令}
+    B -- 是 --> C[原版命令建议/历史/发送链路]
+    B -- 否 --> D[捕获正文、回复目标与附件批次]
+    D --> E{是否有附件}
+    E -- 无附件 --> F[C2SStructuredChatV2]
+    E -- 有附件 --> G[并发上传附件]
+    G --> H[StructuredAttachment 列表]
+    H --> F
+    F --> I[服务端校验并生成可信 envelope]
+    I --> J[按接收端能力分发 V2 / V1 / bracket / vanilla]
 ```
 
-关键边界：命令输入保持原版链路。`TAKEOVER` 接管的是普通聊天消息，不接管命令执行。
+关键边界：命令输入保持原版执行链路。普通消息优先提交 V2；无回复时允许 V1 结构化兼容，只有单附件且无回复目标时才允许最终退到 bracket 文本，避免静默丢失回复或多附件语义。
 
 ### TAKEOVER 接收流
 
@@ -83,7 +84,7 @@ bracket 载荷格式类似：
 
 1. `[[ChatUpgrade,...]]` 作为 Chat Upgrade 标准 bracket tag。
 2. `[[CICode,...]]` 作为受支持的图片兼容 tag。
-3. 服务端或接收端不支持结构化协议时降级，手动命令或历史消息继续可解析。
+3. 服务端按接收端能力重建降级内容，或客户端在“单附件且无回复”的最终 fallback 边界发送 bracket；手动命令和历史消息继续可解析。
 
 但在 TAKEOVER 下，它不会成为长期事实来源。解析后会转换为 `RichAttachment` 并写入统一状态层。
 
@@ -91,7 +92,7 @@ bracket 载荷格式类似：
 
 | 接收端 | 纯文本 | 附件消息 |
 | --- | --- | --- |
-| 新 TAKEOVER 客户端 | `S2CStructuredChatMessage` | `S2CStructuredChatMessage`，包含附件 |
+| 新 TAKEOVER 客户端 | `S2CStructuredChatV2` | `S2CStructuredChatV2`，包含完整附件与回复语义 |
 | 新 COMPAT 客户端 | 普通文本显示 | 结构化附件或 bracket fallback |
 | bracket 兼容客户端 | bracket 文本 | bracket 文本 |
 | vanilla 客户端 | 安全文本 | 可读占位 + 链接提示 |
@@ -102,8 +103,8 @@ bracket 载荷格式类似：
 
 | 入口 | TAKEOVER | COMPAT |
 | --- | --- | --- |
-| `ChatScreenRichInputMixin` | 接管普通聊天和附件发送 | 普通文本放行，附件接管 |
-| `ChatComponentRichViewportMixin` | 接管聊天内容区渲染 | 不接管 |
+| `ChatScreenRichInputMixin` | 接管可见 composer、普通消息、附件批次、表情弹层和命令桥接 | 普通文本放行，附件接管 |
+| `ChatComponentRichViewportMixin` | 接管完整 surface 的场景绘制与 timeline 裁切 | 不接管 |
 | `ChatComponentMixin` | 普通消息补写 facts，清理 phantom pending | bracket/附件投影兼容 |
 | `ChatScreenSmoothScrollMixin` | viewport 像素滚动 | 原版/旧增强 |
 | `ChatScreenScrollbarDragMixin` | viewport 滚动条拖拽 | 原版/旧增强 |

@@ -15,14 +15,14 @@
 
 `TAKEOVER` 下：
 
-- 聊天栏外壳仍来自原版。
-- 聊天栏内容区由 `RichChatViewport` 接管。
+- 原版 `ChatScreen` 只提供打开/关闭、焦点、命令建议、历史和发送所需的底层桥接。
+- 面板 chrome、timeline、composer、菜单、弹层、滚动条和调整手柄均由 TAKEOVER surface 接管。
 - 事实来源是 `RichChatStateStore`。
 - 文本、表情、图片、音频、视频都是 render node。
 - 命中和交互由 hit box 决定。
 - phantom 行和旧 HUD 不作为主渲染链路。
 
-在聊天栏内容区内，可以自由定义 UI 结构。仍建议遵守：
+在完整 TAKEOVER surface 内，可以自由定义 UI 结构。仍建议遵守：
 
 - 不画出 viewport 裁切区域。
 - 不破坏命令输入原版链路。

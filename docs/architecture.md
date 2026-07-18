@@ -195,4 +195,4 @@ sequenceDiagram
 - `COMPAT_TEXT_VANILLA` 的原版文本布局/绘制必须与 TAKEOVER metrics、坐标和主题隔离。
 - 回复身份、撤回权限和删除事实由服务端确认；UI 不得伪造。
 - composer 的有序附件批次、回复目标、右键菜单和类型化动作由独立交互模块维护；scene renderer 只消费场景与主题，不持有交互状态。
-- 命令建议 surface、真实皮肤头像和更完整的键盘手势仍是后续模块。
+- 玩家消息头像优先使用 `PlayerInfo`/已加载玩家的皮肤纹理绘制头部与帽层；纹理不可用时回退到稳定色块与 glyph。命令建议、历史与命令执行继续复用原版桥接，但其可见输入与焦点由 composer surface 管理。

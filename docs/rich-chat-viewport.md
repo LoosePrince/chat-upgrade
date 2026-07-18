@@ -143,11 +143,13 @@ RichChatStateStore.snapshotNewestFirst()
 
 主、次按键统一解析为 `ChatGestureTarget`。叶子媒体动作转换为 `ChatAction` 后再由 `ChatActionStyleAdapter` 适配到 Minecraft 点击事件，回复、复制、撤回等消息级动作则直接由 `ChatScreen` 执行，不再污染 renderer。
 
-右键菜单仅对当前 TAKEOVER 可见消息生成动作：
+右键菜单与 hover 动作条共享同一动作目录，并只对当前 TAKEOVER 可见消息生成可执行项：
 
 - 可信 V2 消息可以设为回复目标。
-- 有可复制正文或附件 URL 的消息可以复制。
+- 有可复制正文、选中文本或附件 URL 的消息可以复制。
+- 玩家消息可以提及作者、查看资料、本地隐藏或屏蔽作者；取消屏蔽也可通过命令与反馈入口完成。
 - 可信且由本地玩家发送的消息可以请求服务端撤回。
+- 调试动作仅在 `debugChatActions` 开启时出现。
 
 composer 预览只保存 `messageId`、作者快照和摘要。发送时正文与附件共用 `replyToMessageId`；回复语义无法通过 V2 发送时不会静默降级成普通消息。所有叶子与消息目标都只从当前 viewport 可见布局生成，滚动后的不可见区域不会被误命中。
 
@@ -242,6 +244,6 @@ TAKEOVER 已拥有完整聊天 surface，可独立定义面板 chrome、timeline
 - 消息右键菜单、回复预览和类型化动作属于独立交互/composer 模块，不由 scene renderer 保存状态。
 - composer 采用最多 8 项的有序附件集合；chip 的单项移除、并发上传和批次快照属于 input 模块，不由 scene renderer 保存状态。
 - 命令桥接通过原版建议与发送管线执行，视觉焦点由 composer 控制。
-- 默认头像仍是稳定色块/glyph 描述，不是真实玩家皮肤。
+- 玩家身份优先按 UUID 从 `PlayerInfo` 或已加载玩家解析皮肤纹理，头像绘制 8×8 头部与帽层；无法取得纹理时使用稳定色块/glyph 回退。
 - 网络协议和 fallback 策略仍要兼容服务端与旧客户端。
 - `COMPAT_TEXT_VANILLA` 必须继续隔离原版文本布局和绘制。

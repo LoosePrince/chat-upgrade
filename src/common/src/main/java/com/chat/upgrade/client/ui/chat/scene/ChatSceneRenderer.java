@@ -19,6 +19,7 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 
@@ -228,10 +229,14 @@ public final class ChatSceneRenderer {
                 1,
                 avatarColor,
                 ChatThemePainter.withOpacity(theme.tokens().identity().avatarBorder(), alpha));
-        String glyph = message.timeline().avatar().glyph();
-        int glyphX = avatar.left() + Math.max(1, (avatar.width() - font.width(glyph)) / 2);
-        int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
-        graphics.text(font, glyph, glyphX, glyphY, foreground, false);
+        if (message.timeline().avatar().skinTexture() != null) {
+            paintSkinAvatar(graphics, avatar, message.timeline().avatar().skinTexture(), alpha);
+        } else {
+            String glyph = message.timeline().avatar().glyph();
+            int glyphX = avatar.left() + Math.max(1, (avatar.width() - font.width(glyph)) / 2);
+            int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
+            graphics.text(font, glyph, glyphX, glyphY, foreground, false);
+        }
 
         String authorName = message.timeline().author().visibleName();
         int nameRgb = message.timeline().author().team().colorRgb() >= 0
@@ -242,6 +247,42 @@ public final class ChatSceneRenderer {
                 nameRgb);
         int nameX = avatar.left() + theme.layout().identityGutter() + theme.layout().bubblePaddingX();
         graphics.text(font, authorName, nameX, avatar.top(), nameColor, false);
+    }
+
+    private static void paintSkinAvatar(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds bounds,
+            net.minecraft.resources.Identifier texture,
+            float alpha) {
+        int color = ARGB.color(Math.clamp(Math.round(alpha * 255.0F), 0, 255), 0xFFFFFF);
+        graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                texture,
+                bounds.left(),
+                bounds.top(),
+                8.0F,
+                8.0F,
+                bounds.width(),
+                bounds.height(),
+                8,
+                8,
+                64,
+                64,
+                color);
+        graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                texture,
+                bounds.left(),
+                bounds.top(),
+                40.0F,
+                8.0F,
+                bounds.width(),
+                bounds.height(),
+                8,
+                8,
+                64,
+                64,
+                color);
     }
 
     private static void paintNode(

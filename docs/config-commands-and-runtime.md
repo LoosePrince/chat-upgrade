@@ -60,11 +60,13 @@ jps -l -v
 | --- | --- | --- | --- |
 | `chatInputMode` | `TAKEOVER` / `COMPAT_TEXT_VANILLA` | `TAKEOVER` | 聊天输入/渲染模式。字段缺失时等价于 `TAKEOVER`。 |
 | `chatTheme` | `modern_bubble` / `compact_feed` / `native_enhanced` | `modern_bubble` | TAKEOVER surface 主题；未知值会归一化为默认主题。 |
+| `chatPanel` | object | `{left:4,bottomOffset:40,width:360,height:220}` | TAKEOVER 面板的左下锚点偏移与持久化尺寸；运行时会按窗口边界归一化。 |
 | `ciCompatibility` | boolean | `false` | 图片发送是否优先使用受支持的 `[[CICode,...]]` bracket tag；关闭时使用标准 `[[ChatUpgrade,...]]`。 |
 | `manualImageReveal` | boolean | `false` | 图片是否点击后加载。 |
 | `manualAudioReveal` | boolean | `false` | 音频是否点击后加载。 |
 | `manualVideoReveal` | boolean | `false` | 视频是否点击后加载。 |
 | `smoothScrollEnabled` | boolean | `true` | 聊天平滑滚动。 |
+| `debugChatActions` | boolean | `false` | 是否在 TAKEOVER 消息动作目录中显示“复制调试信息”。 |
 | `audioVolumePercent` | int | `100` | 音频音量百分比。 |
 | `videoVolumePercent` | int | `100` | 视频音量百分比。 |
 | `maxReceiveBytes` | int | `2 MiB` | 接收体积上限，最大 `10 MiB`。 |
@@ -104,9 +106,9 @@ jps -l -v
 
 | 主题 ID | 命令 | 视觉策略 |
 | --- | --- | --- |
-| `modern_bubble` | `/chatupgrade config theme modern` | 圆角气泡、宽身份栏和分组留白。 |
-| `compact_feed` | `/chatupgrade config theme compact` | 紧凑 feed、侧边强调条和较小组间距。 |
-| `native_enhanced` | `/chatupgrade config theme native` | 接近原版密度的增强卡片。 |
+| `modern_bubble` | `/chatupgrade config theme modern_bubble` | 圆角气泡、宽身份栏和分组留白。 |
+| `compact_feed` | `/chatupgrade config theme compact_feed` | 紧凑 feed、侧边强调条和较小组间距。 |
+| `native_enhanced` | `/chatupgrade config theme native_enhanced` | 接近原版密度的增强卡片。 |
 
 命令会立即保存 `chatTheme`；下一次 TAKEOVER surface 帧同步时解析主题，并以新的布局策略重建场景。该过程不修改消息事实、回复/撤回状态或交互动作语义。直接修改配置文件后，可执行 `/chatupgrade config reload` 获得相同效果。
 
@@ -143,16 +145,19 @@ jps -l -v
 
 `name` 多数情况下可省略，默认使用资源类型或文件名。
 
+本地屏蔽作者后，可使用 `/chatupgrade visibility unblock <authorKey>` 恢复；`authorKey` 与动作反馈中的身份标识一致。
+
 ## 常用配置命令
 
 | 命令 | 说明 |
 | --- | --- |
 | `/chatupgrade config ci <true|false>` | 切换图片发送使用 `[[CICode,...]]` 还是 `[[ChatUpgrade,...]]` bracket tag。 |
-| `/chatupgrade config theme <modern|compact|native>` | 切换并持久化 TAKEOVER 主题。 |
+| `/chatupgrade config theme <modern_bubble|compact_feed|native_enhanced>` | 切换并持久化 TAKEOVER 主题。 |
 | `/chatupgrade config manual <true|false>` | 图片手动加载。 |
 | `/chatupgrade config manualaudio <true|false>` | 音频手动加载。 |
 | `/chatupgrade config manualvideo <true|false>` | 视频手动加载。 |
 | `/chatupgrade config smoothscroll <true|false>` | 平滑滚动开关。 |
+| `/chatupgrade config debugactions <true|false>` | 显示或隐藏 TAKEOVER 消息调试动作。 |
 | `/chatupgrade config audiovolume <1-100>` | 音频音量。 |
 | `/chatupgrade config videovolume <1-100>` | 视频音量。 |
 | `/chatupgrade config maxreceive <1-10>` | 接收上限，单位 MiB。 |
@@ -207,10 +212,12 @@ config/chat-upgrade/server-media.json
 | TAKEOVER 多附件降级保护 | V2/V1 结构化发送都不可用时保留已上传草稿并报错，不退回只保留首附件语义的 bracket 路由。 |
 | TAKEOVER 回复期间追加附件 | 上传批次只消费发送开始时的草稿和回复目标；期间新增的附件与新回复目标保留。 |
 | TAKEOVER 主题热切换 | `modern_bubble` / `compact_feed` / `native_enhanced` 共用同一场景、布局和渲染管线；下一帧生效且消息事实不变。 |
+| TAKEOVER 身份头像 | 可解析玩家 UUID 时绘制皮肤头部与帽层；纹理不可用时稳定回退到色块/glyph。 |
+| TAKEOVER 面板几何 | 标题拖动、边缘/角落缩放和窗口尺寸变化后保持在屏幕内，并持久化 `chatPanel`。 |
 | COMPAT 纯文本 | 继续使用原版 `ChatComponent -> GuiMessage` 布局和绘制，不受 TAKEOVER metrics、坐标与主题影响。 |
 | COMPAT 附件 | 富媒体附件仍可显示。 |
 | 断开重连 | 状态、pending、缓存按预期清理。 |
-| 服务端无结构化支持 | 发送降级 bracket 文本或原版聊天包。 |
+| 服务端无结构化支持 | 单附件且无回复时可降级 bracket；多附件或回复消息保留草稿并明确失败。 |
 | vanilla 接收端 | 收到安全可读文本。 |
 
 ## 常见排查入口

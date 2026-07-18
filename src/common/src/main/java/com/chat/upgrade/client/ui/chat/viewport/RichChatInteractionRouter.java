@@ -158,12 +158,12 @@ public final class RichChatInteractionRouter {
     }
 
     public static boolean beginPointerAtScreen(int screenX, int screenY) {
+        if (ChatGestureArena.hasCapture()) {
+            return true;
+        }
         if (RichChatViewport.state().canScroll()
                 && ChatSurfaceController.isOverTimelineScrollbar(screenX, screenY)) {
             return false;
-        }
-        if (ChatGestureArena.hasCapture()) {
-            return true;
         }
         Vector2f local = localPositionForScreen(screenX, screenY);
         if (local == null || !isInsideActiveViewport(local.x, local.y)) {

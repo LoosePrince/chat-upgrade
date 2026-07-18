@@ -15,25 +15,27 @@
 主要文件：
 
 - `src/common/src/main/java/com/chat/upgrade/net/StructuredChatMessage.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatSubmission.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatEnvelope.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatAuthor.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredReplySummary.java`
+- `src/common/src/main/java/com/chat/upgrade/net/StructuredChatMutation.java`
 - `src/common/src/main/java/com/chat/upgrade/net/StructuredChatSegment.java`
 - `src/common/src/main/java/com/chat/upgrade/net/StructuredAttachment.java`
 - `src/common/src/main/java/com/chat/upgrade/net/StructuredChatWireCodec.java`
 - `src/common/src/main/java/com/chat/upgrade/net/ServerMediaPayloads.java`
 
-### StructuredChatMessage
+### Submission、Envelope 与旧消息模型
 
-结构化聊天消息包含：
+结构化聊天把不可信客户端提交和服务端可信广播分成两个模型，并保留 schema 1 兼容模型：
 
-| 字段 | 含义 |
-| --- | --- |
-| `schemaVersion` | 协议版本。 |
-| `clientNonce` | 客户端生成的消息 ID/去重标识。 |
-| `senderName` | 服务端路由时写入的发送者。 |
-| `plainText` | 纯文本部分。 |
-| `segments` | 文本/附件等结构化片段。 |
-| `attachments` | 附件 metadata。 |
-| `fallbackText` | 降级文本。 |
-| `compatFlags` | 兼容标记。 |
+| 模型 | 方向与职责 | 关键字段 |
+| --- | --- | --- |
+| `StructuredChatSubmission`（schema 2） | 客户端提交；服务端不得信任其中的作者、消息 ID 或时间。 | `clientNonce`、`plainText`、`segments`、`attachments`、`replyToMessageId`。 |
+| `StructuredChatEnvelope`（schema 2） | 服务端校验后广播的可信消息。 | `messageId`、`serverTimestampMs`、`author`、`kind`、正文/附件、`replyTo`、fallback 标记。 |
+| `StructuredChatMessage`（schema 1） | 旧结构化客户端兼容模型，不承载回复目标或后续撤回语义。 | `clientNonce`、`senderName`、正文/附件、`fallbackText`、`compatFlags`。 |
+
+`StructuredChatAuthor` 由服务端根据连接玩家写入 UUID、显示名和队伍快照；`StructuredReplySummary` 由服务端根据近期可信消息解析。撤回通过独立的 `StructuredChatMutation` 广播，不修改旧 schema 1 消息结构。
 
 ### StructuredAttachment
 
@@ -50,8 +52,11 @@
 | Payload | 方向 | 说明 |
 | --- | --- | --- |
 | `C2SChatInputMode` | 客户端 -> 服务端 | 上报当前聊天输入模式。 |
-| `C2SStructuredChatMessage` | 客户端 -> 服务端 | 发送结构化聊天消息。 |
-| `S2CStructuredChatMessage` | 服务端 -> 客户端 | 下发结构化聊天消息。 |
+| `C2SStructuredChatV2` | 客户端 -> 服务端 | 提交 schema 2 正文、附件和可选回复目标；不包含可信作者字段。 |
+| `C2SRetractChatMessage` | 客户端 -> 服务端 | 请求撤回指定服务端消息 ID；服务端校验请求玩家 UUID。 |
+| `S2CStructuredChatV2` | 服务端 -> 客户端 | 下发带可信消息 ID、时间、作者、队伍与回复摘要的 envelope。 |
+| `S2CChatMutation` | 服务端 -> 客户端 | 下发撤回等消息状态变更。 |
+| `C2SStructuredChatMessage` / `S2CStructuredChatMessage` | 双向兼容 | schema 1 结构化消息，不承载回复与 mutation 语义。 |
 | `S2CStructuredChatAttachment` | 服务端 -> 客户端 | 下发结构化附件兼容包。 |
 
 ### 附件 metadata
@@ -82,21 +87,22 @@
 
 ```mermaid
 sequenceDiagram
-    participant Client as 发送客户端
+    participant Composer as TAKEOVER Composer
     participant Upload as UploadRouter
     participant Server as 服务端
     participant Route as ServerChatRouteService
     participant Target as 接收客户端
 
-    Client->>Upload: 上传附件，可为第三方或服务端媒体
-    Upload-->>Client: 返回 URL 或 chat-upgrade://media/<type>/<mediaId>
-    Client->>Server: C2SStructuredChatMessage
-    Client->>Server: C2SAttachMetadata 可选
-    Server->>Route: 统一路由
-    Route->>Target: 按能力发送结构化/bracket/vanilla
+    Composer->>Composer: 捕获正文、回复目标与有序附件快照
+    Composer->>Upload: 并发上传未完成附件
+    Upload-->>Composer: 按原顺序返回 URL / mediaId
+    Composer->>Server: C2SStructuredChatV2 submission
+    Server->>Route: 校验附件与回复目标，注入可信身份/ID/时间
+    Route->>Target: 按能力发送 V2 / V1 / bracket / vanilla
+    Composer->>Server: C2SAttachMetadata（可选）
 ```
 
-如果服务端不支持结构化消息，客户端会降级发送 bracket 文本。附件 metadata 提交失败不会阻断 bracket fallback。
+普通消息优先发送 V2 submission。无回复目标时，V2 不可用可以退到 schema 1 结构化消息；只有单附件且无回复目标时，V2/V1 都不可用才允许客户端最终发送 bracket 文本。多附件或带回复目标的消息在结构化能力不足时保留已上传草稿并明确失败，不会静默丢失语义。附件 metadata 提交失败不会阻断已经选定的消息路由。
 
 ## 服务端路由策略
 
@@ -110,12 +116,15 @@ sequenceDiagram
 
 | 路线 | 条件 | 结果 |
 | --- | --- | --- |
-| 结构化消息 | 可发送 `S2CStructuredChatMessage`，且不是 COMPAT 纯文本保护 | 下发完整结构化消息。 |
+| schema 2 结构化消息 | 可发送 `S2CStructuredChatV2`，且不是 COMPAT 纯文本保护 | 下发完整可信 envelope、回复摘要与后续 mutation。 |
+| schema 1 结构化消息 | 可发送 `S2CStructuredChatMessage`，且不是 COMPAT 纯文本保护 | 下发正文和附件；不提供回复/撤回同步语义。 |
 | 结构化附件 | 可发送 `S2CStructuredChatAttachment`，且有附件 | 下发结构化附件兼容包。 |
 | bracket 兼容客户端 | 可发送基础 capability，但不支持新结构化消息 | 下发标准 bracket 文本。 |
 | vanilla | 不支持本模组 payload | 下发安全可读文本。 |
 
 兼容模式客户端收到无附件纯文本时，服务端避免向它下发结构化纯文本包，让它尽量保留原版纯文本显示链路。
+
+服务端只允许连接玩家撤回其 UUID 名下且仍在近期所有权登记中的消息。撤回成功后，支持 `S2CChatMutation` 的客户端把目标消息投影为删除占位；旧客户端已经收到的 fallback 文本无法被追溯修改。
 
 ## 标准 bracket 协议与 fallback
 

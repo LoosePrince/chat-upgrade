@@ -3,8 +3,10 @@ package com.chat.upgrade.client.ui.chat.state;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.scores.PlayerTeam;
 
 public final class ChatIdentityResolver {
@@ -28,7 +30,27 @@ public final class ChatIdentityResolver {
         AbstractClientPlayer player = candidate.playerId() == null
                 ? findLoadedPlayerByName(inferredName)
                 : findLoadedPlayerById(candidate.playerId());
-        return player == null ? candidate : enrichVisualIdentity(candidate, player);
+        return player == null ? candidate : enrichVisualIdentity(player);
+    }
+
+    public static @Nullable Identifier skinTexture(@Nullable ChatAuthor author) {
+        if (author == null || author.playerId() == null) {
+            return null;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return null;
+        }
+        PlayerInfo playerInfo = minecraft.getConnection() == null
+                ? null
+                : minecraft.getConnection().getPlayerInfo(author.playerId());
+        if (playerInfo != null && playerInfo.getSkin() != null && playerInfo.getSkin().body() != null) {
+            return playerInfo.getSkin().body().texturePath();
+        }
+        AbstractClientPlayer player = findLoadedPlayerById(author.playerId());
+        return player == null || player.getSkin() == null || player.getSkin().body() == null
+                ? null
+                : player.getSkin().body().texturePath();
     }
 
     private static @Nullable AbstractClientPlayer findLoadedPlayerById(java.util.UUID playerId) {
@@ -58,23 +80,16 @@ public final class ChatIdentityResolver {
         return null;
     }
 
-    private static ChatAuthor enrichVisualIdentity(ChatAuthor candidate, AbstractClientPlayer player) {
+    private static ChatAuthor enrichVisualIdentity(AbstractClientPlayer player) {
         Component displayName = player.getDisplayName();
         String fallbackName = player.getScoreboardName();
-        if (candidate.playerId() == null) {
-            return new ChatAuthor(
-                    null,
-                    displayName,
-                    fallbackName,
-                    teamSnapshot(player.getTeam()),
-                    false);
-        }
+        java.util.UUID playerId = player.getUUID();
         Minecraft minecraft = Minecraft.getInstance();
         boolean localPlayer = minecraft != null
                 && minecraft.player != null
-                && candidate.playerId().equals(minecraft.player.getUUID());
+                && playerId.equals(minecraft.player.getUUID());
         return new ChatAuthor(
-                candidate.playerId(),
+                playerId,
                 displayName,
                 fallbackName,
                 teamSnapshot(player.getTeam()),
