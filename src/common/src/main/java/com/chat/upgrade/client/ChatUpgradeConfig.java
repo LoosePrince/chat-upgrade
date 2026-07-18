@@ -10,6 +10,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
 import com.chat.upgrade.platform.Platform;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceThemeId;
 
 /**
  * {@code config/chat-upgrade/chat-upgrade.json}
@@ -48,7 +49,7 @@ public final class ChatUpgradeConfig {
 
     public ChatInputMode chatInputMode = ChatInputMode.TAKEOVER;
 
-    public String chatTheme = "modern_bubble";
+    public String chatTheme = ChatSurfaceThemeId.DEFAULT.serializedName();
 
     public ChatPanelConfig chatPanel = new ChatPanelConfig();
 
@@ -163,8 +164,9 @@ public final class ChatUpgradeConfig {
         if (chatInputMode == null) {
             chatInputMode = ChatInputMode.TAKEOVER;
         }
-        if (chatTheme == null || chatTheme.isBlank()) {
-            chatTheme = "modern_bubble";
+        String normalizedTheme = ChatSurfaceThemeId.parse(chatTheme).serializedName();
+        if (!normalizedTheme.equals(chatTheme)) {
+            chatTheme = normalizedTheme;
         }
         if (chatPanel == null) {
             chatPanel = new ChatPanelConfig();
@@ -338,11 +340,20 @@ public final class ChatUpgradeConfig {
         }
     }
 
-    public static void setChatThemeAndSave(String themeId) throws IOException {
+    public static void setChatThemeAndSave(ChatSurfaceThemeId themeId) throws IOException {
         synchronized (LOCK) {
-            instance.chatTheme = themeId == null || themeId.isBlank() ? "modern_bubble" : themeId;
+            ChatSurfaceThemeId safeTheme = themeId == null ? ChatSurfaceThemeId.DEFAULT : themeId;
+            instance.chatTheme = safeTheme.serializedName();
             writeConfigFile();
         }
+    }
+
+    public static void setChatThemeAndSave(String themeId) throws IOException {
+        setChatThemeAndSave(ChatSurfaceThemeId.parse(themeId));
+    }
+
+    public static ChatSurfaceThemeId chatThemeId() {
+        return ChatSurfaceThemeId.parse(instance.chatTheme);
     }
 
     public static void setChatPanelGeometryAndSave(

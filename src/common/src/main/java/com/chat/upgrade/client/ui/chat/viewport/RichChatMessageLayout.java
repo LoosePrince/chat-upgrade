@@ -11,6 +11,7 @@ public record RichChatMessageLayout(
         RichChatMessage message,
         ChatTimelineProjection timeline,
         RichChatBounds bounds,
+        RichChatBounds visualBounds,
         @Nullable RichChatBounds identityBounds,
         List<RichChatRenderNode> nodes,
         List<RichChatHitBox> hitBoxes) {
@@ -24,6 +25,7 @@ public record RichChatMessageLayout(
         if (bounds == null) {
             throw new IllegalArgumentException("bounds must not be null");
         }
+        visualBounds = visualBounds == null ? bounds : visualBounds;
         nodes = List.copyOf(nodes == null ? List.of() : nodes);
         hitBoxes = List.copyOf(hitBoxes == null ? List.of() : hitBoxes);
     }

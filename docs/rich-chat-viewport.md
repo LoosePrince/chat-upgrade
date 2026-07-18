@@ -1,35 +1,39 @@
 # RichChatViewport 实现
 
-这篇文档说明 `TAKEOVER` 下聊天栏内容区如何从统一消息状态变成可渲染、可点击、可滚动的富媒体界面。
+这篇文档说明 `TAKEOVER` 下完整聊天 surface 如何从统一消息状态生成可渲染、可点击、可滚动的富媒体场景。
 
 ## 核心结论
 
-`TAKEOVER` 下聊天栏内容区已经是自定义 viewport 架构：
+`TAKEOVER` 已由单一 scene/layout/render 管线拥有聊天 surface：
 
 ```text
 RichChatMessage
+  -> ChatTimelineProjection
   -> RichChatMessageLayout
-  -> RichChatRenderNode
-  -> RichChatHitBox
-  -> RichChatMediaRenderer
-  -> RichChatInteractionRouter
+  -> ChatScene
+  -> ChatSceneRenderer
 ```
 
-原版 `ChatComponent` 仍提供外壳、位置、尺寸、缩放、透明度和生命周期，但内容怎么排、怎么画、怎么点，主要由 `RichChatViewport` 体系决定。
+`ChatSurfaceController` 提供打开面板或关闭 HUD 的不可变 `ChatSurfaceFrame`。`ChatScene` 将 frame、timeline 布局和叶子节点组合为单帧场景；`ChatSceneRenderer` 统一绘制 surface chrome、消息装饰、身份、回复/删除节点、媒体和滚动条。
+
+`COMPAT_TEXT_VANILLA` 不经过这条 TAKEOVER 管线。它继续使用 Minecraft 原版 `ChatComponent -> GuiMessage -> 原版布局/绘制`，不读取 TAKEOVER 的 metrics、坐标或运行时主题。
 
 ## 层级结构
 
 ```mermaid
 flowchart TB
-    A[RichChatStateStore\n统一消息事实] --> B[RichChatLayoutEngine\n布局]
-    B --> C[RichChatLayout\n整体布局结果]
-    C --> D[RichChatMessageLayout\n单条消息布局]
-    D --> E[RichChatRenderNode\n文本/媒体/系统节点]
-    D --> F[RichChatHitBox\n点击/hover 区域]
-    E --> G[RichChatMediaRenderer\n绘制]
-    F --> H[RichChatInteractionRouter\n命中与交互]
-    I[RichChatViewportState\n像素滚动状态] --> B
-    I --> H
+    A[RichChatStateStore\n统一消息事实] --> B[ChatTimelineProjector\n身份/分类/分组]
+    B --> C[RichChatLayoutEngine\n共享布局]
+    T[ChatThemes\ntokens + layout policy] --> C
+    S[ChatSurfaceController\nChatSurfaceFrame] --> D[ChatScene\n不可变单帧场景]
+    T --> S
+    C --> D
+    D --> E[ChatSceneRenderer\n单一 TAKEOVER renderer]
+    E --> F[Surface chrome]
+    E --> G[消息装饰/身份/叶子节点]
+    E --> H[媒体/滚动条]
+    C --> I[RichChatHitBox\n点击/hover 区域]
+    I --> J[RichChatInteractionRouter\n现有交互路由]
 ```
 
 ## 事实层
@@ -44,15 +48,16 @@ flowchart TB
 
 | 字段 | 含义 |
 | --- | --- |
-| `messageId` | 消息唯一标识；为空时生成本地 ID。 |
-| `senderName` | 发送者。 |
-| `component` | 进入渲染的 Minecraft 文本组件。 |
-| `plainText` | 纯文本内容。 |
+| `messageId` | 消息唯一标识；可信增强消息由服务端生成，本地兼容消息可生成本地 ID。 |
+| `author` / `kind` | 解析后的作者身份和消息语义分类。 |
+| `serverTimestampMs` | 服务端时间；旧链路不可用时为 `0`。 |
+| `replyTo` | 服务端确认的回复摘要；客户端不自行推断。 |
+| `component` / `plainText` | 当前可见文本组件和纯文本。 |
 | `fallbackText` | 降级文本，通常用于 bracket/vanilla。 |
 | `attachments` | 图片、音频、视频等附件。 |
 | `inlineEmojiSlots` | 表情 slot，布局时分配到文本行。 |
 | `source` | 消息来源，如 vanilla、结构化包、bracket 协议。 |
-| `status` | 可见、删除等状态。 |
+| `status` | 可见或已删除状态；删除会清空正文、附件、表情和签名。 |
 
 事实层不保存“这一行在哪里画”，只保存“这条消息是什么”。
 
@@ -65,17 +70,19 @@ flowchart TB
 - `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMessageLayout.java`
 - `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMediaSizing.java`
 
-布局层把消息事实转成 viewport 坐标系下的布局结果：
+布局层把 oldest-first timeline 投影转成内容局部坐标系下的布局结果：
 
 ```text
 RichChatStateStore.snapshotNewestFirst()
-  -> 反转为 oldestFirst
-  -> 每条消息生成 RichChatMessageLayout
-  -> 每个文本行和附件生成 RichChatRenderNode
-  -> 每个可交互区域生成 RichChatHitBox
+  -> ChatTimelineProjector.projectOldestFirst()
+  -> RichChatLayoutEngine 按 ChatLayoutPolicy 布局
+  -> RichChatMessageLayout(bounds / visualBounds / identityBounds)
+  -> RichChatRenderNode + RichChatHitBox
 ```
 
-当前文本仍使用 Minecraft `Font.split` 换行，这是实现选择，不是原版聊天行模型。附件高度由 `RichChatMediaSizing` 统一决定。
+`ChatLayoutPolicy` 在布局阶段一次决定身份 gutter、消息内边距、组间距、换行宽度和消息装饰形态。文本、媒体、背景与 hit box 都从同一布局坐标生成，renderer 不再按主题二次偏移，避免视觉位置与点击区域漂移。
+
+当前文本使用 Minecraft `Font.split` 换行，这是 TAKEOVER 的布局实现选择，不是原版 `GuiMessage.Line` 模型。附件高度由 `RichChatMediaSizing` 统一决定。
 
 ## 渲染节点
 
@@ -90,13 +97,15 @@ RichChatStateStore.snapshotNewestFirst()
 | --- | --- |
 | `TEXT` | 普通文本行。 |
 | `SYSTEM` | 系统文本行。 |
+| `REPLY` | 可信服务端回复摘要。 |
+| `DELETED` | 已撤回消息的脱敏占位。 |
 | `IMAGE` | 图片附件。 |
 | `AUDIO` | 音频播放器。 |
 | `VIDEO` | 视频播放器。 |
 | `ATTACHMENT_PENDING` | 附件等待状态。 |
 | `ATTACHMENT_FAILED` | 附件失败状态。 |
 
-每个节点拥有自己的 bounds、顺序、文本或附件对象。后续要添加气泡、头像、回复块、按钮组，也应先添加新的节点模型或在现有节点外扩展布局数据。
+每个节点拥有自己的 bounds、顺序、文本或附件对象。气泡/卡片边界、身份 gutter 和组位置属于 `RichChatMessageLayout` 与 timeline 投影，不由叶子节点重复推断。
 
 ## 命中框
 
@@ -122,26 +131,37 @@ RichChatStateStore.snapshotNewestFirst()
 
 主要文件：
 
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/scene/ChatScene.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/scene/ChatSceneRenderer.java`
 - `src/common/src/main/java/com/chat/upgrade/client/mixin/ChatComponentRichViewportMixin.java`
 - `src/common/src/main/java/com/chat/upgrade/client/ui/chat/viewport/RichChatMediaRenderer.java`
-- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/ChatUpgradeChatRenderState.java`
 
 渲染流程：
 
 ```text
-ChatComponent 提取渲染状态
+ChatComponent 生命周期接入
   -> TAKEOVER gate 判断
-  -> 计算 Vanilla shell metrics
-  -> RichChatLayoutEngine layoutFromStore
-  -> RichChatViewportState 更新滚动边界
-  -> 开启 scissor 裁切
-  -> 绘制消息背景
-  -> 绘制每个可见 RenderNode
-  -> 绘制滚动条
-  -> 处理 hover / tooltip / cursor
+  -> ChatSurfaceController.synchronize()
+  -> ChatTimelineProjector + RichChatLayoutEngine
+  -> 创建不可变 ChatScene
+  -> 绘制 surface chrome
+  -> 对内容区开启 scissor 并平移到内容原点
+  -> ChatSceneRenderer 绘制消息装饰、身份和可见叶子节点
+  -> finally 恢复 pose 并关闭 scissor
+  -> 绘制不属于内容裁切的 chrome / scrollbar
 ```
 
-普通文本和媒体都在同一个 viewport 裁切范围里渲染。文本不再绕回原版 `GuiMessage.Line` 绘制主路径。
+普通文本和媒体都在同一个 timeline 裁切范围内渲染。surface 几何和 scissor 使用 GUI 绝对坐标；消息、空态和 `RichChatRenderNode` 使用内容局部坐标。Mixin 只负责生命周期、裁切、pose 和共享场景调用，不再包含主题颜色或消息装饰分支。
+
+## 运行时主题
+
+三个稳定主题 ID 共用上述 scene/layout/render 管线：
+
+- `modern_bubble`
+- `compact_feed`
+- `native_enhanced`
+
+`ChatThemeTokens` 提供 surface、消息、身份、回复、删除、媒体、滚动条和 composer 的视觉语义；`ChatLayoutPolicy` 提供会改变布局与命中框的尺寸策略。主题切换在下一帧同步 `ChatSurfaceFrame` 并重建必要布局，不修改消息事实或协议能力。
 
 ## 表情链路
 
@@ -189,13 +209,13 @@ ChatComponent 提取渲染状态
 
 ## 自定义渲染能力边界
 
-在聊天栏内容区内，TAKEOVER 可以自由定义布局和渲染，不必遵守原版聊天行规范。
+TAKEOVER 已拥有完整聊天 surface，可独立定义面板 chrome、timeline 布局、主题和内容裁切，不必遵守原版聊天行规范。
 
 仍保留的边界：
 
-- 聊天栏外壳位置、大小、缩放来自原版 shell。
-- 不应默认画出聊天栏 viewport 裁切范围外。
-- 命令输入仍应保持原版链路。
+- 面板几何来自 `ChatPanelGeometry`，左下锚定并由 `ChatSurfaceController` 持久化；屏幕大小变化时会重新归一化。
+- 所有 timeline 绘制和交互必须使用同一布局快照，不应在 renderer 内制造额外坐标。
+- 命令建议、composer 回复状态、右键菜单和统一类型化动作状态机属于后续阶段，不能由当前 scene renderer 伪造。
+- 默认头像仍是稳定色块/glyph 描述，不是真实玩家皮肤。
 - 网络协议和 fallback 策略仍要兼容服务端与旧客户端。
-
-如果未来要完全替换外壳，那是另一阶段：需要替换 ChatScreen/ChatComponent 外层生命周期，而不仅是 viewport。
+- `COMPAT_TEXT_VANILLA` 必须继续隔离原版文本布局和绘制。

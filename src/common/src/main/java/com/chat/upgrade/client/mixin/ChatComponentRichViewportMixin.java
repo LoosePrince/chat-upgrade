@@ -3,18 +3,15 @@ package com.chat.upgrade.client.mixin;
 import com.chat.upgrade.client.ui.chat.ChatGraphicsAccessBridge;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.scene.ChatScene;
+import com.chat.upgrade.client.ui.chat.scene.ChatSceneRenderer;
 import com.chat.upgrade.client.ui.chat.surface.ChatPresentationMode;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceFrame;
-import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayout;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayoutEngine;
-import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaRenderer;
-import com.chat.upgrade.client.ui.chat.viewport.RichChatMessageLayout;
-import com.chat.upgrade.client.ui.chat.viewport.RichChatRenderNode;
-import com.chat.upgrade.client.ui.chat.viewport.RichChatRenderNodeKind;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportMetrics;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
@@ -27,8 +24,6 @@ import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
-import net.minecraft.util.ARGB;
-import net.minecraft.util.Mth;
 
 import org.joml.Matrix3x2f;
 import org.joml.Vector2f;
@@ -90,12 +85,12 @@ public abstract class ChatComponentRichViewportMixin {
                 displayMode.showRestrictedPrompt);
         Font font = minecraft.font;
         RichChatViewportMetrics metrics = chatupgrade$metrics(screenHeight, displayMode, surfaceFrame);
-        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics);
+        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics, surfaceFrame.theme());
+        ChatScene scene = new ChatScene(surfaceFrame, metrics, layout);
         boolean paintsTimeline = !surfaceFrame.restricted() && layout.totalHeight() > 0;
 
         if (extractor != null) {
-            ChatSurfaceRenderer.paintPanel(extractor, font, surfaceFrame);
-            ChatSurfaceRenderer.paintTimelineState(extractor, font, surfaceFrame, layout.totalHeight() <= 0);
+            ChatSceneRenderer.paintSurface(extractor, font, scene);
         }
 
         RichChatViewportState state = RichChatViewport.state();
@@ -130,19 +125,18 @@ public abstract class ChatComponentRichViewportMixin {
                 RichChatInteractionRouter.clear();
             }
             if (paintsTimeline) {
-                chatupgrade$paintMessages(
+                ChatSceneRenderer.paintTimeline(
                         graphics,
                         extractor,
                         font,
-                        metrics,
-                        layout,
+                        scene,
                         state,
                         contentToLocalY,
                         ticks,
                         displayMode.foreground);
             }
             if (displayMode.foreground && paintsTimeline) {
-                chatupgrade$paintScrollBar(graphics, metrics, layout, state);
+                ChatSceneRenderer.paintScrollbar(graphics, scene, state, newMessageSinceScroll);
                 chatupgrade$showRichHover(graphics, extractor, font);
             }
         } finally {
@@ -254,137 +248,4 @@ public abstract class ChatComponentRichViewportMixin {
                 displayMode.foreground);
     }
 
-    @Unique
-    private void chatupgrade$paintMessages(
-            ChatComponent.ChatGraphicsAccess graphics,
-            GuiGraphicsExtractor extractor,
-            Font font,
-            RichChatViewportMetrics metrics,
-            RichChatLayout layout,
-            RichChatViewportState state,
-            int contentToLocalY,
-            int ticks,
-            boolean foreground) {
-        int visibleTop = state.visibleTop();
-        int visibleBottom = state.visibleBottom();
-        for (RichChatMessageLayout messageLayout : layout.messages()) {
-            if (!messageLayout.visibleIn(visibleTop, visibleBottom)) {
-                continue;
-            }
-            float alpha = chatupgrade$alpha(messageLayout, ticks, foreground);
-            if (alpha <= 1.0e-5F) {
-                continue;
-            }
-            RichChatBounds localMessage = messageLayout.bounds().translateY(contentToLocalY);
-            graphics.fill(
-                    metrics.backgroundLeft(),
-                    localMessage.top(),
-                    metrics.backgroundRight(),
-                    localMessage.bottom(),
-                    ARGB.black(alpha * metrics.backgroundOpacity()));
-            chatupgrade$paintIdentity(extractor, font, metrics, messageLayout, contentToLocalY, alpha);
-            for (RichChatRenderNode node : messageLayout.nodes()) {
-                if (!node.bounds().intersectsVerticalRange(visibleTop, visibleBottom)) {
-                    continue;
-                }
-                chatupgrade$paintNode(graphics, extractor, font, metrics, node, contentToLocalY, alpha);
-            }
-        }
-    }
-
-    @Unique
-    private void chatupgrade$paintIdentity(
-            GuiGraphicsExtractor extractor,
-            Font font,
-            RichChatViewportMetrics metrics,
-            RichChatMessageLayout layout,
-            int contentToLocalY,
-            float alpha) {
-        if (extractor == null || layout.identityBounds() == null || !layout.timeline().showIdentity()) {
-            return;
-        }
-        RichChatBounds avatar = layout.identityBounds().translateY(contentToLocalY);
-        int avatarColor = ARGB.color(
-                Math.clamp(Math.round(alpha * 255.0F), 0, 255),
-                layout.timeline().avatar().backgroundRgb());
-        int foreground = ARGB.color(
-                Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
-                layout.timeline().avatar().foregroundRgb());
-        extractor.fill(avatar.left(), avatar.top(), avatar.right(), avatar.bottom(), avatarColor);
-        extractor.outline(avatar.left(), avatar.top(), avatar.width(), avatar.height(), ARGB.white(alpha * 0.7F));
-        String glyph = layout.timeline().avatar().glyph();
-        int glyphX = avatar.left() + Math.max(1, (avatar.width() - font.width(glyph)) / 2);
-        int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
-        extractor.text(font, glyph, glyphX, glyphY, foreground, false);
-
-        String authorName = layout.timeline().author().visibleName();
-        int nameRgb = layout.timeline().author().team().colorRgb() >= 0
-                ? layout.timeline().author().team().colorRgb()
-                : 0xDDE7F5;
-        int nameColor = ARGB.color(
-                Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
-                nameRgb);
-        extractor.text(
-                font,
-                authorName,
-                metrics.textLeft() + 24,
-                avatar.top(),
-                nameColor,
-                false);
-    }
-
-    @Unique
-    private void chatupgrade$paintNode(
-            ChatComponent.ChatGraphicsAccess graphics,
-            GuiGraphicsExtractor extractor,
-            Font font,
-            RichChatViewportMetrics metrics,
-            RichChatRenderNode node,
-            int contentToLocalY,
-            float alpha) {
-        RichChatBounds localBounds = node.bounds().translateY(contentToLocalY);
-        if (extractor != null) {
-            RichChatMediaRenderer.paintNode(extractor, font, metrics, node, contentToLocalY, alpha);
-            return;
-        }
-        if (node.kind() == RichChatRenderNodeKind.TEXT || node.kind() == RichChatRenderNodeKind.SYSTEM) {
-            if (node.text() != null) {
-                int textY = localBounds.bottom() - metrics.entryBottomToMessageY();
-                graphics.handleMessage(textY, alpha * metrics.textOpacity(), node.text());
-            }
-        }
-    }
-
-    @Unique
-    private void chatupgrade$paintScrollBar(
-            ChatComponent.ChatGraphicsAccess graphics,
-            RichChatViewportMetrics metrics,
-            RichChatLayout layout,
-            RichChatViewportState state) {
-        if (layout.totalHeight() <= metrics.visibleHeight() || metrics.visibleHeight() <= 0) {
-            return;
-        }
-        int barHeight = Math.max(2, metrics.visibleHeight() * metrics.visibleHeight() / layout.totalHeight());
-        int scrollOffset = state.visualScrollPx() * metrics.visibleHeight() / layout.totalHeight();
-        int bottom = metrics.chatBottom() - scrollOffset;
-        int alpha = state.scrollPx() > 0 ? 170 : 96;
-        int color = newMessageSinceScroll ? 13382451 : 3355562;
-        int x = metrics.scrollbarX();
-        graphics.fill(x, bottom, x + 2, bottom - barHeight, ARGB.color(alpha, color));
-        graphics.fill(x + 2, bottom, x + 1, bottom - barHeight, ARGB.color(alpha, 13421772));
-    }
-
-    @Unique
-    private float chatupgrade$alpha(RichChatMessageLayout layout, int ticks, boolean foreground) {
-        if (foreground) {
-            return 1.0F;
-        }
-        int tickDelta = ticks - layout.message().addedTime();
-        double t = tickDelta / 200.0D;
-        t = 1.0D - t;
-        t *= 10.0D;
-        t = Mth.clamp(t, 0.0D, 1.0D);
-        t *= t;
-        return (float) t;
-    }
 }

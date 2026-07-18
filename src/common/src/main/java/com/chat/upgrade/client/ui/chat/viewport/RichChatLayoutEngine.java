@@ -9,11 +9,15 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
+import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjection;
 import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjector;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
 import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
+import com.chat.upgrade.client.ui.chat.surface.ChatLayoutPolicy;
+import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
+import com.chat.upgrade.client.ui.chat.surface.ChatThemes;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.Font;
@@ -22,29 +26,31 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 
 public final class RichChatLayoutEngine {
-    private static final int NODE_GAP = 2;
-    private static final int GROUP_GAP = 5;
-    private static final int MESSAGE_GAP = 1;
-    private static final int IDENTITY_GUTTER = 24;
-    private static final int AVATAR_SIZE = 18;
     private static final Component DELETED_MARKER = Component.translatable("chatupgrade.message.deleted")
             .withStyle(new ChatFormatting[] { ChatFormatting.GRAY, ChatFormatting.ITALIC });
 
+    public RichChatLayout layoutFromStore(Font font, RichChatViewportMetrics metrics, ChatTheme theme) {
+        return layout(font, metrics, RichChatStateStore.snapshotNewestFirst(), RichChatStateStore.version(), theme);
+    }
+
     public RichChatLayout layoutFromStore(Font font, RichChatViewportMetrics metrics) {
-        return layout(font, metrics, RichChatStateStore.snapshotNewestFirst(), RichChatStateStore.version());
+        return layoutFromStore(font, metrics, ChatThemes.compatibility());
     }
 
     public RichChatLayout layout(
             Font font,
             RichChatViewportMetrics metrics,
             List<RichChatMessage> newestFirst,
-            long storeVersion) {
+            long storeVersion,
+            ChatTheme theme) {
         if (font == null) {
             throw new IllegalArgumentException("font must not be null");
         }
         if (metrics == null) {
             throw new IllegalArgumentException("metrics must not be null");
         }
+        ChatTheme activeTheme = theme == null ? ChatThemes.compatibility() : theme;
+        ChatLayoutPolicy policy = activeTheme.layout();
         if (newestFirst == null || newestFirst.isEmpty()) {
             return RichChatLayout.empty(storeVersion, metrics.textWidth());
         }
@@ -59,9 +65,9 @@ public final class RichChatLayoutEngine {
         int cursorY = 0;
         for (ChatTimelineProjection projection : timeline) {
             if (cursorY > 0) {
-                cursorY += projection.groupPosition().startsGroup() ? GROUP_GAP : MESSAGE_GAP;
+                cursorY += projection.groupPosition().startsGroup() ? policy.groupGap() : policy.messageGap();
             }
-            RichChatMessageLayout layout = layoutMessage(font, metrics, projection, cursorY);
+            RichChatMessageLayout layout = layoutMessage(font, metrics, projection, cursorY, policy);
             cursorY = layout.bounds().bottom();
             if (!layout.nodes().isEmpty()) {
                 messageLayouts.add(layout);
@@ -79,30 +85,67 @@ public final class RichChatLayoutEngine {
                 metrics.textWidth());
     }
 
+    public RichChatLayout layout(
+            Font font,
+            RichChatViewportMetrics metrics,
+            List<RichChatMessage> newestFirst,
+            long storeVersion) {
+        return layout(font, metrics, newestFirst, storeVersion, ChatThemes.compatibility());
+    }
+
     private RichChatMessageLayout layoutMessage(
             Font font,
             RichChatViewportMetrics metrics,
             ChatTimelineProjection timeline,
-            int top) {
+            int top,
+            ChatLayoutPolicy policy) {
         RichChatMessage message = timeline.message();
         List<RichChatRenderNode> nodes = new ArrayList<>();
         List<RichChatHitBox> hitBoxes = new ArrayList<>();
         Component textComponent = textComponent(message);
         boolean hasText = !textComponent.getString().isBlank() || message.attachments().isEmpty();
         boolean playerMessage = timeline.kind().playerAuthored();
-        int contentLeft = metrics.textLeft() + (playerMessage ? IDENTITY_GUTTER : 0);
-        int contentWidth = Math.max(1, metrics.textWidth() - (playerMessage ? IDENTITY_GUTTER : 0));
-        RichChatBounds identityBounds = timeline.showIdentity()
-                ? RichChatBounds.ofSize(metrics.textLeft(), top, AVATAR_SIZE, AVATAR_SIZE)
+        boolean showIdentity = policy.showIdentity(timeline);
+        int identityGutter = playerMessage ? policy.identityGutter() : 0;
+        int contentAreaWidth = Math.max(1, metrics.textWidth() - identityGutter);
+        int themedContentWidth = Math.max(1, contentAreaWidth * policy.contentWidthPercent() / 100);
+        int contentLeft = metrics.textLeft() + identityGutter + policy.bubblePaddingX();
+        int contentWidth = Math.max(1, themedContentWidth - policy.bubblePaddingX() * 2);
+        RichChatBounds identityBounds = showIdentity
+                ? RichChatBounds.ofSize(metrics.textLeft(), top, policy.avatarSize(), policy.avatarSize())
                 : null;
         int cursorY = top;
-        if (timeline.showIdentity()) {
+        if (showIdentity) {
             cursorY += metrics.entryHeight();
         }
         int order = 0;
+        int visualRight = contentLeft;
         ArrayDeque<InlineEmojiSlot> emojiQueue = new ArrayDeque<>(message.inlineEmojiSlots());
 
+        if (message.replyTo() != null) {
+            Component replyComponent = replyComponent(message.replyTo());
+            for (FormattedCharSequence line : font.split(replyComponent, contentWidth)) {
+                RichChatBounds lineBounds = RichChatBounds.ofSize(
+                        contentLeft,
+                        cursorY,
+                        contentWidth,
+                        metrics.entryHeight());
+                nodes.add(RichChatRenderNode.reply(
+                        message.messageId(),
+                        lineBounds,
+                        order,
+                        line,
+                        replyComponent));
+                visualRight = Math.max(visualRight, contentLeft + font.width(line));
+                cursorY += metrics.entryHeight();
+                order++;
+            }
+        }
+
         if (hasText) {
+            if (message.replyTo() != null) {
+                cursorY += policy.nodeGap();
+            }
             List<FormattedCharSequence> lines = font.split(textComponent, contentWidth);
             if (lines.isEmpty()) {
                 lines = List.of(FormattedCharSequence.EMPTY);
@@ -114,12 +157,35 @@ public final class RichChatLayoutEngine {
                         contentWidth,
                         metrics.entryHeight());
                 List<InlineEmojiSlot> lineEmojiSlots = InlineEmojiCoordinator.consumeForLine(line, emojiQueue);
-                RichChatRenderNode node = timeline.kind().systemLike()
-                        ? RichChatRenderNode.system(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots)
-                        : RichChatRenderNode.text(message.messageId(), lineBounds, order, line, textComponent, lineEmojiSlots);
+                RichChatRenderNode node;
+                if (message.status() == RichChatMessageStatus.DELETED) {
+                    node = RichChatRenderNode.deleted(
+                            message.messageId(),
+                            lineBounds,
+                            order,
+                            line,
+                            textComponent);
+                } else if (timeline.kind().systemLike()) {
+                    node = RichChatRenderNode.system(
+                            message.messageId(),
+                            lineBounds,
+                            order,
+                            line,
+                            textComponent,
+                            lineEmojiSlots);
+                } else {
+                    node = RichChatRenderNode.text(
+                            message.messageId(),
+                            lineBounds,
+                            order,
+                            line,
+                            textComponent,
+                            lineEmojiSlots);
+                }
                 nodes.add(node);
                 hitBoxes.addAll(styledTextHitBoxes(font, message.messageId(), lineBounds, line));
                 hitBoxes.addAll(emojiHitBoxes(font, metrics, message.messageId(), lineBounds, line, lineEmojiSlots));
+                visualRight = Math.max(visualRight, contentLeft + font.width(line));
                 cursorY += metrics.entryHeight();
                 order++;
             }
@@ -127,7 +193,7 @@ public final class RichChatLayoutEngine {
 
         for (RichAttachment attachment : message.attachments()) {
             if (!nodes.isEmpty()) {
-                cursorY += NODE_GAP;
+                cursorY += policy.nodeGap();
             }
             RichChatMediaBox attachmentLayout = RichChatMediaSizing.measure(
                     contentWidth,
@@ -152,15 +218,37 @@ public final class RichChatLayoutEngine {
                     null,
                     attachmentActionKey(attachment)));
             cursorY += attachmentLayout.height();
+            visualRight = Math.max(visualRight, attachmentBounds.right());
             order++;
         }
 
+        int messageHeight = Math.max(0, cursorY - top);
         RichChatBounds messageBounds = RichChatBounds.ofSize(
                 metrics.backgroundLeft(),
                 top,
                 metrics.backgroundRight() - metrics.backgroundLeft(),
-                Math.max(0, cursorY - top));
-        return new RichChatMessageLayout(message, timeline, messageBounds, identityBounds, nodes, hitBoxes);
+                messageHeight);
+        if (showIdentity) {
+            visualRight = Math.max(visualRight, contentLeft + font.width(timeline.author().visibleName()));
+        }
+        int visualLeft = playerMessage ? metrics.textLeft() + identityGutter : metrics.textLeft();
+        int maxVisualRight = metrics.textLeft() + metrics.textWidth();
+        int paddedVisualRight = Math.min(
+                maxVisualRight,
+                Math.max(visualLeft + 1, visualRight + policy.bubblePaddingX()));
+        RichChatBounds visualBounds = RichChatBounds.ofSize(
+                visualLeft,
+                top,
+                paddedVisualRight - visualLeft,
+                messageHeight);
+        return new RichChatMessageLayout(
+                message,
+                timeline,
+                messageBounds,
+                visualBounds,
+                identityBounds,
+                nodes,
+                hitBoxes);
     }
 
     private static List<RichChatHitBox> styledTextHitBoxes(
@@ -266,6 +354,16 @@ public final class RichChatLayoutEngine {
         return sb.toString();
     }
 
+    private static Component replyComponent(ChatReplySummary reply) {
+        String author = reply.author().visibleName();
+        String excerpt = reply.excerpt().isBlank()
+                ? Component.translatable("chatupgrade.reply.target_unavailable").getString()
+                : reply.excerpt();
+        String separator = author.isBlank() ? "" : author + ": ";
+        return Component.literal("↩ " + separator + excerpt)
+                .withStyle(new ChatFormatting[] { ChatFormatting.GRAY, ChatFormatting.ITALIC });
+    }
+
     private static Component textComponent(RichChatMessage message) {
         if (message.status() == RichChatMessageStatus.DELETED) {
             return DELETED_MARKER;
@@ -279,7 +377,7 @@ public final class RichChatLayoutEngine {
             case AUDIO -> RichChatHitBoxKind.AUDIO;
             case VIDEO -> RichChatHitBoxKind.VIDEO;
             case ATTACHMENT_FAILED -> RichChatHitBoxKind.RETRY;
-            case ATTACHMENT_PENDING, TEXT, SYSTEM -> RichChatHitBoxKind.ATTACHMENT;
+            case ATTACHMENT_PENDING, DELETED, REPLY, TEXT, SYSTEM -> RichChatHitBoxKind.ATTACHMENT;
         };
     }
 

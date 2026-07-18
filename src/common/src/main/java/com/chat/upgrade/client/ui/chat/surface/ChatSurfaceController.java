@@ -35,6 +35,7 @@ public final class ChatSurfaceController {
             boolean chatOpen,
             boolean restricted) {
         ensureGeometryLoaded(screenWidth, screenHeight);
+        STATE.setTheme(ChatThemes.resolve(ChatUpgradeConfig.get().chatTheme));
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
         STATE.setPresentationMode(chatOpen ? ChatPresentationMode.OPEN_PANEL : ChatPresentationMode.CLOSED_HUD);
         STATE.setRestricted(restricted);
@@ -46,6 +47,7 @@ public final class ChatSurfaceController {
 
     public static void onChatScreenOpened(int screenWidth, int screenHeight) {
         ensureGeometryLoaded(screenWidth, screenHeight);
+        STATE.setTheme(ChatThemes.resolve(ChatUpgradeConfig.get().chatTheme));
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
         STATE.setPresentationMode(ChatPresentationMode.OPEN_PANEL);
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);

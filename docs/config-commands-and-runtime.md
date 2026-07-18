@@ -59,6 +59,7 @@ jps -l -v
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `chatInputMode` | `TAKEOVER` / `COMPAT_TEXT_VANILLA` | `TAKEOVER` | 聊天输入/渲染模式。字段缺失时等价于 `TAKEOVER`。 |
+| `chatTheme` | `modern_bubble` / `compact_feed` / `native_enhanced` | `modern_bubble` | TAKEOVER surface 主题；未知值会归一化为默认主题。 |
 | `ciCompatibility` | boolean | `false` | 图片发送是否优先使用受支持的 `[[CICode,...]]` bracket tag；关闭时使用标准 `[[ChatUpgrade,...]]`。 |
 | `manualImageReveal` | boolean | `false` | 图片是否点击后加载。 |
 | `manualAudioReveal` | boolean | `false` | 音频是否点击后加载。 |
@@ -77,7 +78,8 @@ jps -l -v
 默认模式。特征：
 
 - 纯文本和附件都进入统一聊天 pipeline。
-- 聊天栏内容区由 `RichChatViewport` 自定义渲染。
+- 聊天打开时由 `ChatSurfaceController` 提供完整左下锚定面板；聊天关闭时降级为紧凑 HUD。
+- timeline 由共享 `ChatScene -> RichChatLayoutEngine -> ChatSceneRenderer` 管线完成布局、绘制和命中坐标生成。
 - 不依赖 phantom 行作为主路径。
 - 更适合完整富媒体体验和后续 UI 扩展。
 
@@ -95,6 +97,20 @@ jps -l -v
 /chatupgrade config inputmode takeover
 /chatupgrade config inputmode compat
 ```
+
+## TAKEOVER 主题
+
+主题只提供视觉 tokens 和布局策略，不复制消息事实、场景树或 renderer。稳定主题 ID 与切换命令如下：
+
+| 主题 ID | 命令 | 视觉策略 |
+| --- | --- | --- |
+| `modern_bubble` | `/chatupgrade config theme modern` | 圆角气泡、宽身份栏和分组留白。 |
+| `compact_feed` | `/chatupgrade config theme compact` | 紧凑 feed、侧边强调条和较小组间距。 |
+| `native_enhanced` | `/chatupgrade config theme native` | 接近原版密度的增强卡片。 |
+
+命令会立即保存 `chatTheme`；下一次 TAKEOVER surface 帧同步时解析主题，并以新的布局策略重建场景。该过程不修改消息事实、回复/撤回状态或交互动作语义。直接修改配置文件后，可执行 `/chatupgrade config reload` 获得相同效果。
+
+`COMPAT_TEXT_VANILLA` 不消费 TAKEOVER 主题：原版文本继续使用 Minecraft 的 `ChatComponent -> GuiMessage -> 原版布局/绘制` 链路；兼容 HUD 的富媒体旧入口固定使用 `native_enhanced`，避免运行时主题泄漏。
 
 ## 上传模式
 
@@ -132,6 +148,7 @@ jps -l -v
 | 命令 | 说明 |
 | --- | --- |
 | `/chatupgrade config ci <true|false>` | 切换图片发送使用 `[[CICode,...]]` 还是 `[[ChatUpgrade,...]]` bracket tag。 |
+| `/chatupgrade config theme <modern|compact|native>` | 切换并持久化 TAKEOVER 主题。 |
 | `/chatupgrade config manual <true|false>` | 图片手动加载。 |
 | `/chatupgrade config manualaudio <true|false>` | 音频手动加载。 |
 | `/chatupgrade config manualvideo <true|false>` | 视频手动加载。 |
@@ -183,7 +200,8 @@ config/chat-upgrade/server-media.json
 | TAKEOVER 音频 | 音频播放器显示，播放/循环/进度可用。 |
 | TAKEOVER 视频 | 视频节点显示，预览/播放/进度可用。 |
 | TAKEOVER 表情 | `[:token]` 显示为行内图片，滚动裁切正确。 |
-| COMPAT 纯文本 | 尽量原版输入和显示。 |
+| TAKEOVER 主题热切换 | `modern_bubble` / `compact_feed` / `native_enhanced` 共用同一场景、布局和渲染管线；下一帧生效且消息事实不变。 |
+| COMPAT 纯文本 | 继续使用原版 `ChatComponent -> GuiMessage` 布局和绘制，不受 TAKEOVER metrics、坐标与主题影响。 |
 | COMPAT 附件 | 富媒体附件仍可显示。 |
 | 断开重连 | 状态、pending、缓存按预期清理。 |
 | 服务端无结构化支持 | 发送降级 bracket 文本或原版聊天包。 |

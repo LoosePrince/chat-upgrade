@@ -15,6 +15,7 @@ public final class ChatSurfaceState {
     }
 
     private ChatPresentationMode presentationMode = ChatPresentationMode.CLOSED_HUD;
+    private ChatTheme theme = ChatThemes.resolve(ChatSurfaceThemeId.DEFAULT);
     private ChatPanelGeometry panelGeometry = new ChatPanelGeometry(
             ChatPanelGeometry.DEFAULT_LEFT,
             ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET,
@@ -32,6 +33,10 @@ public final class ChatSurfaceState {
 
     public ChatPanelGeometry panelGeometry() {
         return panelGeometry;
+    }
+
+    public ChatTheme theme() {
+        return theme;
     }
 
     public Overlay overlay() {
@@ -60,6 +65,10 @@ public final class ChatSurfaceState {
             overlay = Overlay.NONE;
             focusOwner = FocusOwner.NONE;
         }
+    }
+
+    public void setTheme(ChatTheme nextTheme) {
+        theme = nextTheme == null ? ChatThemes.resolve(ChatSurfaceThemeId.DEFAULT) : nextTheme;
     }
 
     public boolean updateScreenSize(int nextScreenWidth, int nextScreenHeight) {
@@ -100,6 +109,6 @@ public final class ChatSurfaceState {
     }
 
     public ChatSurfaceFrame frame() {
-        return new ChatSurfaceFrame(presentationMode, panelGeometry, restricted);
+        return new ChatSurfaceFrame(presentationMode, panelGeometry, restricted, theme);
     }
 }

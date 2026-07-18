@@ -12,6 +12,10 @@ import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
+import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
+import com.chat.upgrade.client.ui.chat.surface.ChatThemePainter;
+import com.chat.upgrade.client.ui.chat.surface.ChatThemeTokens;
+import com.chat.upgrade.client.ui.chat.surface.ChatThemes;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 
@@ -36,20 +40,69 @@ public final class RichChatMediaRenderer {
             RichChatViewportMetrics metrics,
             RichChatRenderNode node,
             int contentToLocalY,
-            float messageOpacity) {
+            float messageOpacity,
+            ChatTheme theme) {
         if (gfx == null || font == null || metrics == null || node == null || messageOpacity <= 1.0e-5f) {
             return;
         }
+        ChatTheme activeTheme = theme == null ? ChatThemes.compatibility() : theme;
         RichChatBounds localBounds = node.bounds().translateY(contentToLocalY);
         switch (node.kind()) {
-            case TEXT, SYSTEM -> paintText(gfx, font, metrics, node, localBounds, messageOpacity);
+            case DELETED, REPLY, TEXT, SYSTEM -> paintText(
+                    gfx,
+                    font,
+                    metrics,
+                    node,
+                    localBounds,
+                    messageOpacity,
+                    activeTheme.tokens().message(),
+                    activeTheme.tokens().media());
             case IMAGE, AUDIO, VIDEO, ATTACHMENT_PENDING, ATTACHMENT_FAILED -> paintAttachment(
                     gfx,
                     font,
                     node.kind(),
                     localBounds,
                     node.attachment(),
-                    messageOpacity);
+                    messageOpacity,
+                    activeTheme);
+        }
+    }
+
+    public static void paintNode(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatViewportMetrics metrics,
+            RichChatRenderNode node,
+            int contentToLocalY,
+            float messageOpacity) {
+        paintNode(gfx, font, metrics, node, contentToLocalY, messageOpacity, ChatThemes.compatibility());
+    }
+
+    public static void paintAttachment(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatRenderNodeKind kind,
+            RichChatBounds bounds,
+            RichAttachment attachment,
+            float opacity,
+            ChatTheme theme) {
+        if (gfx == null || font == null || bounds == null || opacity <= 1.0e-5f) {
+            return;
+        }
+        ChatThemeTokens.Media tokens = (theme == null ? ChatThemes.compatibility() : theme).tokens().media();
+        if (attachment == null || kind == RichChatRenderNodeKind.ATTACHMENT_PENDING || !attachment.hasRenderableUrl()) {
+            paintPending(gfx, font, bounds, opacity, tokens);
+            return;
+        }
+        if (kind == RichChatRenderNodeKind.ATTACHMENT_FAILED) {
+            paintFailure(gfx, font, bounds, attachment, opacity, tokens);
+            return;
+        }
+        String url = attachment.requireRenderableUrl();
+        switch (attachment.type()) {
+            case IMAGE -> paintImage(gfx, font, bounds, url, opacity, tokens);
+            case AUDIO -> paintAudio(gfx, font, bounds, attachment.displayName(), url, opacity, tokens);
+            case VIDEO -> paintVideo(gfx, font, bounds, attachment.displayName(), url, opacity, tokens);
         }
     }
 
@@ -60,23 +113,7 @@ public final class RichChatMediaRenderer {
             RichChatBounds bounds,
             RichAttachment attachment,
             float opacity) {
-        if (gfx == null || font == null || bounds == null || opacity <= 1.0e-5f) {
-            return;
-        }
-        if (attachment == null || kind == RichChatRenderNodeKind.ATTACHMENT_PENDING || !attachment.hasRenderableUrl()) {
-            paintPending(gfx, font, bounds, opacity);
-            return;
-        }
-        if (kind == RichChatRenderNodeKind.ATTACHMENT_FAILED) {
-            paintFailure(gfx, font, bounds, attachment, opacity);
-            return;
-        }
-        String url = attachment.requireRenderableUrl();
-        switch (attachment.type()) {
-            case IMAGE -> paintImage(gfx, font, bounds, url, opacity);
-            case AUDIO -> paintAudio(gfx, font, bounds, attachment.displayName(), url, opacity);
-            case VIDEO -> paintVideo(gfx, font, bounds, attachment.displayName(), url, opacity);
-        }
+        paintAttachment(gfx, font, kind, bounds, attachment, opacity, ChatThemes.compatibility());
     }
 
     public static RichChatBounds defaultAttachmentBounds(int left, int top, int maxWidth, int fallbackLineHeight,
@@ -91,13 +128,27 @@ public final class RichChatMediaRenderer {
             RichChatViewportMetrics metrics,
             RichChatRenderNode node,
             RichChatBounds bounds,
-            float messageOpacity) {
+            float messageOpacity,
+            ChatThemeTokens.Message tokens,
+            ChatThemeTokens.Media mediaTokens) {
         if (node.text() == null) {
             return;
         }
         int textY = bounds.bottom() - metrics.entryBottomToMessageY();
-        gfx.text(font, node.text(), bounds.left(), textY, ARGB.white(messageOpacity * metrics.textOpacity()), false);
-        paintInlineEmojis(gfx, font, metrics, node, bounds, textY, messageOpacity);
+        int textColor = switch (node.kind()) {
+            case DELETED -> tokens.deletedText();
+            case REPLY -> tokens.replyText();
+            case SYSTEM -> tokens.systemText();
+            default -> tokens.text();
+        };
+        gfx.text(
+                font,
+                node.text(),
+                bounds.left(),
+                textY,
+                ChatThemePainter.withOpacity(textColor, messageOpacity * metrics.textOpacity()),
+                false);
+        paintInlineEmojis(gfx, font, metrics, node, bounds, textY, messageOpacity, mediaTokens);
     }
 
     private static void paintInlineEmojis(
@@ -107,7 +158,8 @@ public final class RichChatMediaRenderer {
             RichChatRenderNode node,
             RichChatBounds bounds,
             int textY,
-            float messageOpacity) {
+            float messageOpacity,
+            ChatThemeTokens.Media tokens) {
         if (node.inlineEmojiSlots().isEmpty() || node.text() == null) {
             return;
         }
@@ -118,17 +170,29 @@ public final class RichChatMediaRenderer {
             int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
             int x = bounds.left() + font.width(plain.substring(0, charIndex)) + EMOJI_SIDE_GAP_PX;
             int y = textY + EMOJI_SIDE_GAP_PX;
-            paintInlineEmoji(gfx, slot.iconUrl(), x, y, size, opacity);
+            paintInlineEmoji(gfx, slot.iconUrl(), x, y, size, opacity, tokens);
         }
     }
 
-    private static void paintInlineEmoji(GuiGraphicsExtractor gfx, String url, int x, int y, int size, float opacity) {
+    private static void paintInlineEmoji(
+            GuiGraphicsExtractor gfx,
+            String url,
+            int x,
+            int y,
+            int size,
+            float opacity,
+            ChatThemeTokens.Media tokens) {
         ImageEntry entry = ImageLoader.getOrLoad(url);
         switch (entry.getState()) {
             case FAILED -> {
                 return;
             }
-            case LOADING -> gfx.fill(x, y, x + size, y + size, argb(opacity * 0.85f, 28, 28, 32));
+            case LOADING -> gfx.fill(
+                    x,
+                    y,
+                    x + size,
+                    y + size,
+                    ChatThemePainter.withOpacity(tokens.emojiLoadingBackground(), opacity));
             case LOADED -> {
                 Identifier textureId = entry.isAnimated() ? entry.textureIdAtMillis(Util.getMillis())
                         : entry.getTextureId();
@@ -157,11 +221,17 @@ public final class RichChatMediaRenderer {
         return sb.toString();
     }
 
-    private static void paintImage(GuiGraphicsExtractor gfx, Font font, RichChatBounds bounds, String url, float opacity) {
+    private static void paintImage(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatBounds bounds,
+            String url,
+            float opacity,
+            ChatThemeTokens.Media tokens) {
         ImageEntry entry = ImageLoader.getOrLoad(url);
         switch (entry.getState()) {
-            case FAILED -> paintImageFailure(gfx, font, bounds, opacity);
-            case LOADING -> paintImageLoading(gfx, font, bounds, entry, opacity);
+            case FAILED -> paintImageFailure(gfx, font, bounds, opacity, tokens);
+            case LOADING -> paintImageLoading(gfx, font, bounds, entry, opacity, tokens);
             case LOADED -> paintDecodedImage(gfx, bounds, entry, opacity);
         }
     }
@@ -172,26 +242,39 @@ public final class RichChatMediaRenderer {
             RichChatBounds bounds,
             String resourceName,
             String url,
-            float opacity) {
+            float opacity,
+            ChatThemeTokens.Media tokens) {
         AudioEntry entry = AudioLoader.getOrLoad(url);
         int x0 = bounds.left();
         int y0 = bounds.top();
         int x1 = bounds.right();
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == AudioEntry.State.LOADING) {
-            gfx.fill(x0, y0, x1, bounds.bottom(), argb(opacity * 0.5f, 24, 26, 31));
+            gfx.fill(
+                    x0,
+                    y0,
+                    x1,
+                    bounds.bottom(),
+                    ChatThemePainter.withOpacity(tokens.loadingBackground(), opacity));
             String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE
                     ? I18n.get("chatupgrade.hud.audio.processing")
                     : I18n.get("chatupgrade.hud.audio.downloading");
             gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
                     x0 + UpgradeHudInlinePaint.AUDIO_PAD_X, y0 + UpgradeHudInlinePaint.AUDIO_LINE1_Y,
-                    argb(opacity, 210, 210, 215), false);
+                    ChatThemePainter.withOpacity(tokens.muted(), opacity), false);
             gfx.text(font, label, x0 + UpgradeHudInlinePaint.AUDIO_PAD_X,
-                    y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, argb(opacity, 210, 210, 215), false);
+                    y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y,
+                    ChatThemePainter.withOpacity(tokens.muted(), opacity), false);
             return;
         }
         if (entry.getState() == AudioEntry.State.FAILED) {
-            paintFailure(gfx, font, bounds, RichAttachment.structured(attachmentTypeAudio(), name, url, null, null), opacity);
+            paintFailure(
+                    gfx,
+                    font,
+                    bounds,
+                    RichAttachment.structured(attachmentTypeAudio(), name, url, null, null),
+                    opacity,
+                    tokens);
             return;
         }
 
@@ -205,26 +288,56 @@ public final class RichChatMediaRenderer {
                 name + "  " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
                 x0 + UpgradeHudInlinePaint.AUDIO_PAD_X,
                 y0 + UpgradeHudInlinePaint.AUDIO_LINE1_Y,
-                argb(opacity, 215, 220, 230),
+                ChatThemePainter.withOpacity(tokens.text(), opacity),
                 false);
 
         boolean loop = AudioPlayerService.isLoopEnabled(url);
         AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
         paintButton(gfx, font, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom(), playing ? "⏸" : "▶",
-                opacity, true);
+                opacity, true, tokens);
         paintButton(gfx, font, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom(), loop ? "🔁" : "1×",
-                opacity, loop);
-        paintButton(gfx, font, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom(), "⧉", opacity, false);
-        paintButton(gfx, font, rects.popLeft(), rects.top(), rects.popRight(), rects.bottom(), "🗖", opacity, false);
+                opacity, loop, tokens);
+        paintButton(
+                gfx,
+                font,
+                rects.openLeft(),
+                rects.top(),
+                rects.openRight(),
+                rects.bottom(),
+                "⧉",
+                opacity,
+                false,
+                tokens);
+        paintButton(
+                gfx,
+                font,
+                rects.popLeft(),
+                rects.top(),
+                rects.popRight(),
+                rects.bottom(),
+                "🗖",
+                opacity,
+                false,
+                tokens);
 
         int barX0 = x0 + UpgradeHudInlinePaint.AUDIO_PAD_X;
         int barX1 = x1 - UpgradeHudInlinePaint.AUDIO_PAD_X;
         int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
         int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        gfx.fill(barX0, barY0, barX1, barY1, argb(opacity, 68, 72, 82));
+        gfx.fill(
+                barX0,
+                barY0,
+                barX1,
+                barY1,
+                ChatThemePainter.withOpacity(tokens.progressTrack(), opacity));
         float ratio = total <= 0 ? 0f : Math.clamp((float) pos / total, 0f, 1f);
         int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
-        gfx.fill(barX0, barY0, fillX, barY1, argb(opacity, 100, 200, 255));
+        gfx.fill(
+                barX0,
+                barY0,
+                fillX,
+                barY1,
+                ChatThemePainter.withOpacity(tokens.progressFill(), opacity));
     }
 
     private static void paintVideo(
@@ -233,7 +346,8 @@ public final class RichChatMediaRenderer {
             RichChatBounds bounds,
             String resourceName,
             String url,
-            float opacity) {
+            float opacity,
+            ChatThemeTokens.Media tokens) {
         VideoEntry entry = VideoLoader.getOrLoad(url);
         int x0 = bounds.left();
         int y0 = bounds.top();
@@ -241,16 +355,39 @@ public final class RichChatMediaRenderer {
         int x1 = bounds.right();
         String name = AudioUiLayout.shortName(resourceName, url);
         if (entry.getState() == VideoEntry.State.LOADING) {
-            gfx.fill(x0, y0, x1, bounds.bottom(), argb(opacity * 0.55f, 20, 22, 26));
+            gfx.fill(
+                    x0,
+                    y0,
+                    x1,
+                    bounds.bottom(),
+                    ChatThemePainter.withOpacity(tokens.loadingBackground(), opacity));
             String label = entry.getLoadPhase() == VideoEntry.LoadPhase.DECODE
                     ? I18n.get("chatupgrade.hud.video.processing")
                     : I18n.get("chatupgrade.hud.video.downloading");
-            gfx.text(font, name, x0 + VideoUiLayout.PAD_X, y0 + 2, argb(opacity, 220, 220, 225), false);
-            gfx.text(font, label, x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 210, 210, 215), false);
+            gfx.text(
+                    font,
+                    name,
+                    x0 + VideoUiLayout.PAD_X,
+                    y0 + 2,
+                    ChatThemePainter.withOpacity(tokens.text(), opacity),
+                    false);
+            gfx.text(
+                    font,
+                    label,
+                    x0 + VideoUiLayout.PAD_X,
+                    y0 + 13,
+                    ChatThemePainter.withOpacity(tokens.muted(), opacity),
+                    false);
             return;
         }
         if (entry.getState() == VideoEntry.State.FAILED) {
-            paintFailure(gfx, font, bounds, RichAttachment.structured(attachmentTypeVideo(), name, url, null, null), opacity);
+            paintFailure(
+                    gfx,
+                    font,
+                    bounds,
+                    RichAttachment.structured(attachmentTypeVideo(), name, url, null, null),
+                    opacity,
+                    tokens);
             return;
         }
 
@@ -284,27 +421,42 @@ public final class RichChatMediaRenderer {
         int controlY = y0 + VideoUiLayout.CONTROL_TOP;
         int btnX0 = x0 + VideoUiLayout.PAD_X;
         int btnX1 = btnX0 + VideoUiLayout.BTN_W;
-        gfx.fill(btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H, argb(opacity, 58, 62, 72));
+        gfx.fill(
+                btnX0,
+                controlY,
+                btnX1,
+                controlY + VideoUiLayout.BTN_H,
+                ChatThemePainter.withOpacity(tokens.controlBackground(), opacity));
         String icon = playing ? "⏸" : "▶";
         int iconX = btnX0 + Math.max(1, (VideoUiLayout.BTN_W - font.width(icon)) / 2);
-        gfx.text(font, icon, iconX, controlY, argb(opacity, 235, 236, 242), false);
+        gfx.text(font, icon, iconX, controlY, ChatThemePainter.withOpacity(tokens.text(), opacity), false);
 
         String left = ChatUpgradeFormatters.formatMs(pos);
         String right = ChatUpgradeFormatters.formatMs(total);
         int leftX = btnX1 + 4;
         int rightX = x1 - VideoUiLayout.PAD_X - font.width(right);
-        gfx.text(font, left, leftX, controlY, argb(opacity, 222, 224, 230), false);
-        gfx.text(font, right, rightX, controlY, argb(opacity, 222, 224, 230), false);
+        gfx.text(font, left, leftX, controlY, ChatThemePainter.withOpacity(tokens.text(), opacity), false);
+        gfx.text(font, right, rightX, controlY, ChatThemePainter.withOpacity(tokens.text(), opacity), false);
 
         int barX0 = leftX + font.width(left) + 4;
         int barX1 = rightX - 4;
         int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
         int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
         if (barX1 > barX0) {
-            gfx.fill(barX0, barY0, barX1, barY1, argb(opacity, 68, 72, 82));
+            gfx.fill(
+                    barX0,
+                    barY0,
+                    barX1,
+                    barY1,
+                    ChatThemePainter.withOpacity(tokens.progressTrack(), opacity));
             float ratio = total <= 0 ? 0f : Math.clamp((float) pos / total, 0f, 1f);
             int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
-            gfx.fill(barX0, barY0, fillX, barY1, argb(opacity, 100, 200, 255));
+            gfx.fill(
+                    barX0,
+                    barY0,
+                    fillX,
+                    barY1,
+                    ChatThemePainter.withOpacity(tokens.progressFill(), opacity));
         }
     }
 
@@ -336,37 +488,82 @@ public final class RichChatMediaRenderer {
             Font font,
             RichChatBounds bounds,
             ImageEntry entry,
-            float opacity) {
+            float opacity,
+            ChatThemeTokens.Media tokens) {
         int x0 = bounds.left();
         int y0 = bounds.top();
         int x1 = bounds.right();
         int y1 = bounds.bottom();
-        gfx.fill(x0, y0, x1, y1, argb(opacity * 0.85f, 28, 28, 32));
+        gfx.fill(
+                x0,
+                y0,
+                x1,
+                y1,
+                ChatThemePainter.withOpacity(tokens.loadingBackground(), opacity));
 
         long t = Util.getMillis();
         int width = Math.max(1, bounds.width());
         int sweepW = Math.min(48, Math.max(1, width - 16));
         int travel = Math.max(1, width - 16 - sweepW);
         int sweepX = x0 + 8 + (int) ((t / 35L) % travel);
-        gfx.fill(sweepX, y1 - 7, sweepX + sweepW, y1 - 3, argb(opacity, 100, 180, 255));
+        gfx.fill(
+                sweepX,
+                y1 - 7,
+                sweepX + sweepW,
+                y1 - 3,
+                ChatThemePainter.withOpacity(tokens.progressFill(), opacity));
 
         String label = entry.getLoadPhase() == ImageEntry.LoadPhase.DECODE
                 ? I18n.get("chatupgrade.hud.image.processing")
                 : I18n.get("chatupgrade.hud.image.downloading");
-        gfx.centeredText(font, label, x0 + width / 2, y0 + bounds.height() / 2 - font.lineHeight / 2,
-                argb(opacity, 200, 200, 210));
+        gfx.centeredText(
+                font,
+                label,
+                x0 + width / 2,
+                y0 + bounds.height() / 2 - font.lineHeight / 2,
+                ChatThemePainter.withOpacity(tokens.muted(), opacity));
     }
 
-    private static void paintPending(GuiGraphicsExtractor gfx, Font font, RichChatBounds bounds, float opacity) {
-        gfx.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), argb(opacity * 0.5f, 24, 26, 31));
-        gfx.text(font, I18n.get("chatupgrade.hud.image.downloading"), bounds.left() + 6, bounds.top() + 1,
-                argb(opacity, 210, 210, 215), false);
+    private static void paintPending(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatBounds bounds,
+            float opacity,
+            ChatThemeTokens.Media tokens) {
+        gfx.fill(
+                bounds.left(),
+                bounds.top(),
+                bounds.right(),
+                bounds.bottom(),
+                ChatThemePainter.withOpacity(tokens.pendingBackground(), opacity));
+        gfx.text(
+                font,
+                I18n.get("chatupgrade.hud.image.downloading"),
+                bounds.left() + 6,
+                bounds.top() + 1,
+                ChatThemePainter.withOpacity(tokens.muted(), opacity),
+                false);
     }
 
-    private static void paintImageFailure(GuiGraphicsExtractor gfx, Font font, RichChatBounds bounds, float opacity) {
-        gfx.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), argb(opacity * 0.5f, 40, 18, 18));
-        gfx.text(font, I18n.get("chatupgrade.inline.state.image_failed"), bounds.left() + 6, bounds.top() + 1,
-                argb(opacity, 255, 120, 120), false);
+    private static void paintImageFailure(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatBounds bounds,
+            float opacity,
+            ChatThemeTokens.Media tokens) {
+        gfx.fill(
+                bounds.left(),
+                bounds.top(),
+                bounds.right(),
+                bounds.bottom(),
+                ChatThemePainter.withOpacity(tokens.failureBackground(), opacity));
+        gfx.text(
+                font,
+                I18n.get("chatupgrade.inline.state.image_failed"),
+                bounds.left() + 6,
+                bounds.top() + 1,
+                ChatThemePainter.withOpacity(tokens.failureText(), opacity),
+                false);
     }
 
     private static void paintFailure(
@@ -374,14 +571,26 @@ public final class RichChatMediaRenderer {
             Font font,
             RichChatBounds bounds,
             RichAttachment attachment,
-            float opacity) {
-        gfx.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), argb(opacity * 0.5f, 40, 18, 18));
+            float opacity,
+            ChatThemeTokens.Media tokens) {
+        gfx.fill(
+                bounds.left(),
+                bounds.top(),
+                bounds.right(),
+                bounds.bottom(),
+                ChatThemePainter.withOpacity(tokens.failureBackground(), opacity));
         String label = switch (attachment.type()) {
             case IMAGE -> I18n.get("chatupgrade.inline.state.image_failed");
             case AUDIO -> I18n.get("chatupgrade.hud.audio.failed");
             case VIDEO -> I18n.get("chatupgrade.hud.video.failed");
         };
-        gfx.text(font, label, bounds.left() + 6, bounds.top() + 1, argb(opacity, 255, 120, 120), false);
+        gfx.text(
+                font,
+                label,
+                bounds.left() + 6,
+                bounds.top() + 1,
+                ChatThemePainter.withOpacity(tokens.failureText(), opacity),
+                false);
     }
 
     private static void paintButton(
@@ -393,11 +602,12 @@ public final class RichChatMediaRenderer {
             int y1,
             String label,
             float opacity,
-            boolean active) {
-        int bg = active ? argb(opacity, 76, 98, 132) : argb(opacity, 58, 62, 72);
-        gfx.fill(x0, y0, x1, y1, bg);
+            boolean active,
+            ChatThemeTokens.Media tokens) {
+        int background = active ? tokens.controlActiveBackground() : tokens.controlBackground();
+        gfx.fill(x0, y0, x1, y1, ChatThemePainter.withOpacity(background, opacity));
         int tx = x0 + Math.max(1, (x1 - x0 - font.width(label)) / 2);
-        gfx.text(font, label, tx, y0, argb(opacity, 230, 234, 240), false);
+        gfx.text(font, label, tx, y0, ChatThemePainter.withOpacity(tokens.text(), opacity), false);
     }
 
     private static com.chat.upgrade.client.media.model.InlineResourceType attachmentTypeAudio() {
@@ -406,10 +616,5 @@ public final class RichChatMediaRenderer {
 
     private static com.chat.upgrade.client.media.model.InlineResourceType attachmentTypeVideo() {
         return com.chat.upgrade.client.media.model.InlineResourceType.VIDEO;
-    }
-
-    private static int argb(float opacity, int r, int g, int b) {
-        int a = Math.clamp(Math.round(opacity * 255.0f), 0, 255);
-        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 }

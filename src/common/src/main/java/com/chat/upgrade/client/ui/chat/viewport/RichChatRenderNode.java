@@ -32,6 +32,40 @@ public record RichChatRenderNode(
         inlineEmojiSlots = List.copyOf(inlineEmojiSlots == null ? List.of() : inlineEmojiSlots);
     }
 
+    public static RichChatRenderNode deleted(
+            String messageId,
+            RichChatBounds bounds,
+            int order,
+            FormattedCharSequence text,
+            Component component) {
+        return new RichChatRenderNode(
+                RichChatRenderNodeKind.DELETED,
+                messageId,
+                bounds,
+                order,
+                text,
+                component,
+                null,
+                List.of());
+    }
+
+    public static RichChatRenderNode reply(
+            String messageId,
+            RichChatBounds bounds,
+            int order,
+            FormattedCharSequence text,
+            Component component) {
+        return new RichChatRenderNode(
+                RichChatRenderNodeKind.REPLY,
+                messageId,
+                bounds,
+                order,
+                text,
+                component,
+                null,
+                List.of());
+    }
+
     public static RichChatRenderNode text(
             String messageId,
             RichChatBounds bounds,

@@ -17,6 +17,7 @@ import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceThemeId;
 import com.chat.upgrade.client.upload.LocalImageSources;
 import com.chat.upgrade.client.upload.UploadRouter;
 import com.chat.upgrade.platform.command.CommandAdapter;
@@ -161,6 +162,16 @@ public final class ChatUpgradeCommands {
                                     .then(lit("compat")
                                             .executes(ctx -> setChatInputMode(sink(ctx),
                                                     ChatUpgradeConfig.ChatInputMode.COMPAT_TEXT_VANILLA))))
+                            .then(lit("theme")
+                                    .then(lit("modern_bubble")
+                                            .executes(ctx -> setChatTheme(sink(ctx),
+                                                    ChatSurfaceThemeId.MODERN_BUBBLE)))
+                                    .then(lit("compact_feed")
+                                            .executes(ctx -> setChatTheme(sink(ctx),
+                                                    ChatSurfaceThemeId.COMPACT_FEED)))
+                                    .then(lit("native_enhanced")
+                                            .executes(ctx -> setChatTheme(sink(ctx),
+                                                    ChatSurfaceThemeId.NATIVE_ENHANCED))))
                             .then(lit("ci")
                                     .then(arg("enabled", BoolArgumentType.bool())
                                             .executes(ctx -> setCiCompatibility(sink(ctx),
@@ -378,6 +389,25 @@ public final class ChatUpgradeCommands {
             sink.error(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
+    }
+
+    private static int setChatTheme(CommandSink sink, ChatSurfaceThemeId themeId) {
+        try {
+            ChatUpgradeConfig.setChatThemeAndSave(themeId);
+            sink.feedback(Component.translatable(
+                    "chatupgrade.config.theme.updated",
+                    themeLabel(themeId))
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            sink.error(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static Component themeLabel(ChatSurfaceThemeId themeId) {
+        ChatSurfaceThemeId safeTheme = themeId == null ? ChatSurfaceThemeId.DEFAULT : themeId;
+        return Component.translatable("chatupgrade.config.theme." + safeTheme.serializedName());
     }
 
     private static Component chatInputModeLabel(ChatUpgradeConfig.ChatInputMode mode) {
