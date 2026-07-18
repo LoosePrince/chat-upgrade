@@ -200,6 +200,9 @@ config/chat-upgrade/server-media.json
 | TAKEOVER 音频 | 音频播放器显示，播放/循环/进度可用。 |
 | TAKEOVER 视频 | 视频节点显示，预览/播放/进度可用。 |
 | TAKEOVER 表情 | `[:token]` 显示为行内图片，滚动裁切正确。 |
+| TAKEOVER 消息右键菜单 | 仅当前可见消息可打开菜单；回复、复制和本人消息撤回项按消息事实显示。 |
+| TAKEOVER 回复发送 | composer 显示目标摘要；纯文本和附件都携带同一 `replyToMessageId`，发送成功后清除目标。 |
+| TAKEOVER 回复降级保护 | V2 不可用时不把回复静默发送成无回复语义的 legacy/bracket/vanilla 消息。 |
 | TAKEOVER 主题热切换 | `modern_bubble` / `compact_feed` / `native_enhanced` 共用同一场景、布局和渲染管线；下一帧生效且消息事实不变。 |
 | COMPAT 纯文本 | 继续使用原版 `ChatComponent -> GuiMessage` 布局和绘制，不受 TAKEOVER metrics、坐标与主题影响。 |
 | COMPAT 附件 | 富媒体附件仍可显示。 |

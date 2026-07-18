@@ -1,6 +1,5 @@
 package com.chat.upgrade.client.ui.chat.viewport;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,13 +18,12 @@ import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
-import com.chat.upgrade.client.ui.chat.AudioControlClickEvent;
-import com.chat.upgrade.client.ui.chat.AudioFloatingWindowClickEvent;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
-import com.chat.upgrade.client.ui.chat.ImagePreviewClickEvent;
 import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
-import com.chat.upgrade.client.ui.chat.VideoControlClickEvent;
-import com.chat.upgrade.client.ui.chat.VideoPreviewClickEvent;
+import com.chat.upgrade.client.ui.chat.interaction.ChatAction;
+import com.chat.upgrade.client.ui.chat.interaction.ChatActionStyleAdapter;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
+import com.chat.upgrade.client.ui.chat.interaction.ChatGestureTarget;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 
@@ -34,7 +32,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.resources.language.I18n;
-import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
@@ -44,6 +41,7 @@ import net.minecraft.util.Util;
 
 public final class RichChatInteractionRouter {
     private static final List<ActiveHitBox> ACTIVE_HIT_BOXES = new ArrayList<>();
+    private static final List<ActiveMessage> ACTIVE_MESSAGES = new ArrayList<>();
     private static final String EMOJI_ACTION_PREFIX = "emoji:";
     private static final int EMOJI_PREVIEW_MIN_SIZE = 48;
     private static final int EMOJI_PREVIEW_MAX_SIZE = 96;
@@ -56,6 +54,7 @@ public final class RichChatInteractionRouter {
 
     public static void clear() {
         ACTIVE_HIT_BOXES.clear();
+        ACTIVE_MESSAGES.clear();
         activePose = null;
         activeViewportBounds = null;
     }
@@ -67,10 +66,20 @@ public final class RichChatInteractionRouter {
             int contentToLocalY,
             RichChatBounds localViewportBounds) {
         ACTIVE_HIT_BOXES.clear();
+        ACTIVE_MESSAGES.clear();
         activePose = pose;
         activeViewportBounds = localViewportBounds;
         if (layout == null) {
             return;
+        }
+        int visibleTop = state == null ? Integer.MIN_VALUE : state.visibleTop();
+        int visibleBottom = state == null ? Integer.MAX_VALUE : state.visibleBottom();
+        for (RichChatMessageLayout message : layout.messages()) {
+            if (message.visibleIn(visibleTop, visibleBottom)) {
+                ACTIVE_MESSAGES.add(new ActiveMessage(
+                        message,
+                        message.bounds().translateY(contentToLocalY)));
+            }
         }
         List<RichChatHitBox> source = state == null ? layout.hitBoxes() : layout.visibleHitBoxes(state);
         for (RichChatHitBox hitBox : source) {
@@ -91,6 +100,59 @@ public final class RichChatInteractionRouter {
         return null;
     }
 
+    public static @Nullable ChatGestureTarget targetForScreenGesture(
+            int screenX,
+            int screenY,
+            ChatGesture gesture) {
+        Vector2f local = localPositionForScreen(screenX, screenY);
+        if (local == null || !isInsideActiveViewport(local.x, local.y)) {
+            return null;
+        }
+        ActiveMessage activeMessage = activeMessageAtLocal(local.x, local.y);
+        RichChatHitBox hitBox = hitBoxAtLocal(local.x, local.y);
+        if (activeMessage == null && hitBox != null) {
+            activeMessage = activeMessageById(hitBox.messageId());
+        }
+        if (activeMessage == null) {
+            return null;
+        }
+        return new ChatGestureTarget(
+                gesture == null ? ChatGesture.PRIMARY : gesture,
+                activeMessage.layout().message(),
+                hitBox,
+                local.x,
+                local.y);
+    }
+
+    private static @Nullable ActiveMessage activeMessageAtLocal(float localX, float localY) {
+        for (int i = ACTIVE_MESSAGES.size() - 1; i >= 0; i--) {
+            ActiveMessage active = ACTIVE_MESSAGES.get(i);
+            if (active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+                return active;
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable ActiveMessage activeMessageById(String messageId) {
+        for (int i = ACTIVE_MESSAGES.size() - 1; i >= 0; i--) {
+            ActiveMessage active = ACTIVE_MESSAGES.get(i);
+            if (active.layout().message().messageId().equals(messageId)) {
+                return active;
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable Vector2f localPositionForScreen(int screenX, int screenY) {
+        if (!ChatUpgradeChatRenderState.isInClipBounds(screenX, screenY) || activePose == null) {
+            return null;
+        }
+        Matrix3x2f inv = new Matrix3x2f(activePose);
+        inv.invert();
+        return inv.transformPosition(new Vector2f(screenX, screenY));
+    }
+
     public static boolean hasActionAtLocal(float localX, float localY) {
         return styleForLocalClick(localX, localY) != null;
     }
@@ -104,7 +166,7 @@ public final class RichChatInteractionRouter {
             if (!active.localBounds().contains(Math.round(localX), Math.round(localY))) {
                 continue;
             }
-            Style style = styleForHitBox(active, localX, localY);
+            Style style = ChatActionStyleAdapter.toStyle(actionForHitBox(active, localX, localY));
             if (style != null) {
                 return style;
             }
@@ -113,13 +175,8 @@ public final class RichChatInteractionRouter {
     }
 
     public static @Nullable Style styleForScreenClick(int screenX, int screenY) {
-        if (!ChatUpgradeChatRenderState.isInClipBounds(screenX, screenY) || activePose == null) {
-            return null;
-        }
-        Matrix3x2f inv = new Matrix3x2f(activePose);
-        inv.invert();
-        Vector2f local = inv.transformPosition(new Vector2f(screenX, screenY));
-        return styleForLocalClick(local.x, local.y);
+        Vector2f local = localPositionForScreen(screenX, screenY);
+        return local == null ? null : styleForLocalClick(local.x, local.y);
     }
 
     public static boolean showTooltipForLocalHover(
@@ -239,10 +296,10 @@ public final class RichChatInteractionRouter {
                 ARGB.white(1.0F));
     }
 
-    private static @Nullable Style styleForHitBox(ActiveHitBox active, float localX, float localY) {
+    private static @Nullable ChatAction actionForHitBox(ActiveHitBox active, float localX, float localY) {
         Style textStyle = active.hitBox().style();
         if (textStyle != null && textStyle.getClickEvent() != null) {
-            return textStyle;
+            return new ChatAction.StyledText(textStyle);
         }
         RichAttachment attachment = active.hitBox().attachment();
         if (attachment == null || !attachment.hasRenderableUrl()) {
@@ -251,13 +308,13 @@ public final class RichChatInteractionRouter {
         String url = attachment.requireRenderableUrl();
         String name = attachment.displayName();
         return switch (attachment.type()) {
-            case IMAGE -> Style.EMPTY.withClickEvent(ImagePreviewClickEvent.forUrlAndName(url, name));
-            case AUDIO -> styleForAudioClick(active.localBounds(), url, name, localX, localY);
-            case VIDEO -> styleForVideoClick(active.localBounds(), url, name, localX, localY);
+            case IMAGE -> new ChatAction.PreviewImage(url, name);
+            case AUDIO -> actionForAudioClick(active.localBounds(), url, name, localX, localY);
+            case VIDEO -> actionForVideoClick(active.localBounds(), url, name, localX, localY);
         };
     }
 
-    private static @Nullable Style styleForAudioClick(
+    private static @Nullable ChatAction actionForAudioClick(
             RichChatBounds bounds,
             String url,
             String resourceName,
@@ -265,22 +322,16 @@ public final class RichChatInteractionRouter {
             float localY) {
         AudioAction action = resolveAudioAction(localX, localY, bounds);
         return switch (action.kind()) {
-            case TOGGLE -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggle(url));
-            case TOGGLE_LOOP -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forToggleLoop(url));
-            case OPEN_URL -> {
-                try {
-                    yield Style.EMPTY.withClickEvent(new ClickEvent.OpenUrl(URI.create(url)));
-                } catch (Exception e) {
-                    yield null;
-                }
-            }
-            case TOGGLE_FLOATING -> Style.EMPTY.withClickEvent(AudioFloatingWindowClickEvent.forToggle(url, resourceName));
-            case SEEK -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(url, action.ratio()));
+            case TOGGLE -> new ChatAction.ToggleAudio(url);
+            case TOGGLE_LOOP -> new ChatAction.ToggleAudioLoop(url);
+            case OPEN_URL -> new ChatAction.OpenUrl(url);
+            case TOGGLE_FLOATING -> new ChatAction.ToggleAudioFloating(url, resourceName);
+            case SEEK -> new ChatAction.SeekAudio(url, action.ratio());
             case NONE -> null;
         };
     }
 
-    private static @Nullable Style styleForVideoClick(
+    private static @Nullable ChatAction actionForVideoClick(
             RichChatBounds bounds,
             String url,
             String resourceName,
@@ -288,9 +339,9 @@ public final class RichChatInteractionRouter {
             float localY) {
         VideoAction action = resolveVideoAction(bounds, url, localX, localY);
         return switch (action.kind()) {
-            case TOGGLE -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forToggle(url));
-            case SEEK -> Style.EMPTY.withClickEvent(VideoControlClickEvent.forSeek(url, action.ratio()));
-            case OPEN_PREVIEW -> Style.EMPTY.withClickEvent(VideoPreviewClickEvent.forUrlAndName(url, resourceName));
+            case TOGGLE -> new ChatAction.ToggleVideo(url);
+            case SEEK -> new ChatAction.SeekVideo(url, action.ratio());
+            case OPEN_PREVIEW -> new ChatAction.PreviewVideo(url, resourceName);
             case NONE -> null;
         };
     }
@@ -458,6 +509,9 @@ public final class RichChatInteractionRouter {
     }
 
     private record VideoAction(VideoActionKind kind, double ratio) {
+    }
+
+    private record ActiveMessage(RichChatMessageLayout layout, RichChatBounds localBounds) {
     }
 
     private record ActiveHitBox(RichChatHitBox hitBox, RichChatBounds localBounds) {

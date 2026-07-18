@@ -32,8 +32,11 @@ flowchart TB
     E --> F[Surface chrome]
     E --> G[消息装饰/身份/叶子节点]
     E --> H[媒体/滚动条]
-    C --> I[RichChatHitBox\n点击/hover 区域]
-    I --> J[RichChatInteractionRouter\n现有交互路由]
+    C --> I[RichChatHitBox\n叶子命中区域]
+    I --> J[RichChatInteractionRouter\n统一坐标与手势目标]
+    J --> K[ChatAction\n类型化动作]
+    J --> L[ChatContextMenu\n消息级右键菜单]
+    L --> M[ChatComposerState\n回复目标]
 ```
 
 ## 事实层
@@ -123,9 +126,30 @@ RichChatStateStore.snapshotNewestFirst()
 - 音频播放、循环、打开、浮窗、进度条区域。
 - 视频播放、预览、seek 区域。
 - 表情图片区域。
-- 后续扩展的消息操作按钮。
 
-交互只在当前 viewport 可见区域内生效，滚动后不可见区域不会被误命中。
+消息级动作不伪造成叶子 hit box。`RichChatInteractionRouter` 还会保存当前可见 `RichChatMessageLayout`，右键手势先解析消息范围，再由动作目录基于消息事实生成菜单。
+
+## 类型化动作与回复 composer
+
+主要文件：
+
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/interaction/ChatAction.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/interaction/ChatGestureTarget.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/interaction/ChatMessageActionCatalog.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/interaction/ChatContextMenu.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/interaction/ChatMessageActionExecutor.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/ChatComposerState.java`
+- `src/common/src/main/java/com/chat/upgrade/client/ui/chat/input/ChatComposerRenderer.java`
+
+主、次按键统一解析为 `ChatGestureTarget`。叶子媒体动作转换为 `ChatAction` 后再由 `ChatActionStyleAdapter` 适配到 Minecraft 点击事件，回复、复制、撤回等消息级动作则直接由 `ChatScreen` 执行，不再污染 renderer。
+
+右键菜单仅对当前 TAKEOVER 可见消息生成动作：
+
+- 可信 V2 消息可以设为回复目标。
+- 有可复制正文或附件 URL 的消息可以复制。
+- 可信且由本地玩家发送的消息可以请求服务端撤回。
+
+composer 预览只保存 `messageId`、作者快照和摘要。发送时正文与附件共用 `replyToMessageId`；回复语义无法通过 V2 发送时不会静默降级成普通消息。所有叶子与消息目标都只从当前 viewport 可见布局生成，滚动后的不可见区域不会被误命中。
 
 ## 渲染层
 
@@ -215,7 +239,8 @@ TAKEOVER 已拥有完整聊天 surface，可独立定义面板 chrome、timeline
 
 - 面板几何来自 `ChatPanelGeometry`，左下锚定并由 `ChatSurfaceController` 持久化；屏幕大小变化时会重新归一化。
 - 所有 timeline 绘制和交互必须使用同一布局快照，不应在 renderer 内制造额外坐标。
-- 命令建议、composer 回复状态、右键菜单和统一类型化动作状态机属于后续阶段，不能由当前 scene renderer 伪造。
+- 消息右键菜单、回复预览和类型化动作属于独立交互/composer 模块，不由 scene renderer 保存状态。
+- 完整多附件 composer、命令建议 surface 和更完整的键盘手势仍属于后续阶段。
 - 默认头像仍是稳定色块/glyph 描述，不是真实玩家皮肤。
 - 网络协议和 fallback 策略仍要兼容服务端与旧客户端。
 - `COMPAT_TEXT_VANILLA` 必须继续隔离原版文本布局和绘制。

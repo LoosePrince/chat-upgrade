@@ -70,6 +70,20 @@ surface 几何与 scissor 使用 GUI 绝对坐标；消息节点使用内容局�
 - `ChatThemes` 只注册主题组合，不创建三个 renderer。
 - `ChatSurfaceFrame` 固化当前帧主题；切换配置后下一帧重建必要布局，不修改消息事实、协议能力或动作语义。
 
+## 类型化交互与 composer
+
+TAKEOVER 的输入动作不再全部伪装为 Minecraft 文本 `Style`。交互数据流固定为：
+
+```text
+屏幕坐标
+  -> ChatGesture（PRIMARY / SECONDARY）
+  -> ChatGestureTarget（消息 + 可选叶子 hit box）
+  -> ChatAction（回复 / 复制 / 撤回 / 媒体控制）
+  -> Style 兼容适配或 ChatScreen 动作执行
+```
+
+`RichChatInteractionRouter` 只负责当前场景坐标与命中目标；`ChatMessageActionCatalog` 根据可信消息事实生成右键菜单项；`ChatComposerState` 并列持有附件草稿和回复目标。回复发送只走 V2 submission 的 `replyToMessageId`，不在旧协议或 bracket fallback 中静默丢失语义。异步附件上传会捕获提交时的回复目标，并只清除同一个目标，避免上传期间切换回复对象造成状态覆盖。
+
 ## COMPAT 隔离
 
 `COMPAT_TEXT_VANILLA` 的纯文本继续走 Minecraft 原版 `ChatComponent -> GuiMessage -> 原版布局/绘制`。TAKEOVER 的 metrics、surface 坐标、布局策略和运行时主题不得进入该链路。
@@ -102,8 +116,9 @@ src/
 | --- | --- | --- |
 | 初始化与命令 | `src/common/.../client/ChatUpgradeClientBootstrap.java`、`ChatUpgradeCommands.java`；加载器入口见 `src/fabric`、`src/neoforge` | 客户端公共初始化、命令树、插件预热、资源清理。 |
 | 配置 | `src/common/.../client/ChatUpgradeConfig.java` | 客户端配置、稳定主题 ID、范围归一化、保存/重载。 |
-| 输入草稿 | `src/common/.../client/ui/chat/input` | 当前附件草稿、剪贴板/文件来源、发送控制；完整多附件 composer 尚未完成。 |
+| Composer 状态 | `src/common/.../client/ui/chat/input` | 当前附件草稿、回复目标、剪贴板/文件来源与发送控制；完整多附件 composer 尚未完成。 |
 | 聊天事实与投影 | `src/common/.../client/ui/chat/state` | 统一消息事实、撤回 tombstone、身份/分类/分组 timeline 投影。 |
+| 类型化交互 | `src/common/.../client/ui/chat/interaction` | 统一手势目标、类型化动作、右键消息菜单和 Minecraft `Style` 兼容适配。 |
 | Surface 与主题 | `src/common/.../client/ui/chat/surface` | presentation、面板几何、不可变 frame、主题 tokens 与布局策略。 |
 | 场景 | `src/common/.../client/ui/chat/scene` | 不可变场景组合和单一 TAKEOVER renderer。 |
 | 富媒体 viewport | `src/common/.../client/ui/chat/viewport` | TAKEOVER 布局、渲染节点、命中框、滚动状态和媒体 painter。 |
@@ -178,4 +193,5 @@ sequenceDiagram
 - `ChatComponentRichViewportMixin` 保持薄适配，只处理 Minecraft 生命周期、裁切、pose 和共享场景调用。
 - `COMPAT_TEXT_VANILLA` 的原版文本布局/绘制必须与 TAKEOVER metrics、坐标和主题隔离。
 - 回复身份、撤回权限和删除事实由服务端确认；UI 不得伪造。
-- composer 回复预览、右键菜单、类型化动作、统一手势和真实皮肤头像仍是后续模块，不应提前放进 scene renderer。
+- composer 回复目标、右键菜单和类型化动作由独立交互模块维护，scene renderer 只消费场景与主题，不持有交互状态。
+- 多附件 composer、命令建议 surface、真实皮肤头像和更完整的键盘手势仍是后续模块。

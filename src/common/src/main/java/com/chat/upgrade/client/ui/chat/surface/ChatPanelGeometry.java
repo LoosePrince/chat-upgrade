@@ -11,7 +11,7 @@ public record ChatPanelGeometry(int x, int y, int width, int height) {
     public static final int DEFAULT_LEFT = 4;
     public static final int DEFAULT_BOTTOM_OFFSET = 40;
     public static final int HEADER_HEIGHT = 18;
-    public static final int COMPOSER_HEIGHT = 44;
+    public static final int COMPOSER_HEIGHT = 62;
     public static final int RESIZE_HANDLE_SIZE = 5;
 
     public static final int EDGE_NONE = 0;

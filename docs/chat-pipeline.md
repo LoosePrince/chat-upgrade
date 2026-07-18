@@ -22,6 +22,7 @@
 - 聊天栏内容区由 `RichChatViewport` 绘制。
 - 文本、表情、图片、音频、视频都作为 viewport 节点处理。
 - 滚动、裁切、hover、click、tooltip 都由 viewport 交互层处理。
+- 消息右键菜单通过类型化动作设置 composer 回复目标、复制正文/附件 URL，或请求服务端撤回本人消息。
 
 ### TAKEOVER 输入流
 
