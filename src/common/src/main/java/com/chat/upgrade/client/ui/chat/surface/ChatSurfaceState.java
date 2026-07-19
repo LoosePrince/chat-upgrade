@@ -4,7 +4,8 @@ public final class ChatSurfaceState {
     public enum Overlay {
         NONE,
         EMOJI_PICKER,
-        CONTEXT_MENU
+        CONTEXT_MENU,
+        SETTINGS
     }
 
     public enum FocusOwner {
@@ -15,7 +16,7 @@ public final class ChatSurfaceState {
     }
 
     private ChatPresentationMode presentationMode = ChatPresentationMode.CLOSED_HUD;
-    private ChatTheme theme = ChatThemes.resolve(ChatSurfaceThemeId.DEFAULT);
+    private ChatAppearanceSnapshot appearance = ChatAppearanceRuntime.current();
     private ChatPanelGeometry panelGeometry = new ChatPanelGeometry(
             ChatPanelGeometry.DEFAULT_LEFT,
             ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET,
@@ -35,8 +36,8 @@ public final class ChatSurfaceState {
         return panelGeometry;
     }
 
-    public ChatTheme theme() {
-        return theme;
+    public ChatAppearanceSnapshot appearance() {
+        return appearance;
     }
 
     public Overlay overlay() {
@@ -67,8 +68,8 @@ public final class ChatSurfaceState {
         }
     }
 
-    public void setTheme(ChatTheme nextTheme) {
-        theme = nextTheme == null ? ChatThemes.resolve(ChatSurfaceThemeId.DEFAULT) : nextTheme;
+    public void setAppearance(ChatAppearanceSnapshot nextAppearance) {
+        appearance = nextAppearance == null ? ChatAppearanceRuntime.current() : nextAppearance;
     }
 
     public boolean updateScreenSize(int nextScreenWidth, int nextScreenHeight) {
@@ -109,6 +110,6 @@ public final class ChatSurfaceState {
     }
 
     public ChatSurfaceFrame frame() {
-        return new ChatSurfaceFrame(presentationMode, panelGeometry, restricted, theme);
+        return new ChatSurfaceFrame(presentationMode, panelGeometry, restricted, appearance);
     }
 }

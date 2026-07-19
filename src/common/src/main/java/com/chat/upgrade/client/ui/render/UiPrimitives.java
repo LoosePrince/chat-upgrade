@@ -1,11 +1,12 @@
-package com.chat.upgrade.client.ui.chat.surface;
+package com.chat.upgrade.client.ui.render;
 
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
-public final class ChatThemePainter {
-    private ChatThemePainter() {
+/** Shared geometry primitives. Textures and icon rendering are layered above this class. */
+public final class UiPrimitives {
+    private UiPrimitives() {
     }
 
     public static int withOpacity(int color, float opacity) {
@@ -53,6 +54,9 @@ public final class ChatThemePainter {
         int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
         if (safeRadius == 0) {
             graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), color);
+            return;
+        }
+        if (UiTextureAtlas.paintRounded(graphics, bounds, safeRadius, color)) {
             return;
         }
         for (int row = 0; row < bounds.height(); row++) {

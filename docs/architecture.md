@@ -34,8 +34,10 @@ flowchart TB
     D --> F[统一事实层\nRichChatStateStore]
     F --> G[Timeline 投影\n分类 / 身份 / 分组]
     G --> H[共享布局\nRichChatLayoutEngine]
-    T[主题注册表\ntokens + layout policy] --> H
+    P[持久化配置\nChatUpgradeConfig] --> T[不可变外观快照\nChatAppearanceSnapshot]
+    U[设置草稿\nChatSettingsOverlay] --> T
     S[Surface 状态\nChatSurfaceFrame] --> I[不可变场景\nChatScene]
+    T --> H
     T --> S
     H --> I
     I --> J[单一 TAKEOVER renderer\nChatSceneRenderer]
@@ -54,21 +56,23 @@ flowchart TB
 ```text
 RichChatStateStore (newest-first)
   -> ChatTimelineProjector (oldest-first)
-  -> RichChatLayoutEngine (theme layout policy)
+  -> RichChatLayoutEngine (appearance snapshot)
   -> ChatScene (immutable frame)
   -> ChatSceneRenderer
 ```
 
-surface 几何与 scissor 使用 GUI 绝对坐标；消息节点使用内容局部坐标。文本、媒体、消息背景和 hit box 来自同一次布局，渲染层不能按主题再次改写坐标。
+surface 几何与 scissor 使用 GUI 绝对坐标；消息节点使用内容局部坐标。文本、媒体、消息背景和 hit box 来自同一次布局，渲染层不能再次改写水平坐标。
 
-## 主题与共享场景
+## 外观配置与共享场景
 
-三套稳定主题 `modern_bubble`、`compact_feed`、`native_enhanced` 共用一套 scene/layout/render 管线：
+`ChatUpgradeConfig.appearance` 保存用户可编辑的外观数据；`ChatAppearanceSnapshot` 在帧边界把配置转换为不可变的颜色、尺寸和布局值。所有组合共用同一套 scene/layout/render 管线：
 
-- `ChatThemeTokens` 提供 surface、消息、身份、回复、删除、媒体、滚动条和 composer 的视觉语义。
-- `ChatLayoutPolicy` 提供会改变布局与命中框的 gutter、padding、组间距和装饰策略。
-- `ChatThemes` 只注册主题组合，不创建三个 renderer。
-- `ChatSurfaceFrame` 固化当前帧主题；切换配置后下一帧重建必要布局，不修改消息事实、协议能力或动作语义。
+- `ChatAppearanceRuntime` 只暴露当前不可变快照，不让 renderer 读取可变配置。
+- `RichChatLayoutEngine` 消费头像、双行布局、左右分栏、非玩家消息位置、气泡 padding 等会影响坐标的值。
+- `ChatSurfaceFrame` 固化当前帧的外观快照；配置预览后下一帧重建必要布局，不修改消息事实、协议能力或动作语义。
+- `ChatSceneRenderer`、`RichChatMediaRenderer`、`ChatComposerRenderer` 与 `ChatContextMenu` 只按布局结果和稳定 palette 绘制，不维护样式 ID 或预设注册表。
+
+`ChatSettingsOverlay` 打开时深拷贝整份配置作为基线与草稿。每次编辑实时预览草稿；保存提交整份配置并落盘，取消、关闭或异常退出恢复基线。旧 JSON 中的 `chatTheme` 仅作为废弃字段检测并在加载后重写删除，不迁移该字段对应的旧样式。
 
 ## 类型化交互与 composer
 
@@ -86,9 +90,9 @@ TAKEOVER 的输入动作不再全部伪装为 Minecraft 文本 `Style`。交互�
 
 ## COMPAT 隔离
 
-`COMPAT_TEXT_VANILLA` 的纯文本继续走 Minecraft 原版 `ChatComponent -> GuiMessage -> 原版布局/绘制`。TAKEOVER 的 metrics、surface 坐标、布局策略和运行时主题不得进入该链路。
+`COMPAT_TEXT_VANILLA` 的纯文本继续走 Minecraft 原版 `ChatComponent -> GuiMessage -> 原版布局/绘制`。TAKEOVER 的 metrics、surface 坐标、布局策略和外观快照不得进入该链路。
 
-兼容 HUD 仍可通过旧重载显示富媒体，但其媒体视觉固定使用 `native_enhanced`，避免 TAKEOVER 热切换泄漏。
+兼容 HUD 仍可通过旧重载显示富媒体，但使用单一稳定 palette，不消费 TAKEOVER 设置中的消息布局值。
 
 ## 工程与加载器分层
 
@@ -115,11 +119,12 @@ src/
 | 模块 | 主要路径 | 职责 |
 | --- | --- | --- |
 | 初始化与命令 | `src/common/.../client/ChatUpgradeClientBootstrap.java`、`ChatUpgradeCommands.java`；加载器入口见 `src/fabric`、`src/neoforge` | 客户端公共初始化、命令树、插件预热、资源清理。 |
-| 配置 | `src/common/.../client/ChatUpgradeConfig.java` | 客户端配置、稳定主题 ID、范围归一化、保存/重载。 |
+| 配置与设置 | `src/common/.../client/ChatUpgradeConfig.java`、`ChatClientConfigRuntime.java`、`client/ui/settings` | 客户端持久化配置、范围归一化、草稿预览、整份提交与取消回滚。 |
 | Composer 状态 | `src/common/.../client/ui/chat/input` | 有序多附件草稿、回复目标、剪贴板/文件来源、批次上传与快照提交控制。 |
 | 聊天事实与投影 | `src/common/.../client/ui/chat/state` | 统一消息事实、撤回 tombstone、身份/分类/分组 timeline 投影。 |
 | 类型化交互 | `src/common/.../client/ui/chat/interaction` | 统一手势目标、类型化动作、右键消息菜单和 Minecraft `Style` 兼容适配。 |
-| Surface 与主题 | `src/common/.../client/ui/chat/surface` | presentation、面板几何、不可变 frame、主题 tokens 与布局策略。 |
+| Surface 与外观 | `src/common/.../client/ui/chat/surface` | presentation、面板几何、不可变 frame、外观快照与运行时应用。 |
+| 高 DPI 绘制 | `src/common/.../client/ui/render` | 抗锯齿圆角 primitive、动态纹理 atlas、图标与 GUI 缩放缓存生命周期。 |
 | 场景 | `src/common/.../client/ui/chat/scene` | 不可变场景组合和单一 TAKEOVER renderer。 |
 | 富媒体 viewport | `src/common/.../client/ui/chat/viewport` | TAKEOVER 布局、渲染节点、命中框、滚动状态和媒体 painter。 |
 | 媒体加载 | `src/common/.../client/media` | 图片、音频、视频加载和缓存。 |
@@ -189,10 +194,10 @@ sequenceDiagram
 
 - `TAKEOVER` 的事实来源是 `RichChatStateStore`，不是 `GuiMessage.Line`。
 - 数据方向固定为 `Ingress -> Store(newest-first) -> TimelineProjector(oldest-first) -> LayoutEngine -> ChatScene`；渲染层不回溯推断事实。
-- 三主题只能提供 tokens 与布局策略，不能复制 scene、layout engine 或 renderer。
-- 会改变视觉位置的策略必须在布局阶段生成 `visualBounds`、节点与 hit box，避免坐标复杂度扩散。
+- 外观配置只能通过 `ChatAppearanceSnapshot` 进入场景、布局和 renderer，不允许重新引入样式 ID、预设注册表或多套 renderer。
+- 会改变视觉位置的策略必须在布局阶段生成 `visualBounds`、头像/元信息 bounds、节点与 hit box，避免坐标复杂度扩散。
 - `ChatComponentRichViewportMixin` 保持薄适配，只处理 Minecraft 生命周期、裁切、pose 和共享场景调用。
-- `COMPAT_TEXT_VANILLA` 的原版文本布局/绘制必须与 TAKEOVER metrics、坐标和主题隔离。
+- `COMPAT_TEXT_VANILLA` 的原版文本布局/绘制必须与 TAKEOVER metrics、坐标和外观快照隔离。
 - 回复身份、撤回权限和删除事实由服务端确认；UI 不得伪造。
-- composer 的有序附件批次、回复目标、右键菜单和类型化动作由独立交互模块维护；scene renderer 只消费场景与主题，不持有交互状态。
+- composer 的有序附件批次、回复目标、右键菜单和类型化动作由独立交互模块维护；scene renderer 只消费场景与外观快照，不持有交互状态。
 - 玩家消息头像优先使用 `PlayerInfo`/已加载玩家的皮肤纹理绘制头部与帽层；纹理不可用时回退到稳定色块与 glyph。命令建议、历史与命令执行继续复用原版桥接，但其可见输入与焦点由 composer surface 管理。

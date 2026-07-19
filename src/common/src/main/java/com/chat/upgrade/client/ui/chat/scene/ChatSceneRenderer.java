@@ -1,12 +1,10 @@
 package com.chat.upgrade.client.ui.chat.scene;
 
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
+import com.chat.upgrade.client.ui.chat.state.ChatMessageMetadata;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
-import com.chat.upgrade.client.ui.chat.surface.ChatLayoutPolicy;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
-import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
-import com.chat.upgrade.client.ui.chat.surface.ChatThemePainter;
-import com.chat.upgrade.client.ui.chat.surface.ChatThemeTokens;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayout;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaRenderer;
@@ -15,6 +13,7 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatRenderNode;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatRenderNodeKind;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportMetrics;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
+import com.chat.upgrade.client.ui.render.UiPrimitives;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -63,10 +62,11 @@ public final class ChatSceneRenderer {
                 continue;
             }
             if (extractor != null) {
-                paintMessageDecoration(extractor, message, scene.surface().theme(), contentToLocalY, alpha,
+                paintMessageDecoration(extractor, message, scene.surface().appearance(), contentToLocalY, alpha,
                         metrics.backgroundOpacity());
                 paintTextSelection(extractor, font, message, contentToLocalY, alpha);
-                paintIdentity(extractor, font, metrics, message, scene.surface().theme(), contentToLocalY, alpha);
+                paintIdentity(extractor, font, metrics, message, scene.surface().appearance(), contentToLocalY, alpha);
+                paintMetadata(extractor, font, metrics, message, scene.surface().appearance(), contentToLocalY, alpha);
             }
             for (RichChatRenderNode node : message.nodes()) {
                 if (!node.bounds().intersectsVerticalRange(visibleTop, visibleBottom)) {
@@ -78,7 +78,7 @@ public final class ChatSceneRenderer {
                         font,
                         metrics,
                         node,
-                        scene.surface().theme(),
+                        scene.surface().appearance(),
                         contentToLocalY,
                         alpha);
             }
@@ -102,7 +102,7 @@ public final class ChatSceneRenderer {
         int scrollOffset = state.visualScrollPx() * metrics.visibleHeight() / layout.totalHeight();
         int bottom = metrics.chatBottom() - scrollOffset;
         float opacity = state.scrollPx() > 0 ? 1.0F : 0.62F;
-        ChatThemeTokens.Scrollbar tokens = scene.surface().theme().tokens().scrollbar();
+        ChatAppearanceSnapshot.Scrollbar tokens = scene.surface().appearance().scrollbar();
         int thumb = newMessageSinceScroll ? tokens.newMessageThumb() : tokens.thumb();
         int x = metrics.scrollbarX();
         graphics.fill(
@@ -110,54 +110,82 @@ public final class ChatSceneRenderer {
                 bottom - barHeight,
                 x + 2,
                 bottom,
-                ChatThemePainter.withOpacity(thumb, opacity));
+                UiPrimitives.withOpacity(thumb, opacity));
         graphics.fill(
                 x + 2,
                 bottom - barHeight,
                 x + 3,
                 bottom,
-                ChatThemePainter.withOpacity(tokens.track(), opacity));
+                UiPrimitives.withOpacity(tokens.track(), opacity));
     }
 
     private static void paintMessageDecoration(
             GuiGraphicsExtractor graphics,
             RichChatMessageLayout message,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             int contentToLocalY,
             float alpha,
             float backgroundOpacity) {
-        ChatLayoutPolicy policy = theme.layout();
-        ChatThemeTokens.Message tokens = theme.tokens().message();
+        if (!appearance.messageBubbles()) {
+            return;
+        }
+        ChatAppearanceSnapshot.Message tokens = appearance.message();
         int fill;
         int border;
         if (message.message().status() == RichChatMessageStatus.DELETED) {
             fill = tokens.deletedBackground();
             border = tokens.deletedBorder();
-        } else if (message.message().replyTo() != null) {
-            fill = tokens.replyBackground();
-            border = tokens.replyBorder();
         } else {
             fill = tokens.background(message.timeline().kind());
             border = tokens.border(message.timeline().kind());
         }
         float opacity = alpha * backgroundOpacity;
-        fill = ChatThemePainter.withOpacity(fill, opacity);
-        border = ChatThemePainter.withOpacity(border, opacity);
+        fill = UiPrimitives.withOpacity(fill, opacity);
+        border = UiPrimitives.withOpacity(border, opacity);
         RichChatBounds visual = message.visualBounds().translateY(contentToLocalY);
-        RichChatBounds full = message.bounds().translateY(contentToLocalY);
-        switch (policy.messageDecoration()) {
-            case BUBBLE -> ChatThemePainter.paintBox(graphics, visual, 4, 1, fill, border);
-            case FEED_STRIPE -> {
-                ChatThemePainter.paintBox(graphics, full, 0, 0, fill, 0);
-                graphics.fill(
-                        full.left(),
-                        full.top(),
-                        Math.min(full.right(), full.left() + 2),
-                        full.bottom(),
-                        border);
+        UiPrimitives.paintBox(
+                graphics,
+                visual,
+                appearance.cornerRadius(),
+                tokens.bubbleBorderWidth(),
+                fill,
+                border);
+        paintReplyCard(graphics, message, appearance, contentToLocalY, opacity);
+    }
+
+    private static void paintReplyCard(
+            GuiGraphicsExtractor graphics,
+            RichChatMessageLayout message,
+            ChatAppearanceSnapshot appearance,
+            int contentToLocalY,
+            float opacity) {
+        RichChatRenderNode firstReply = null;
+        RichChatRenderNode lastReply = null;
+        for (RichChatRenderNode node : message.nodes()) {
+            if (node.kind() == RichChatRenderNodeKind.REPLY) {
+                if (firstReply == null) {
+                    firstReply = node;
+                }
+                lastReply = node;
             }
-            case NATIVE_CARD -> ChatThemePainter.paintBox(graphics, full, 0, 0, fill, border);
         }
+        if (firstReply == null || lastReply == null) {
+            return;
+        }
+        RichChatBounds visual = message.visualBounds();
+        RichChatBounds reply = new RichChatBounds(
+                Math.max(visual.left(), firstReply.bounds().left() - 2),
+                firstReply.bounds().top(),
+                Math.min(visual.right(), Math.max(firstReply.bounds().right(), lastReply.bounds().right()) + 2),
+                lastReply.bounds().bottom()).translateY(contentToLocalY);
+        ChatAppearanceSnapshot.Message tokens = appearance.message();
+        UiPrimitives.paintBox(
+                graphics,
+                reply,
+                appearance.cornerRadius(),
+                tokens.bubbleBorderWidth(),
+                UiPrimitives.withOpacity(tokens.replyBackground(), opacity),
+                UiPrimitives.withOpacity(tokens.replyBorder(), opacity));
     }
 
     private static void paintTextSelection(
@@ -166,7 +194,7 @@ public final class ChatSceneRenderer {
             RichChatMessageLayout message,
             int contentToLocalY,
             float alpha) {
-        int selectionFill = ChatThemePainter.withOpacity(0x805A8DFF, alpha);
+        int selectionFill = UiPrimitives.withOpacity(0x805A8DFF, alpha);
         for (RichChatRenderNode node : message.nodes()) {
             if (node.text() == null) {
                 continue;
@@ -204,10 +232,10 @@ public final class ChatSceneRenderer {
             Font font,
             RichChatViewportMetrics metrics,
             RichChatMessageLayout message,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             int contentToLocalY,
             float alpha) {
-        if (message.identityBounds() == null || !theme.layout().showIdentity(message.timeline())) {
+        if (message.identityBounds() == null || !appearance.showIdentity(message.timeline())) {
             return;
         }
         RichChatBounds avatar = message.identityBounds().translateY(contentToLocalY);
@@ -217,18 +245,14 @@ public final class ChatSceneRenderer {
         int foreground = ARGB.color(
                 Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
                 message.timeline().avatar().foregroundRgb());
-        int radius = switch (theme.layout().messageDecoration()) {
-            case BUBBLE -> Math.max(0, avatar.width() / 2);
-            case FEED_STRIPE -> 2;
-            case NATIVE_CARD -> 0;
-        };
-        ChatThemePainter.paintBox(
+        int radius = Math.max(0, avatar.width() / 2);
+        UiPrimitives.paintBox(
                 graphics,
                 avatar,
                 radius,
                 1,
                 avatarColor,
-                ChatThemePainter.withOpacity(theme.tokens().identity().avatarBorder(), alpha));
+                UiPrimitives.withOpacity(appearance.identity().avatarBorder(), alpha));
         if (message.timeline().avatar().skinTexture() != null) {
             paintSkinAvatar(graphics, avatar, message.timeline().avatar().skinTexture(), alpha);
         } else {
@@ -237,16 +261,47 @@ public final class ChatSceneRenderer {
             int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
             graphics.text(font, glyph, glyphX, glyphY, foreground, false);
         }
+    }
 
-        String authorName = message.timeline().author().visibleName();
+    private static void paintMetadata(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            RichChatViewportMetrics metrics,
+            RichChatMessageLayout message,
+            ChatAppearanceSnapshot appearance,
+            int contentToLocalY,
+            float alpha) {
+        if (message.metadataBounds() == null) {
+            return;
+        }
+        String author = ChatMessageMetadata.author(message.timeline());
+        String timestamp = ChatMessageMetadata.timestamp(message.timeline());
+        if (author.isBlank() && timestamp.isBlank()) {
+            return;
+        }
+        RichChatBounds bounds = message.metadataBounds().translateY(contentToLocalY);
+        int textAlpha = Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255);
         int nameRgb = message.timeline().author().team().colorRgb() >= 0
                 ? message.timeline().author().team().colorRgb()
-                : theme.tokens().identity().fallbackName() & 0x00FFFFFF;
-        int nameColor = ARGB.color(
-                Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
-                nameRgb);
-        int nameX = avatar.left() + theme.layout().identityGutter() + theme.layout().bubblePaddingX();
-        graphics.text(font, authorName, nameX, avatar.top(), nameColor, false);
+                : appearance.identity().fallbackName() & 0x00FFFFFF;
+        int nameColor = ARGB.color(textAlpha, nameRgb);
+        int mutedColor = ARGB.color(textAlpha, appearance.surface().muted() & 0x00FFFFFF);
+        int cursorX = bounds.left();
+        int remainingWidth = bounds.width();
+        boolean fullAuthorVisible = author.isBlank();
+        if (!author.isBlank()) {
+            String visibleAuthor = font.plainSubstrByWidth(author, remainingWidth);
+            graphics.text(font, visibleAuthor, cursorX, bounds.top(), nameColor, false);
+            int authorWidth = font.width(visibleAuthor);
+            cursorX += authorWidth;
+            remainingWidth = Math.max(0, remainingWidth - authorWidth);
+            fullAuthorVisible = visibleAuthor.equals(author);
+        }
+        if (!timestamp.isBlank() && fullAuthorVisible && remainingWidth > 0) {
+            String timestampLabel = author.isBlank() ? timestamp : " · " + timestamp;
+            String visibleTimestamp = font.plainSubstrByWidth(timestampLabel, remainingWidth);
+            graphics.text(font, visibleTimestamp, cursorX, bounds.top(), mutedColor, false);
+        }
     }
 
     private static void paintSkinAvatar(
@@ -291,7 +346,7 @@ public final class ChatSceneRenderer {
             Font font,
             RichChatViewportMetrics metrics,
             RichChatRenderNode node,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             int contentToLocalY,
             float alpha) {
         if (extractor != null) {
@@ -302,7 +357,7 @@ public final class ChatSceneRenderer {
                     node,
                     contentToLocalY,
                     alpha,
-                    theme);
+                    appearance);
             return;
         }
         if ((node.kind() == RichChatRenderNodeKind.DELETED

@@ -6,9 +6,9 @@ import java.util.Optional;
 
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
-import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
-import com.chat.upgrade.client.ui.chat.surface.ChatThemeTokens;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
+import com.chat.upgrade.client.ui.render.UiPrimitives;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -31,16 +31,21 @@ public final class ChatComposerRenderer {
     public static void paintReplyPreview(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             RichChatBounds composerBounds,
             ChatReplySummary target) {
-        if (graphics == null || font == null || theme == null || composerBounds == null || target == null) {
+        if (graphics == null || font == null || appearance == null || composerBounds == null || target == null) {
             return;
         }
         RichChatBounds preview = replyPreviewBounds(composerBounds);
-        ChatThemeTokens.Message tokens = theme.tokens().message();
-        graphics.fill(preview.left(), preview.top(), preview.right(), preview.bottom(), tokens.replyBackground());
-        graphics.outline(preview.left(), preview.top(), preview.width(), preview.height(), tokens.replyBorder());
+        ChatAppearanceSnapshot.Message tokens = appearance.message();
+        UiPrimitives.paintBox(
+                graphics,
+                preview,
+                appearance.cornerRadius(),
+                1,
+                tokens.replyBackground(),
+                tokens.replyBorder());
         String label = Component.translatable(
                 "chatupgrade.reply.composer_preview",
                 target.author().visibleName(),
@@ -74,13 +79,13 @@ public final class ChatComposerRenderer {
     public static void paintInput(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             RichChatBounds composerBounds,
             String value,
             boolean focused,
             int cursorPosition,
             int highlightPosition) {
-        if (graphics == null || font == null || theme == null || composerBounds == null) {
+        if (graphics == null || font == null || appearance == null || composerBounds == null) {
             return;
         }
         RichChatBounds inputBounds = RichChatBounds.ofSize(
@@ -88,18 +93,13 @@ public final class ChatComposerRenderer {
                 composerBounds.bottom() - 21,
                 Math.max(1, composerBounds.width() - 12),
                 18);
-        ChatThemeTokens.Surface surface = theme.tokens().surface();
-        graphics.fill(
-                inputBounds.left(),
-                inputBounds.top(),
-                inputBounds.right(),
-                inputBounds.bottom(),
-                surface.panelBackground());
-        graphics.outline(
-                inputBounds.left(),
-                inputBounds.top(),
-                inputBounds.width(),
-                inputBounds.height(),
+        ChatAppearanceSnapshot.Surface surface = appearance.surface();
+        UiPrimitives.paintBox(
+                graphics,
+                inputBounds,
+                Math.min(appearance.cornerRadius(), 6),
+                1,
+                surface.panelBackground(),
                 focused ? surface.title() : surface.panelBorder());
 
         String text = value == null ? "" : value;
@@ -122,7 +122,7 @@ public final class ChatComposerRenderer {
         }
         int visibleEnd = visibleStart + visible.length();
         String displayed = visible;
-        int textColor = theme.tokens().message().text();
+        int textColor = appearance.message().text();
         if (displayed.isEmpty()) {
             graphics.text(
                     font,
@@ -160,16 +160,16 @@ public final class ChatComposerRenderer {
     public static void paintAttachmentChips(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             List<AttachmentDraft> drafts,
             int left,
             int right,
             int top) {
-        if (graphics == null || font == null || theme == null || drafts == null || drafts.isEmpty()) {
+        if (graphics == null || font == null || appearance == null || drafts == null || drafts.isEmpty()) {
             return;
         }
         for (AttachmentChip chip : attachmentChips(font, drafts, left, right, top)) {
-            paintAttachmentChip(graphics, font, theme, chip);
+            paintAttachmentChip(graphics, font, appearance, chip);
         }
     }
 
@@ -266,11 +266,11 @@ public final class ChatComposerRenderer {
     private static void paintAttachmentChip(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             AttachmentChip chip) {
         AttachmentDraft draft = chip.draft();
         RichChatBounds bounds = chip.bounds();
-        ChatThemeTokens tokens = theme.tokens();
+        ChatAppearanceSnapshot tokens = appearance;
         int background = draft.status() == AttachmentDraft.Status.FAILED
                 ? tokens.message().errorBackground()
                 : tokens.media().pendingBackground();
@@ -280,8 +280,13 @@ public final class ChatComposerRenderer {
             case UPLOADED -> tokens.message().replyBorder();
             case FAILED -> tokens.message().errorBorder();
         };
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), background);
-        graphics.outline(bounds.left(), bounds.top(), bounds.width(), bounds.height(), outline);
+        UiPrimitives.paintBox(
+                graphics,
+                bounds,
+                Math.min(appearance.cornerRadius(), 6),
+                1,
+                background,
+                outline);
         int textWidth = Math.max(1, chip.removeBounds().left() - bounds.left() - 6);
         String label = font.plainSubstrByWidth(chipLabel(draft), textWidth);
         graphics.text(font, label, bounds.left() + 4, bounds.top() + 4, chipTextColor(tokens, draft), false);
@@ -290,7 +295,7 @@ public final class ChatComposerRenderer {
         }
     }
 
-    private static int chipTextColor(ChatThemeTokens tokens, AttachmentDraft draft) {
+    private static int chipTextColor(ChatAppearanceSnapshot tokens, AttachmentDraft draft) {
         return draft.status() == AttachmentDraft.Status.FAILED
                 ? tokens.media().failureText()
                 : tokens.media().text();

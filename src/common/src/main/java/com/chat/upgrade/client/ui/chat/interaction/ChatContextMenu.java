@@ -5,20 +5,16 @@ import java.util.List;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
-import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
-import com.chat.upgrade.client.ui.chat.surface.ChatThemeTokens;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
+import com.chat.upgrade.client.ui.render.UiPrimitives;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public final class ChatContextMenu {
     private static final int SCREEN_MARGIN = 3;
-    private static final int HORIZONTAL_PADDING = 8;
-    private static final int VERTICAL_PADDING = 2;
-    private static final int ROW_HEIGHT = 18;
-    private static final int MIN_WIDTH = 92;
-    private static final int MAX_WIDTH = 190;
 
     public record Selection(RichChatMessage message, ChatAction action) {
         public Selection {
@@ -41,6 +37,7 @@ public final class ChatContextMenu {
     private RichChatMessage message;
     private List<ChatMessageActionCatalog.Item> items = List.of();
     private RichChatBounds bounds;
+    private Density density = Density.at(100);
 
     public boolean isOpen() {
         return message != null && bounds != null && !items.isEmpty();
@@ -58,12 +55,16 @@ public final class ChatContextMenu {
             close();
             return false;
         }
+        density = Density.at(ChatAppearanceRuntime.current().contextMenu().scalePercent());
         int labelWidth = nextItems.stream()
                 .mapToInt(item -> font.width(item.label()))
                 .max()
-                .orElse(MIN_WIDTH - HORIZONTAL_PADDING * 2);
-        int width = Math.clamp(labelWidth + HORIZONTAL_PADDING * 2, MIN_WIDTH, MAX_WIDTH);
-        int height = VERTICAL_PADDING * 2 + nextItems.size() * ROW_HEIGHT;
+                .orElse(density.minimumWidth() - density.horizontalPadding() * 2);
+        int width = Math.clamp(
+                labelWidth + density.horizontalPadding() * 2,
+                density.minimumWidth(),
+                density.maximumWidth());
+        int height = density.verticalPadding() * 2 + nextItems.size() * density.rowHeight();
         int maxX = Math.max(SCREEN_MARGIN, screenWidth - SCREEN_MARGIN - width);
         int maxY = Math.max(SCREEN_MARGIN, screenHeight - SCREEN_MARGIN - height);
         int x = Math.clamp(pointerX, SCREEN_MARGIN, maxX);
@@ -78,6 +79,7 @@ public final class ChatContextMenu {
         message = null;
         items = List.of();
         bounds = null;
+        density = Density.at(100);
     }
 
     public ClickResult mouseClicked(double mouseX, double mouseY, int button) {
@@ -90,7 +92,7 @@ public final class ChatContextMenu {
             close();
             return ClickResult.consumed();
         }
-        int index = (y - bounds.top() - VERTICAL_PADDING) / ROW_HEIGHT;
+        int index = (y - bounds.top() - density.verticalPadding()) / density.rowHeight();
         if (index < 0 || index >= items.size()) {
             close();
             return ClickResult.consumed();
@@ -103,39 +105,70 @@ public final class ChatContextMenu {
     public void render(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             int mouseX,
             int mouseY) {
-        if (!isOpen() || graphics == null || font == null || theme == null) {
+        if (!isOpen() || graphics == null || font == null || appearance == null) {
             return;
         }
-        ChatThemeTokens tokens = theme.tokens();
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(),
-                tokens.surface().panelBackground());
-        graphics.outline(bounds.left(), bounds.top(), bounds.width(), bounds.height(),
-                tokens.surface().panelBorder());
+        ChatAppearanceSnapshot.ContextMenu style = appearance.contextMenu();
+        UiPrimitives.paintBox(
+                graphics,
+                bounds,
+                style.cornerRadius(),
+                style.borderWidth(),
+                style.background(),
+                style.border());
         for (int index = 0; index < items.size(); index++) {
             ChatMessageActionCatalog.Item item = items.get(index);
-            int rowTop = bounds.top() + VERTICAL_PADDING + index * ROW_HEIGHT;
+            int rowTop = bounds.top() + density.verticalPadding() + index * density.rowHeight();
             RichChatBounds row = RichChatBounds.ofSize(
-                    bounds.left() + 1,
+                    bounds.left() + style.borderWidth(),
                     rowTop,
-                    Math.max(0, bounds.width() - 2),
-                    ROW_HEIGHT);
+                    Math.max(0, bounds.width() - style.borderWidth() * 2),
+                    density.rowHeight());
             if (row.contains(mouseX, mouseY)) {
-                graphics.fill(row.left(), row.top(), row.right(), row.bottom(),
-                        tokens.message().playerBackground());
+                graphics.fill(
+                        row.left(),
+                        row.top(),
+                        row.right(),
+                        row.bottom(),
+                        appearance.media().controlActiveBackground());
             }
             int color = item.destructive()
-                    ? tokens.message().errorBorder()
-                    : tokens.surface().title();
+                    ? appearance.message().errorBorder()
+                    : appearance.surface().title();
+            String label = font.plainSubstrByWidth(
+                    item.label().getString(),
+                    bounds.width() - density.horizontalPadding() * 2);
             graphics.text(
                     font,
-                    font.plainSubstrByWidth(item.label().getString(), bounds.width() - HORIZONTAL_PADDING * 2),
-                    bounds.left() + HORIZONTAL_PADDING,
-                    rowTop + 5,
+                    label,
+                    bounds.left() + density.horizontalPadding(),
+                    rowTop + Math.max(1, (density.rowHeight() - font.lineHeight) / 2),
                     color,
                     false);
+        }
+    }
+
+    private record Density(
+            int horizontalPadding,
+            int verticalPadding,
+            int rowHeight,
+            int minimumWidth,
+            int maximumWidth) {
+        private static Density at(int scalePercent) {
+            int safeScale = Math.clamp(scalePercent, 75, 150);
+            return new Density(
+                    scale(8, safeScale),
+                    scale(2, safeScale),
+                    scale(18, safeScale),
+                    scale(92, safeScale),
+                    scale(190, safeScale));
+        }
+
+        private static int scale(int value, int percent) {
+            return Math.max(1, Math.round(value * percent / 100.0F));
         }
     }
 }

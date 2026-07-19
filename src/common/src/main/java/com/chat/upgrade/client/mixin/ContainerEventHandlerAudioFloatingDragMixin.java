@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
+import com.chat.upgrade.client.mixininterface.ChatSettingsOverlayAccess;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
@@ -25,6 +26,13 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
             double dy,
             CallbackInfoReturnable<Boolean> cir) {
         Object self = this;
+        if (self instanceof ChatScreen
+                && self instanceof ChatSettingsOverlayAccess settingsOverlay
+                && settingsOverlay.chatupgrade$isSettingsOverlayOpen()
+                && settingsOverlay.chatupgrade$updateSettingsDrag(event.x(), event.y(), event.button())) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (self instanceof ChatScreen screen
                 && AudioFloatingWindow.mouseDragged(event, dx, dy, screen.width, screen.height)) {
             cir.setReturnValue(true);
@@ -57,6 +65,14 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
     private void chatupgrade$handleAudioFloatingRelease(
             MouseButtonEvent event,
             CallbackInfoReturnable<Boolean> cir) {
+        Object self = this;
+        if (self instanceof ChatScreen
+                && self instanceof ChatSettingsOverlayAccess settingsOverlay
+                && settingsOverlay.chatupgrade$isSettingsOverlayOpen()
+                && settingsOverlay.chatupgrade$releaseSettingsDrag(event.button())) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (event.button() == 0 && ChatGestureArena.consumePendingRelease()) {
             cir.setReturnValue(true);
             return;

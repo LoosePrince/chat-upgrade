@@ -12,11 +12,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
+import com.chat.upgrade.client.mixininterface.ChatSettingsOverlayAccess;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerRenderer;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerState;
+import com.chat.upgrade.client.ui.chat.input.ChatComposerToolbar;
 import com.chat.upgrade.client.ui.chat.input.ChatCommandBridge;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraftResolver;
@@ -29,19 +31,18 @@ import com.chat.upgrade.client.ui.chat.interaction.ChatGestureTarget;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageActionExecutor;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
-import com.chat.upgrade.client.ui.chat.surface.ChatPanelGeometry;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
+import com.chat.upgrade.client.ui.settings.ChatSettingsOverlay;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.components.CommandSuggestions;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -49,7 +50,8 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 @Mixin(ChatScreen.class)
-public abstract class ChatScreenRichInputMixin extends Screen implements ChatComposerAttachmentDragAccess {
+public abstract class ChatScreenRichInputMixin extends Screen
+        implements ChatComposerAttachmentDragAccess, ChatSettingsOverlayAccess {
     @Shadow
     protected EditBox input;
 
@@ -78,34 +80,19 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
     private final ChatContextMenu chatupgrade$contextMenu = new ChatContextMenu();
 
     @Unique
-    private Button chatupgrade$attachmentButton;
+    private final ChatSettingsOverlay chatupgrade$settingsOverlay = new ChatSettingsOverlay();
 
     @Unique
-    private int chatupgrade$attachmentButtonWidth;
-
-    @Unique
-    private Button chatupgrade$emojiButton;
-
-    @Unique
-    private int chatupgrade$emojiButtonWidth;
+    private ChatComposerToolbar.State chatupgrade$toolbarState = ChatComposerToolbar.State.idle();
 
     @Unique
     private final EmojiPickerPopover chatupgrade$emojiPopover = new EmojiPickerPopover();
-
-    @Unique
-    private Button chatupgrade$sendButton;
-
-    @Unique
-    private int chatupgrade$sendButtonWidth;
 
     @Unique
     private @org.jetbrains.annotations.Nullable AttachmentDraft chatupgrade$draggedAttachment;
 
     @Unique
     private EditBox chatupgrade$emojiSearchBox;
-
-    @Unique
-    private Button chatupgrade$clearButton;
 
     @Unique
     private boolean chatupgrade$inputVisibleBeforeRender;
@@ -120,41 +107,6 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
     @Inject(method = "init()V", at = @At("TAIL"))
     private void chatupgrade$initAttachmentControls(CallbackInfo ci) {
         ChatSurfaceController.onChatScreenOpened(this.width, this.height);
-        ChatPanelGeometry panel = ChatSurfaceController.panelGeometry(this.width, this.height);
-        int y = ChatUpgradeConfig.get().chatInputMode == ChatUpgradeConfig.ChatInputMode.TAKEOVER
-                ? panel.composerBounds().top() + 4
-                : Math.max(2, this.height - 34);
-        Component attachmentLabel = Component.translatable("chatupgrade.input.button.attachment");
-        chatupgrade$attachmentButtonWidth = chatupgrade$buttonWidthFor(attachmentLabel);
-        chatupgrade$attachmentButton = Button.builder(
-                attachmentLabel,
-                button -> chatupgrade$pickAttachment())
-                .bounds(4, y, chatupgrade$attachmentButtonWidth, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.attachment.tooltip")))
-                .build();
-        Component emojiLabel = Component.translatable("chatupgrade.input.button.emoji");
-        chatupgrade$emojiButtonWidth = chatupgrade$buttonWidthFor(emojiLabel);
-        chatupgrade$emojiButton = Button.builder(
-                emojiLabel,
-                button -> chatupgrade$toggleEmojiPopover())
-                .bounds(chatupgrade$emojiButtonX(), y, chatupgrade$emojiButtonWidth, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.emoji.tooltip")))
-                .build();
-        Component sendLabel = Component.translatable("chatupgrade.input.button.send");
-        chatupgrade$sendButtonWidth = chatupgrade$buttonWidthFor(sendLabel);
-        chatupgrade$sendButton = Button.builder(
-                sendLabel,
-                button -> chatupgrade$submitFromOwnedButton())
-                .bounds(Math.max(4, this.width - chatupgrade$sendButtonWidth - 4), y,
-                        chatupgrade$sendButtonWidth, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.send.tooltip")))
-                .build();
-        chatupgrade$clearButton = Button.builder(
-                Component.translatable("chatupgrade.input.button.clear"),
-                button -> chatupgrade$clearDraft())
-                .bounds(Math.max(4, this.width - 24), y, 20, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.clear.tooltip")))
-                .build();
         chatupgrade$emojiSearchBox = new EditBox(
                 this.font,
                 0,
@@ -166,16 +118,23 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
         chatupgrade$emojiSearchBox.setHint(Component.translatable("chatupgrade.emoji.picker.search_hint"));
         chatupgrade$emojiSearchBox.setVisible(false);
         chatupgrade$emojiSearchBox.setResponder(chatupgrade$emojiPopover::setSearchQuery);
-        this.addRenderableWidget(chatupgrade$attachmentButton);
-        this.addRenderableWidget(chatupgrade$emojiButton);
-        this.addRenderableWidget(chatupgrade$sendButton);
-        this.addRenderableWidget(chatupgrade$clearButton);
         this.addRenderableWidget(chatupgrade$emojiSearchBox);
         chatupgrade$refreshControls();
+        chatupgrade$layoutComposerControls();
     }
 
     @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
     private void chatupgrade$closeOverlayOnEscape(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (chatupgrade$settingsOverlay.isOpen()) {
+            boolean wasOpen = true;
+            chatupgrade$settingsOverlay.keyPressed(event);
+            if (wasOpen && !chatupgrade$settingsOverlay.isOpen()) {
+                chatupgrade$restoreComposerFocus();
+                chatupgrade$refreshControls();
+            }
+            cir.setReturnValue(true);
+            return;
+        }
         if (!event.isEscape()) {
             if (ChatUpgradeChatPipelineGate.isTakeoverMode()
                     && event.isCopy()
@@ -210,10 +169,40 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
             MouseButtonEvent event,
             boolean doubleClick,
             CallbackInfoReturnable<Boolean> cir) {
+        if (chatupgrade$settingsOverlay.isOpen()) {
+            boolean wasOpen = true;
+            chatupgrade$settingsOverlay.mouseClicked(event, this.width, this.height);
+            if (wasOpen && !chatupgrade$settingsOverlay.isOpen()) {
+                chatupgrade$restoreComposerFocus();
+                chatupgrade$refreshControls();
+            }
+            cir.setReturnValue(true);
+            return;
+        }
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && event.button() == 0
+                && ChatSurfaceRenderer.settingsButtonBounds(ChatSurfaceController.state().frame())
+                        .contains((int) Math.round(event.x()), (int) Math.round(event.y()))) {
+            chatupgrade$openSettingsOverlay();
+            cir.setReturnValue(true);
+            return;
+        }
+        if (event.button() == 0) {
+            ChatComposerToolbar.Action toolbarAction = ChatComposerToolbar.actionAt(
+                    chatupgrade$toolbarLayout(),
+                    chatupgrade$toolbarState,
+                    event.x(),
+                    event.y());
+            if (toolbarAction != null) {
+                chatupgrade$activateToolbarAction(toolbarAction);
+                cir.setReturnValue(true);
+                return;
+            }
+        }
         if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
             if (event.button() == 0
                     && !chatupgrade$contextMenu.isOpen()
-                    && ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds()
+                    && chatupgrade$composerBounds()
                             .contains((int) Math.round(event.x()), (int) Math.round(event.y()))) {
                 ChatTextSelectionState.clear();
             }
@@ -383,6 +372,21 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
     }
 
     @Override
+    public boolean chatupgrade$isSettingsOverlayOpen() {
+        return chatupgrade$settingsOverlay.isOpen();
+    }
+
+    @Override
+    public boolean chatupgrade$updateSettingsDrag(double mouseX, double mouseY, int button) {
+        return chatupgrade$settingsOverlay.mouseDragged(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean chatupgrade$releaseSettingsDrag(int button) {
+        return chatupgrade$settingsOverlay.mouseReleased(button);
+    }
+
+    @Override
     public boolean chatupgrade$updateAttachmentDrag(double mouseX, double mouseY, int button) {
         if (button != 0 || chatupgrade$draggedAttachment == null
                 || !ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.ATTACHMENT_TRAY)
@@ -411,6 +415,16 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
             double scrollX,
             double scrollY,
             CallbackInfoReturnable<Boolean> cir) {
+        if (chatupgrade$settingsOverlay.isOpen()) {
+            chatupgrade$settingsOverlay.mouseScrolled(
+                    mouseX,
+                    mouseY,
+                    scrollY,
+                    this.width,
+                    this.height);
+            cir.setReturnValue(true);
+            return;
+        }
         if (ChatUpgradeChatPipelineGate.isTakeoverMode() && chatupgrade$contextMenu.isOpen()) {
             cir.setReturnValue(true);
             return;
@@ -436,6 +450,7 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
 
     @Inject(method = "removed()V", at = @At("HEAD"))
     private void chatupgrade$closeOverlaysOnRemoved(CallbackInfo ci) {
+        chatupgrade$settingsOverlay.cancel();
         chatupgrade$emojiPopover.close();
         chatupgrade$contextMenu.close();
         RichChatInteractionRouter.cancelAllPointerCapture();
@@ -542,13 +557,15 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
             float partialTick,
             CallbackInfo ci) {
         chatupgrade$refreshControls();
-        chatupgrade$layoutTakeoverBridgeControls();
+        chatupgrade$layoutComposerControls();
         chatupgrade$layoutEmojiSearchBox();
         if (chatupgrade$emojiSearchBox != null) {
             chatupgrade$emojiSearchVisibleBeforeRender = chatupgrade$emojiSearchBox.visible;
             chatupgrade$emojiSearchBox.visible = false;
         }
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode() || input == null) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()
+                || chatupgrade$usesVanillaStyleInput()
+                || input == null) {
             return;
         }
         chatupgrade$inputVisibleBeforeRender = input.visible;
@@ -563,25 +580,26 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
             float partialTick,
             CallbackInfo ci) {
         boolean takeover = ChatUpgradeChatPipelineGate.isTakeoverMode();
-        if (takeover && input != null) {
+        boolean vanillaStyleInput = chatupgrade$usesVanillaStyleInput();
+        if (takeover && !vanillaStyleInput && input != null) {
             input.visible = chatupgrade$inputVisibleBeforeRender;
         }
         if (chatupgrade$emojiSearchBox != null) {
             chatupgrade$emojiSearchBox.visible = chatupgrade$emojiSearchVisibleBeforeRender;
         }
         if (takeover) {
-            RichChatBounds composer = ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds();
+            RichChatBounds composer = chatupgrade$composerBounds();
             chatupgrade$composerState.replyTarget().ifPresent(target -> ChatComposerRenderer.paintReplyPreview(
                     graphics,
                     this.font,
-                    ChatSurfaceController.state().theme(),
+                    ChatSurfaceController.state().appearance(),
                     composer,
                     target));
-            if (input != null) {
+            if (!vanillaStyleInput && input != null) {
                 ChatComposerRenderer.paintInput(
                         graphics,
                         this.font,
-                        ChatSurfaceController.state().theme(),
+                        ChatSurfaceController.state().appearance(),
                         composer,
                         input.getValue(),
                         input.isFocused(),
@@ -590,6 +608,14 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
             }
         }
         int y = chatupgrade$buttonRowY();
+        ChatComposerToolbar.render(
+                graphics,
+                this.font,
+                ChatSurfaceController.state().appearance(),
+                chatupgrade$toolbarLayout(),
+                chatupgrade$toolbarState,
+                mouseX,
+                mouseY);
         chatupgrade$emojiPopover.render(
                 graphics,
                 this.font,
@@ -606,7 +632,7 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
         ChatComposerRenderer.paintAttachmentChips(
                 graphics,
                 this.font,
-                ChatSurfaceController.state().theme(),
+                ChatSurfaceController.state().appearance(),
                 chatupgrade$composerState.drafts(),
                 chatupgrade$attachmentChipX(),
                 Math.max(chatupgrade$attachmentChipX() + 24, chatupgrade$attachmentChipRight()),
@@ -614,9 +640,16 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
         chatupgrade$contextMenu.render(
                 graphics,
                 this.font,
-                ChatSurfaceController.state().theme(),
+                ChatSurfaceController.state().appearance(),
                 mouseX,
                 mouseY);
+        chatupgrade$settingsOverlay.render(
+                graphics,
+                this.font,
+                mouseX,
+                mouseY,
+                this.width,
+                this.height);
     }
 
     @Unique
@@ -830,60 +863,67 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
     }
 
     @Unique
-    private int chatupgrade$buttonWidthFor(Component label) {
-        String text = label == null ? "" : label.getString();
-        return Math.max(34, this.font.width(text) + 12);
+    private boolean chatupgrade$usesVanillaStyleInput() {
+        return ChatSurfaceController.state().appearance().vanillaStyleInput();
+    }
+
+    @Unique
+    private RichChatBounds chatupgrade$composerBounds() {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode() && !chatupgrade$usesVanillaStyleInput()) {
+            return ChatSurfaceController.state().frame().composerBounds();
+        }
+        int height = chatupgrade$composerState.hasReplyTarget() ? 58 : 38;
+        return RichChatBounds.ofSize(0, Math.max(0, this.height - height), this.width, height);
     }
 
     @Unique
     private int chatupgrade$buttonRowY() {
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            RichChatBounds composer = ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds();
-            return composer.top() + (chatupgrade$composerState.hasReplyTarget() ? 22 : 10);
-        }
-        return Math.max(2, this.height - 34);
+        RichChatBounds composer = chatupgrade$composerBounds();
+        return composer.top() + (chatupgrade$composerState.hasReplyTarget() ? 22 : 4);
     }
 
     @Unique
     private int chatupgrade$composerLeft() {
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            return ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds().left() + 6;
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode() && !chatupgrade$usesVanillaStyleInput()) {
+            return chatupgrade$composerBounds().left() + 6;
         }
         return 4;
     }
 
     @Unique
     private int chatupgrade$composerRight() {
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            return ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds().right() - 6;
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode() && !chatupgrade$usesVanillaStyleInput()) {
+            return chatupgrade$composerBounds().right() - 6;
         }
         return this.width - 4;
     }
 
     @Unique
-    private void chatupgrade$layoutTakeoverBridgeControls() {
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+    private ChatComposerToolbar.Layout chatupgrade$toolbarLayout() {
+        return ChatComposerToolbar.layout(
+                chatupgrade$composerLeft(),
+                chatupgrade$composerRight(),
+                chatupgrade$buttonRowY(),
+                chatupgrade$toolbarState);
+    }
+
+    @Unique
+    private void chatupgrade$layoutComposerControls() {
+        if (input == null) {
             return;
         }
-        ChatPanelGeometry panel = ChatSurfaceController.panelGeometry(this.width, this.height);
-        int toolbarY = chatupgrade$buttonRowY();
-        int left = panel.composerBounds().left() + 6;
-        int right = panel.composerBounds().right() - 6;
-        chatupgrade$attachmentButton.setX(left);
-        chatupgrade$attachmentButton.setY(toolbarY);
-        chatupgrade$emojiButton.setX(left + chatupgrade$attachmentButtonWidth + 6);
-        chatupgrade$emojiButton.setY(toolbarY);
-        chatupgrade$sendButton.setX(Math.max(left, right - chatupgrade$sendButtonWidth));
-        chatupgrade$sendButton.setY(toolbarY);
-        chatupgrade$clearButton.setX(Math.max(left, right - chatupgrade$sendButtonWidth - 20 - 6));
-        chatupgrade$clearButton.setY(toolbarY);
-        chatupgrade$sendButton.visible = true;
-        if (input != null) {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode() && !chatupgrade$usesVanillaStyleInput()) {
+            RichChatBounds composer = chatupgrade$composerBounds();
             input.setBordered(false);
-            input.setX(left);
-            input.setY(panel.composerBounds().bottom() - 20);
-            input.setWidth(Math.max(40, panel.composerBounds().width() - 12));
+            input.setX(composer.left() + 6);
+            input.setY(composer.bottom() - 20);
+            input.setWidth(Math.max(40, composer.width() - 12));
+            return;
         }
+        input.setBordered(true);
+        input.setX(4);
+        input.setY(Math.max(0, this.height - 14));
+        input.setWidth(Math.max(40, this.width - 8));
     }
 
     @Unique
@@ -910,30 +950,64 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
 
     @Unique
     private int chatupgrade$emojiButtonX() {
-        int width = chatupgrade$attachmentButtonWidth > 0
-                ? chatupgrade$attachmentButtonWidth
-                : chatupgrade$buttonWidthFor(Component.translatable("chatupgrade.input.button.attachment"));
-        return chatupgrade$composerLeft() + width + 6;
+        return chatupgrade$toolbarLayout().emoji().left();
     }
 
     @Unique
     private int chatupgrade$emojiButtonWidth() {
-        return chatupgrade$emojiButtonWidth > 0
-                ? chatupgrade$emojiButtonWidth
-                : chatupgrade$buttonWidthFor(Component.translatable("chatupgrade.input.button.emoji"));
+        return chatupgrade$toolbarLayout().emoji().width();
     }
 
     @Unique
     private int chatupgrade$attachmentChipX() {
-        return chatupgrade$emojiButtonX() + chatupgrade$emojiButtonWidth() + 6;
+        return chatupgrade$toolbarLayout().attachmentTray().left();
     }
 
     @Unique
     private int chatupgrade$attachmentChipRight() {
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            return chatupgrade$composerRight() - 28;
+        return chatupgrade$toolbarLayout().attachmentTray().right();
+    }
+
+    @Unique
+    private void chatupgrade$activateToolbarAction(ChatComposerToolbar.Action action) {
+        if (action != ChatComposerToolbar.Action.EMOJI && chatupgrade$emojiPopover.isVisible()) {
+            chatupgrade$emojiPopover.close();
+            chatupgrade$hideEmojiSearchBox();
+            ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.NONE);
+            chatupgrade$refreshControls();
         }
-        return chatupgrade$composerRight() - chatupgrade$sendButtonWidth - 32;
+        switch (action) {
+            case ATTACHMENT -> {
+                if (chatupgrade$toolbarState.attachmentEnabled()) {
+                    chatupgrade$pickAttachment();
+                }
+            }
+            case EMOJI -> chatupgrade$toggleEmojiPopover();
+            case CLEAR -> {
+                if (chatupgrade$toolbarState.clearEnabled()) {
+                    chatupgrade$clearDraft();
+                }
+            }
+            case SEND -> {
+                if (chatupgrade$toolbarState.sendEnabled()) {
+                    chatupgrade$submitFromOwnedButton();
+                }
+            }
+        }
+    }
+
+    @Unique
+    private void chatupgrade$openSettingsOverlay() {
+        chatupgrade$emojiPopover.close();
+        chatupgrade$hideEmojiSearchBox();
+        chatupgrade$contextMenu.close();
+        RichChatInteractionRouter.cancelAllPointerCapture();
+        ChatGestureArena.resetPointerState();
+        this.setFocused(null);
+        if (input != null) {
+            input.setFocused(false);
+        }
+        chatupgrade$settingsOverlay.open(this.width, this.height);
     }
 
     @Unique
@@ -996,7 +1070,7 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
         if (!ChatUpgradeChatPipelineGate.isTakeoverMode() || !chatupgrade$composerState.hasReplyTarget()) {
             return false;
         }
-        RichChatBounds composer = ChatSurfaceController.panelGeometry(this.width, this.height).composerBounds();
+        RichChatBounds composer = chatupgrade$composerBounds();
         return ChatComposerRenderer.isReplyCancelClick(this.font, composer, mouseX, mouseY);
     }
 
@@ -1017,14 +1091,14 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
             chatupgrade$hideEmojiSearchBox();
             ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.NONE);
         }
+        chatupgrade$refreshControls();
     }
 
     @Unique
     private boolean chatupgrade$isEmojiButtonClick(double mouseX, double mouseY) {
-        int x = chatupgrade$emojiButtonX();
-        int y = chatupgrade$buttonRowY();
-        return mouseX >= x && mouseX < x + chatupgrade$emojiButtonWidth()
-                && mouseY >= y && mouseY < y + 16;
+        return chatupgrade$toolbarLayout().emoji().contains(
+                (int) Math.round(mouseX),
+                (int) Math.round(mouseY));
     }
 
     @Unique
@@ -1070,20 +1144,13 @@ public abstract class ChatScreenRichInputMixin extends Screen implements ChatCom
         boolean commandReady = !ChatCommandBridge.isCommand(inputValue)
                 || inputValue.length() > 1;
         boolean uploading = chatupgrade$composerState.isUploading();
-        if (chatupgrade$attachmentButton != null) {
-            chatupgrade$attachmentButton.active = chatupgrade$composerState.canAddDraft();
-        }
-        if (chatupgrade$sendButton != null) {
-            chatupgrade$sendButton.visible = takeover;
-            chatupgrade$sendButton.active = takeover
-                    && !uploading
-                    && commandReady
-                    && (hasDraft || hasText);
-        }
-        if (chatupgrade$clearButton != null) {
-            chatupgrade$clearButton.visible = hasDraft;
-            chatupgrade$clearButton.active = hasDraft && !uploading;
-        }
+        chatupgrade$toolbarState = new ChatComposerToolbar.State(
+                chatupgrade$composerState.canAddDraft(),
+                chatupgrade$emojiPopover.isVisible(),
+                hasDraft,
+                hasDraft && !uploading,
+                takeover,
+                takeover && !uploading && commandReady && (hasDraft || hasText));
     }
 
     @Unique

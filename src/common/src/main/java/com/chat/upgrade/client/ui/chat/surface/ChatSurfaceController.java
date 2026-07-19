@@ -36,7 +36,7 @@ public final class ChatSurfaceController {
             boolean chatOpen,
             boolean restricted) {
         ensureGeometryLoaded(screenWidth, screenHeight);
-        STATE.setTheme(ChatThemes.resolve(ChatUpgradeConfig.get().chatTheme));
+        STATE.setAppearance(ChatAppearanceRuntime.current());
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
         STATE.setPresentationMode(chatOpen ? ChatPresentationMode.OPEN_PANEL : ChatPresentationMode.CLOSED_HUD);
         STATE.setRestricted(restricted);
@@ -48,7 +48,7 @@ public final class ChatSurfaceController {
 
     public static void onChatScreenOpened(int screenWidth, int screenHeight) {
         ensureGeometryLoaded(screenWidth, screenHeight);
-        STATE.setTheme(ChatThemes.resolve(ChatUpgradeConfig.get().chatTheme));
+        STATE.setAppearance(ChatAppearanceRuntime.current());
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
         STATE.setPresentationMode(ChatPresentationMode.OPEN_PANEL);
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
@@ -154,7 +154,7 @@ public final class ChatSurfaceController {
         if (STATE.presentationMode() != ChatPresentationMode.OPEN_PANEL) {
             return false;
         }
-        RichChatBounds viewport = STATE.panelGeometry().messageViewportBounds();
+        RichChatBounds viewport = STATE.frame().messageViewportBounds();
         if (STATE.panelGeometry().resizeEdgesAt(pointerX, pointerY) != ChatPanelGeometry.EDGE_NONE) {
             return false;
         }
@@ -164,7 +164,24 @@ public final class ChatSurfaceController {
     }
 
     public static RichChatBounds messageViewportBounds() {
-        return STATE.panelGeometry().messageViewportBounds();
+        return STATE.frame().messageViewportBounds();
+    }
+
+    public static void previewPanelGeometry(
+            ChatUpgradeConfig config,
+            int screenWidth,
+            int screenHeight) {
+        if (config == null || config.chatPanel == null) {
+            return;
+        }
+        STATE.updateScreenSize(screenWidth, screenHeight);
+        STATE.setPanelGeometry(ChatPanelGeometry.restore(
+                screenWidth,
+                screenHeight,
+                config.chatPanel.left,
+                config.chatPanel.bottomOffset,
+                config.chatPanel.width,
+                config.chatPanel.height));
     }
 
     public static void setOverlay(ChatSurfaceState.Overlay overlay) {

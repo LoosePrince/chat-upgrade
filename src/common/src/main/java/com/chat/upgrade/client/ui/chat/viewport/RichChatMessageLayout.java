@@ -13,6 +13,7 @@ public record RichChatMessageLayout(
         RichChatBounds bounds,
         RichChatBounds visualBounds,
         @Nullable RichChatBounds identityBounds,
+        @Nullable RichChatBounds metadataBounds,
         List<RichChatRenderNode> nodes,
         List<RichChatHitBox> hitBoxes) {
     public RichChatMessageLayout {

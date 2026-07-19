@@ -59,7 +59,7 @@ jps -l -v
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `chatInputMode` | `TAKEOVER` / `COMPAT_TEXT_VANILLA` | `TAKEOVER` | 聊天输入/渲染模式。字段缺失时等价于 `TAKEOVER`。 |
-| `chatTheme` | `modern_bubble` / `compact_feed` / `native_enhanced` | `modern_bubble` | TAKEOVER surface 主题；未知值会归一化为默认主题。 |
+| `appearance` | object | 见下文 | 面板、消息、输入栏、头像、双行布局、左右分栏、非玩家消息位置、气泡、圆角与右键菜单外观。 |
 | `chatPanel` | object | `{left:4,bottomOffset:40,width:360,height:220}` | TAKEOVER 面板的左下锚点偏移与持久化尺寸；运行时会按窗口边界归一化。 |
 | `ciCompatibility` | boolean | `false` | 图片发送是否优先使用受支持的 `[[CICode,...]]` bracket tag；关闭时使用标准 `[[ChatUpgrade,...]]`。 |
 | `manualImageReveal` | boolean | `false` | 图片是否点击后加载。 |
@@ -100,19 +100,32 @@ jps -l -v
 /chatupgrade config inputmode compat
 ```
 
-## TAKEOVER 主题
+## 设置弹窗与外观快照
 
-主题只提供视觉 tokens 和布局策略，不复制消息事实、场景树或 renderer。稳定主题 ID 与切换命令如下：
+聊天面板标题左侧的设置图标会打开居中叠加弹窗。弹窗完整覆盖客户端持久化字段，并按以下分类组织：
 
-| 主题 ID | 命令 | 视觉策略 |
-| --- | --- | --- |
-| `modern_bubble` | `/chatupgrade config theme modern_bubble` | 圆角气泡、宽身份栏和分组留白。 |
-| `compact_feed` | `/chatupgrade config theme compact_feed` | 紧凑 feed、侧边强调条和较小组间距。 |
-| `native_enhanced` | `/chatupgrade config theme native_enhanced` | 接近原版密度的增强卡片。 |
+| 分类 | 配置范围 |
+| --- | --- |
+| 外观 | 面板背景/透明度/边框、输入栏合并方式、头像、双行布局、消息气泡、自己的消息左右分栏、非玩家消息位置、面板位置/尺寸、右键菜单密度与样式。 |
+| 聊天行为 | 平滑滚动、调试动作。 |
+| 媒体 | 图片/音频/视频手动加载、接收上限、音频/视频音量。 |
+| 上传与兼容 | 上传模式、上传上限、CI 标签兼容、`TAKEOVER` / `COMPAT_TEXT_VANILLA` 消息管线。 |
 
-命令会立即保存 `chatTheme`；下一次 TAKEOVER surface 帧同步时解析主题，并以新的布局策略重建场景。该过程不修改消息事实、回复/撤回状态或交互动作语义。直接修改配置文件后，可执行 `/chatupgrade config reload` 获得相同效果。
+配置编辑采用基线与草稿模型：
 
-`COMPAT_TEXT_VANILLA` 不消费 TAKEOVER 主题：原版文本继续使用 Minecraft 的 `ChatComponent -> GuiMessage -> 原版布局/绘制` 链路；兼容 HUD 的富媒体旧入口固定使用 `native_enhanced`，避免运行时主题泄漏。
+```text
+打开设置
+  -> 深拷贝当前配置为 baseline 与 draft
+  -> 编辑 draft，并通过 ChatClientConfigRuntime 实时预览
+  -> 保存：规范化并提交整份 draft，写入 JSON
+  -> 取消/关闭/异常退出：恢复 baseline
+```
+
+`ChatAppearanceSnapshot` 是 renderer 和布局层消费的不可变帧配置。`RichChatLayoutEngine` 负责所有会改变位置的计算，包括头像 gutter、双行元信息、本人消息整体靠右、非玩家消息左/中/右对齐以及附件/命中框平移；renderer 不再二次偏移。
+
+“双行布局”固定表示第一行昵称、时间等元信息，第二行开始消息内容。关闭头像只移除头像绘制和 gutter，不会隐藏昵称。“原版风格输入栏”只控制输入栏是否与聊天面板合并，不修改附件、Emoji、清空、发送功能，也不改变 `chatInputMode` 或消息提交管线。
+
+面板仍支持标题拖动和边缘/角落缩放；设置弹窗同时提供 `left`、`bottomOffset`、`width`、`height` 数值编辑与当前分类恢复默认。旧配置中的 `chatTheme` 是废弃字段：加载时会删除并重写配置，不迁移该字段对应的旧样式，也不存在对应切换命令。
 
 ## 上传模式
 
@@ -152,7 +165,6 @@ jps -l -v
 | 命令 | 说明 |
 | --- | --- |
 | `/chatupgrade config ci <true|false>` | 切换图片发送使用 `[[CICode,...]]` 还是 `[[ChatUpgrade,...]]` bracket tag。 |
-| `/chatupgrade config theme <modern_bubble|compact_feed|native_enhanced>` | 切换并持久化 TAKEOVER 主题。 |
 | `/chatupgrade config manual <true|false>` | 图片手动加载。 |
 | `/chatupgrade config manualaudio <true|false>` | 音频手动加载。 |
 | `/chatupgrade config manualvideo <true|false>` | 视频手动加载。 |
@@ -211,10 +223,13 @@ config/chat-upgrade/server-media.json
 | TAKEOVER 多附件发送 | 最多 8 个附件显示为独立 chip；未上传项并发上传，全部成功后以单条结构化消息按原顺序发送；失败项不会卡在上传中。 |
 | TAKEOVER 多附件降级保护 | V2/V1 结构化发送都不可用时保留已上传草稿并报错，不退回只保留首附件语义的 bracket 路由。 |
 | TAKEOVER 回复期间追加附件 | 上传批次只消费发送开始时的草稿和回复目标；期间新增的附件与新回复目标保留。 |
-| TAKEOVER 主题热切换 | `modern_bubble` / `compact_feed` / `native_enhanced` 共用同一场景、布局和渲染管线；下一帧生效且消息事实不变。 |
+| TAKEOVER 设置草稿 | 打开后实时预览；保存提交整份配置并落盘；取消、关闭或异常退出恢复打开时基线。 |
+| TAKEOVER 双行与头像 | 双行开启时每条玩家消息先显示昵称/时间元信息，再显示正文；关闭头像后昵称仍存在且不保留 gutter。 |
+| TAKEOVER 消息对齐 | 本人消息的头像、元信息、正文、附件、气泡、操作栏和命中框整体靠右；非玩家消息按左/中/右配置整体平移。 |
+| TAKEOVER 原版风格输入栏 | 只把原版 `EditBox` 和同功能紧凑工具栏移到屏幕底部；发送、附件、Emoji、清空、命令与消息管线不变。 |
 | TAKEOVER 身份头像 | 可解析玩家 UUID 时绘制皮肤头部与帽层；纹理不可用时稳定回退到色块/glyph。 |
 | TAKEOVER 面板几何 | 标题拖动、边缘/角落缩放和窗口尺寸变化后保持在屏幕内，并持久化 `chatPanel`。 |
-| COMPAT 纯文本 | 继续使用原版 `ChatComponent -> GuiMessage` 布局和绘制，不受 TAKEOVER metrics、坐标与主题影响。 |
+| COMPAT 纯文本 | 继续使用原版 `ChatComponent -> GuiMessage` 布局和绘制，不受 TAKEOVER metrics、坐标与外观快照影响。 |
 | COMPAT 附件 | 富媒体附件仍可显示。 |
 | 断开重连 | 状态、pending、缓存按预期清理。 |
 | 服务端无结构化支持 | 单附件且无回复时可降级 bracket；多附件或回复消息保留草稿并明确失败。 |

@@ -6,9 +6,7 @@ import java.util.Optional;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
-import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
-import com.chat.upgrade.client.ui.chat.surface.ChatThemePainter;
-import com.chat.upgrade.client.ui.chat.surface.ChatThemeTokens;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 
 import net.minecraft.client.gui.Font;
@@ -46,7 +44,7 @@ public final class ChatMessageActionBar {
     public static void render(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             RichChatMessage message,
             RichChatBounds messageBounds,
             float mouseX,
@@ -55,7 +53,7 @@ public final class ChatMessageActionBar {
         if (layout == null) {
             return;
         }
-        ChatThemeTokens tokens = theme.tokens();
+        ChatAppearanceSnapshot tokens = appearance;
         graphics.fill(
                 layout.bounds().left(),
                 layout.bounds().top(),

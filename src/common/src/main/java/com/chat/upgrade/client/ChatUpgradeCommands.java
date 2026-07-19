@@ -9,16 +9,12 @@ import java.util.concurrent.CompletableFuture;
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
-import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.model.InlineResourceType;
-import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
-import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
-import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceThemeId;
 import com.chat.upgrade.client.upload.LocalImageSources;
 import com.chat.upgrade.client.upload.UploadRouter;
 import com.chat.upgrade.platform.command.CommandAdapter;
@@ -169,16 +165,6 @@ public final class ChatUpgradeCommands {
                                     .then(lit("compat")
                                             .executes(ctx -> setChatInputMode(sink(ctx),
                                                     ChatUpgradeConfig.ChatInputMode.COMPAT_TEXT_VANILLA))))
-                            .then(lit("theme")
-                                    .then(lit("modern_bubble")
-                                            .executes(ctx -> setChatTheme(sink(ctx),
-                                                    ChatSurfaceThemeId.MODERN_BUBBLE)))
-                                    .then(lit("compact_feed")
-                                            .executes(ctx -> setChatTheme(sink(ctx),
-                                                    ChatSurfaceThemeId.COMPACT_FEED)))
-                                    .then(lit("native_enhanced")
-                                            .executes(ctx -> setChatTheme(sink(ctx),
-                                                    ChatSurfaceThemeId.NATIVE_ENHANCED))))
                             .then(lit("ci")
                                     .then(arg("enabled", BoolArgumentType.bool())
                                             .executes(ctx -> setCiCompatibility(sink(ctx),
@@ -368,7 +354,7 @@ public final class ChatUpgradeCommands {
 
     private static int setCiCompatibility(CommandSink sink, boolean enabled) {
         try {
-            ChatUpgradeConfig.setCiCompatibilityAndSave(enabled);
+            ChatClientConfigRuntime.updateAndSave(config -> config.ciCompatibility = enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.ci.updated",
                     enabled ? Component.literal(UpgradeBracketCodec.WIRE_TAG_CI_COMPAT)
@@ -388,7 +374,7 @@ public final class ChatUpgradeCommands {
             return 0;
         }
         try {
-            ChatUpgradeConfig.setUploadModeAndSave(mode);
+            ChatClientConfigRuntime.updateAndSave(config -> config.uploadMode = mode);
             sink.feedback(Component.translatable("chatupgrade.config.upload_mode.updated", mode.name())
                     .withStyle(ChatFormatting.GREEN));
             return 1;
@@ -400,8 +386,7 @@ public final class ChatUpgradeCommands {
 
     private static int setChatInputMode(CommandSink sink, ChatUpgradeConfig.ChatInputMode mode) {
         try {
-            ChatUpgradeConfig.setChatInputModeAndSave(mode);
-            ServerMediaNetworking.sendChatInputMode();
+            ChatClientConfigRuntime.updateAndSave(config -> config.chatInputMode = mode);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.input_mode.updated",
                     chatInputModeLabel(mode))
@@ -411,25 +396,6 @@ public final class ChatUpgradeCommands {
             sink.error(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
             return 0;
         }
-    }
-
-    private static int setChatTheme(CommandSink sink, ChatSurfaceThemeId themeId) {
-        try {
-            ChatUpgradeConfig.setChatThemeAndSave(themeId);
-            sink.feedback(Component.translatable(
-                    "chatupgrade.config.theme.updated",
-                    themeLabel(themeId))
-                    .withStyle(ChatFormatting.GREEN));
-            return 1;
-        } catch (IOException e) {
-            sink.error(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
-            return 0;
-        }
-    }
-
-    private static Component themeLabel(ChatSurfaceThemeId themeId) {
-        ChatSurfaceThemeId safeTheme = themeId == null ? ChatSurfaceThemeId.DEFAULT : themeId;
-        return Component.translatable("chatupgrade.config.theme." + safeTheme.serializedName());
     }
 
     private static Component chatInputModeLabel(ChatUpgradeConfig.ChatInputMode mode) {
@@ -453,11 +419,8 @@ public final class ChatUpgradeCommands {
     }
 
     private static int reloadConfig(CommandSink sink) {
-        ChatUpgradeConfig.load();
+        ChatClientConfigRuntime.reload();
         ChatUpgradeConfig cfg = ChatUpgradeConfig.get();
-        AudioPlayerService.setGlobalVolumePercent(cfg.audioVolumePercent);
-        VideoPlayerService.setGlobalVolumePercent(cfg.videoVolumePercent);
-        ServerMediaNetworking.sendChatInputMode();
         sink.feedback(Component.translatable(
                 "chatupgrade.config.reload.done",
                 cfg.ciCompatibility ? Component.literal(UpgradeBracketCodec.WIRE_TAG_CI_COMPAT)
@@ -477,7 +440,7 @@ public final class ChatUpgradeCommands {
     private static int setMaxReceiveMebibytes(CommandSink sink, int mebibytes) {
         try {
             int bytes = Math.multiplyExact(mebibytes, 1024 * 1024);
-            ChatUpgradeConfig.setMaxReceiveBytesAndSave(bytes);
+            ChatClientConfigRuntime.updateAndSave(config -> config.maxReceiveBytes = bytes);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.max_receive.updated",
                     mebibytes,
@@ -496,7 +459,7 @@ public final class ChatUpgradeCommands {
     private static int setMaxUploadMebibytes(CommandSink sink, int mebibytes) {
         try {
             int bytes = Math.multiplyExact(mebibytes, 1024 * 1024);
-            ChatUpgradeConfig.setMaxUploadBytesAndSave(bytes);
+            ChatClientConfigRuntime.updateAndSave(config -> config.maxUploadBytes = bytes);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.max_upload.updated",
                     mebibytes,
@@ -514,7 +477,7 @@ public final class ChatUpgradeCommands {
 
     private static int setManualImageReveal(CommandSink sink, boolean enabled) {
         try {
-            ChatUpgradeConfig.setManualImageRevealAndSave(enabled);
+            ChatClientConfigRuntime.updateAndSave(config -> config.manualImageReveal = enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.manual_image.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
@@ -528,7 +491,7 @@ public final class ChatUpgradeCommands {
 
     private static int setManualAudioReveal(CommandSink sink, boolean enabled) {
         try {
-            ChatUpgradeConfig.setManualAudioRevealAndSave(enabled);
+            ChatClientConfigRuntime.updateAndSave(config -> config.manualAudioReveal = enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.manual_audio.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
@@ -542,7 +505,7 @@ public final class ChatUpgradeCommands {
 
     private static int setManualVideoReveal(CommandSink sink, boolean enabled) {
         try {
-            ChatUpgradeConfig.setManualVideoRevealAndSave(enabled);
+            ChatClientConfigRuntime.updateAndSave(config -> config.manualVideoReveal = enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.manual_video.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
@@ -556,7 +519,7 @@ public final class ChatUpgradeCommands {
 
     private static int setSmoothScrollEnabled(CommandSink sink, boolean enabled) {
         try {
-            ChatUpgradeConfig.setSmoothScrollEnabledAndSave(enabled);
+            ChatClientConfigRuntime.updateAndSave(config -> config.smoothScrollEnabled = enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.smooth_scroll.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
@@ -570,7 +533,7 @@ public final class ChatUpgradeCommands {
 
     private static int setDebugChatActions(CommandSink sink, boolean enabled) {
         try {
-            ChatUpgradeConfig.setDebugChatActionsAndSave(enabled);
+            ChatClientConfigRuntime.updateAndSave(config -> config.debugChatActions = enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.debug_actions.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
@@ -584,8 +547,7 @@ public final class ChatUpgradeCommands {
 
     private static int setAudioVolumePercent(CommandSink sink, int percent) {
         try {
-            ChatUpgradeConfig.setAudioVolumePercentAndSave(percent);
-            AudioPlayerService.setGlobalVolumePercent(percent);
+            ChatClientConfigRuntime.updateAndSave(config -> config.audioVolumePercent = percent);
             sink.feedback(Component.translatable("chatupgrade.config.audio_volume.updated", Math.clamp(percent, 1, 100))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
@@ -597,8 +559,7 @@ public final class ChatUpgradeCommands {
 
     private static int setVideoVolumePercent(CommandSink sink, int percent) {
         try {
-            ChatUpgradeConfig.setVideoVolumePercentAndSave(percent);
-            VideoPlayerService.setGlobalVolumePercent(percent);
+            ChatClientConfigRuntime.updateAndSave(config -> config.videoVolumePercent = percent);
             sink.feedback(Component.translatable("chatupgrade.config.video_volume.updated", Math.clamp(percent, 1, 100))
                     .withStyle(ChatFormatting.GREEN));
             return 1;

@@ -3,10 +3,8 @@ package com.chat.upgrade.client;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.emoji.TwikooOwoRegistry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
-import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.video.VideoLoader;
-import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
@@ -22,6 +20,7 @@ import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
+import com.chat.upgrade.client.ui.render.UiTextureAtlas;
 
 import net.minecraft.client.Minecraft;
 
@@ -53,8 +52,7 @@ public final class ChatUpgradeClientBootstrap {
                 ChatUpgradeConfig.get().audioVolumePercent,
                 ChatUpgradeConfig.get().videoVolumePercent);
         FfmpegNativeBootstrap.warmupAsync();
-        AudioPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().audioVolumePercent);
-        VideoPlayerService.setGlobalVolumePercent(ChatUpgradeConfig.get().videoVolumePercent);
+        ChatClientConfigRuntime.initializeLoadedConfig();
         TwikooOwoRegistry.refreshIfExpired();
     }
 
@@ -75,6 +73,7 @@ public final class ChatUpgradeClientBootstrap {
             lastFramebufferHeight = fh;
             ImageLoader.invalidateTextureCache();
             VideoLoader.invalidateVideoCache();
+            UiTextureAtlas.invalidate();
         }
     }
 
@@ -101,6 +100,7 @@ public final class ChatUpgradeClientBootstrap {
         AudioLoader.invalidateAudioCache();
         VideoLoader.invalidateVideoCache();
         ImageLoader.invalidateTextureCache();
+        UiTextureAtlas.invalidate();
         AudioFloatingWindow.clear();
         ServerMediaClient.clearRuntimeState();
         InlineEmojiCoordinator.clearPendingSlots();

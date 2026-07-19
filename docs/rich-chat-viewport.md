@@ -16,7 +16,7 @@ RichChatMessage
 
 `ChatSurfaceController` 提供打开面板或关闭 HUD 的不可变 `ChatSurfaceFrame`。`ChatScene` 将 frame、timeline 布局和叶子节点组合为单帧场景；`ChatSceneRenderer` 统一绘制 surface chrome、消息装饰、身份、回复/删除节点、媒体和滚动条。
 
-`COMPAT_TEXT_VANILLA` 不经过这条 TAKEOVER 管线。它继续使用 Minecraft 原版 `ChatComponent -> GuiMessage -> 原版布局/绘制`，不读取 TAKEOVER 的 metrics、坐标或运行时主题。
+`COMPAT_TEXT_VANILLA` 不经过这条 TAKEOVER 管线。它继续使用 Minecraft 原版 `ChatComponent -> GuiMessage -> 原版布局/绘制`，不读取 TAKEOVER 的 metrics、坐标或外观快照。
 
 ## 层级结构
 
@@ -24,8 +24,10 @@ RichChatMessage
 flowchart TB
     A[RichChatStateStore\n统一消息事实] --> B[ChatTimelineProjector\n身份/分类/分组]
     B --> C[RichChatLayoutEngine\n共享布局]
-    T[ChatThemes\ntokens + layout policy] --> C
+    A1[ChatUpgradeConfig\n持久化配置] --> T[ChatAppearanceSnapshot\n不可变外观快照]
+    A2[ChatSettingsOverlay\nbaseline + draft] --> T
     S[ChatSurfaceController\nChatSurfaceFrame] --> D[ChatScene\n不可变单帧场景]
+    T --> C
     T --> S
     C --> D
     D --> E[ChatSceneRenderer\n单一 TAKEOVER renderer]
@@ -78,14 +80,14 @@ flowchart TB
 ```text
 RichChatStateStore.snapshotNewestFirst()
   -> ChatTimelineProjector.projectOldestFirst()
-  -> RichChatLayoutEngine 按 ChatLayoutPolicy 布局
-  -> RichChatMessageLayout(bounds / visualBounds / identityBounds)
+  -> RichChatLayoutEngine 按 ChatAppearanceSnapshot 布局
+  -> RichChatMessageLayout(bounds / visualBounds / identityBounds / metadataBounds)
   -> RichChatRenderNode + RichChatHitBox
 ```
 
-`ChatLayoutPolicy` 在布局阶段一次决定身份 gutter、消息内边距、组间距、换行宽度和消息装饰形态。文本、媒体、背景与 hit box 都从同一布局坐标生成，renderer 不再按主题二次偏移，避免视觉位置与点击区域漂移。
+`ChatAppearanceSnapshot` 在布局阶段一次决定头像 gutter、消息内边距、组间距、双行元信息、本人消息分栏和非玩家消息位置。文本、媒体、背景、操作范围与 hit box 都从同一布局坐标生成，renderer 不再二次水平偏移，避免视觉位置与点击区域漂移。
 
-当前文本使用 Minecraft `Font.split` 换行，这是 TAKEOVER 的布局实现选择，不是原版 `GuiMessage.Line` 模型。附件高度由 `RichChatMediaSizing` 统一决定。
+双行模式固定让玩家昵称与时间元信息占第一行，正文从下一行开始；关闭双行时元信息与普通正文首行同行，长文本继续由 `Font.split` 自然换行。头像只由 `showPlayerAvatars` 控制，关闭时头像尺寸和 gutter 同时为零，但独立元信息仍保留昵称。`authoredByLocalPlayer()` 是本人消息靠右的唯一身份依据；系统、游戏、公告和错误消息不猜测玩家作者，而是按 `nonPlayerAlignment` 左/中/右整体移动。附件高度由 `RichChatMediaSizing` 统一决定。
 
 ## 渲染节点
 
@@ -177,17 +179,21 @@ ChatComponent 生命周期接入
   -> 绘制不属于内容裁切的 chrome / scrollbar
 ```
 
-普通文本和媒体都在同一个 timeline 裁切范围内渲染。surface 几何和 scissor 使用 GUI 绝对坐标；消息、空态和 `RichChatRenderNode` 使用内容局部坐标。Mixin 只负责生命周期、裁切、pose 和共享场景调用，不再包含主题颜色或消息装饰分支。
+普通文本和媒体都在同一个 timeline 裁切范围内渲染。surface 几何和 scissor 使用 GUI 绝对坐标；消息、空态和 `RichChatRenderNode` 使用内容局部坐标。Mixin 只负责生命周期、裁切、pose 和共享场景调用，不包含外观颜色或消息装饰分支。
 
-## 运行时主题
+## 运行时外观与设置状态机
 
-三个稳定主题 ID 共用上述 scene/layout/render 管线：
+`ChatAppearanceRuntime` 保存当前 `ChatAppearanceSnapshot`。快照由 `ChatUpgradeConfig.appearance` 生成，集中提供 surface、消息、身份、媒体、滚动条、composer 和右键菜单的稳定视觉语义，以及布局层需要的头像、双行、分栏、对齐、padding、圆角与间距值。
 
-- `modern_bubble`
-- `compact_feed`
-- `native_enhanced`
+`ChatSettingsOverlay` 独立维护配置基线和草稿：
 
-`ChatThemeTokens` 提供 surface、消息、身份、回复、删除、媒体、滚动条和 composer 的视觉语义；`ChatLayoutPolicy` 提供会改变布局与命中框的尺寸策略。主题切换在下一帧同步 `ChatSurfaceFrame` 并重建必要布局，不修改消息事实或协议能力。
+- 打开时深拷贝当前整份配置。
+- 编辑时通过 `ChatClientConfigRuntime.preview` 应用草稿，实时更新音量、surface、布局和面板几何。
+- 保存时规范化并提交整份草稿后落盘。
+- 取消、关闭或异常退出时恢复打开时基线。
+- 设置 overlay 拥有最高输入优先级，阻止点击、滚轮、拖拽和键盘事件泄漏到 timeline、输入栏、Emoji Picker、附件拖拽和右键菜单。
+
+外观没有样式 ID、预设注册表或切换命令。旧 JSON 的 `chatTheme` 只用于加载时识别废弃字段并触发配置重写。
 
 ## 表情链路
 
@@ -235,7 +241,7 @@ ChatComponent 生命周期接入
 
 ## 自定义渲染能力边界
 
-TAKEOVER 已拥有完整聊天 surface，可独立定义面板 chrome、timeline 布局、主题和内容裁切，不必遵守原版聊天行规范。
+TAKEOVER 已拥有完整聊天 surface，可独立定义面板 chrome、timeline 布局、外观和内容裁切，不必遵守原版聊天行规范。
 
 仍保留的边界：
 

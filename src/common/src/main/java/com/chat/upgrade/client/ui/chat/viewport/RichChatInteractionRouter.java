@@ -32,8 +32,8 @@ import com.chat.upgrade.client.ui.chat.interaction.ChatHitTarget;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageActionBar;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
-import com.chat.upgrade.client.ui.chat.surface.ChatTheme;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 
@@ -111,13 +111,26 @@ public final class RichChatInteractionRouter {
             if (message.visibleIn(visibleTop, visibleBottom)) {
                 ACTIVE_MESSAGES.add(new ActiveMessage(
                         message,
-                        message.bounds().translateY(contentToLocalY)));
+                        interactionBounds(message).translateY(contentToLocalY)));
             }
         }
         List<RichChatHitBox> source = state == null ? layout.hitBoxes() : layout.visibleHitBoxes(state);
         for (RichChatHitBox hitBox : source) {
             ACTIVE_HIT_BOXES.add(new ActiveHitBox(hitBox, hitBox.bounds().translateY(contentToLocalY)));
         }
+    }
+
+    private static RichChatBounds interactionBounds(RichChatMessageLayout message) {
+        RichChatBounds visual = message.visualBounds();
+        RichChatBounds identity = message.identityBounds();
+        if (identity == null) {
+            return visual;
+        }
+        int left = Math.min(visual.left(), identity.left());
+        int top = Math.min(visual.top(), identity.top());
+        int right = Math.max(visual.right(), identity.right());
+        int bottom = Math.max(visual.bottom(), identity.bottom());
+        return RichChatBounds.ofSize(left, top, right - left, bottom - top);
     }
 
     public static @Nullable RichChatHitBox hitBoxAtLocal(float localX, float localY) {
@@ -460,10 +473,10 @@ public final class RichChatInteractionRouter {
     public static boolean renderHoverActionBar(
             GuiGraphicsExtractor graphics,
             Font font,
-            ChatTheme theme,
+            ChatAppearanceSnapshot appearance,
             float localX,
             float localY) {
-        if (graphics == null || font == null || theme == null || !isInsideActiveViewport(localX, localY)) {
+        if (graphics == null || font == null || appearance == null || !isInsideActiveViewport(localX, localY)) {
             return false;
         }
         ActiveMessage active = activeMessageAtLocal(localX, localY);
@@ -473,7 +486,7 @@ public final class RichChatInteractionRouter {
         ChatMessageActionBar.render(
                 graphics,
                 font,
-                theme,
+                appearance,
                 active.layout().message(),
                 active.localBounds(),
                 localX,

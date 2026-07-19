@@ -86,7 +86,7 @@ public abstract class ChatComponentRichViewportMixin {
                 displayMode.showRestrictedPrompt);
         Font font = minecraft.font;
         RichChatViewportMetrics metrics = chatupgrade$metrics(screenHeight, displayMode, surfaceFrame);
-        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics, surfaceFrame.theme());
+        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics, surfaceFrame.appearance());
         ChatScene scene = new ChatScene(surfaceFrame, metrics, layout);
         boolean paintsTimeline = !surfaceFrame.restricted() && layout.totalHeight() > 0;
 
@@ -208,7 +208,7 @@ public abstract class ChatComponentRichViewportMixin {
         RichChatInteractionRouter.renderHoverActionBar(
                 extractor,
                 font,
-                ChatSurfaceController.state().theme(),
+                ChatSurfaceController.state().appearance(),
                 local.x,
                 local.y);
         boolean tooltip = RichChatInteractionRouter.showTooltipForLocalHover(

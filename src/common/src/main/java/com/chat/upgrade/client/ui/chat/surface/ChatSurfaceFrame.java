@@ -6,7 +6,7 @@ public record ChatSurfaceFrame(
         ChatPresentationMode presentationMode,
         ChatPanelGeometry panelGeometry,
         boolean restricted,
-        ChatTheme theme) {
+        ChatAppearanceSnapshot appearance) {
     public ChatSurfaceFrame {
         presentationMode = presentationMode == null ? ChatPresentationMode.CLOSED_HUD : presentationMode;
         panelGeometry = panelGeometry == null
@@ -16,7 +16,7 @@ public record ChatSurfaceFrame(
                         ChatPanelGeometry.DEFAULT_WIDTH,
                         ChatPanelGeometry.DEFAULT_HEIGHT)
                 : panelGeometry;
-        theme = theme == null ? ChatThemes.resolve(ChatSurfaceThemeId.DEFAULT) : theme;
+        appearance = appearance == null ? ChatAppearanceRuntime.current() : appearance;
     }
     public boolean isOpenPanel() {
         return presentationMode == ChatPresentationMode.OPEN_PANEL;
@@ -27,10 +27,21 @@ public record ChatSurfaceFrame(
     }
 
     public RichChatBounds messageViewportBounds() {
+        if (appearance.vanillaStyleInput()) {
+            int top = Math.min(panelGeometry.bottom(), panelGeometry.y() + ChatPanelGeometry.HEADER_HEIGHT);
+            return new RichChatBounds(
+                    panelGeometry.x(),
+                    top,
+                    panelGeometry.right(),
+                    panelGeometry.bottom());
+        }
         return panelGeometry.messageViewportBounds();
     }
 
     public RichChatBounds composerBounds() {
+        if (appearance.vanillaStyleInput()) {
+            return RichChatBounds.ofSize(panelGeometry.x(), panelGeometry.bottom(), panelGeometry.width(), 0);
+        }
         return panelGeometry.composerBounds();
     }
 }
