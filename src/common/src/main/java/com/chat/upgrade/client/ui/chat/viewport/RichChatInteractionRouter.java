@@ -9,6 +9,7 @@ import org.joml.Matrix3x2f;
 import org.joml.Matrix3x2fc;
 import org.joml.Vector2f;
 
+import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.ChatUpgradeFormatters;
 import com.chat.upgrade.client.media.audio.AudioEntry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
@@ -340,8 +341,12 @@ public final class RichChatInteractionRouter {
             String url,
             float localX,
             float localY) {
+        boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
         if (type == InlineResourceType.AUDIO) {
-            RichChatBounds progress = RichChatMediaLayout.audio(bounds).progress();
+            if (compact) {
+                return -1.0D;
+            }
+            RichChatBounds progress = RichChatMediaLayout.audio(bounds, false).progress();
             if (inside(
                     localX,
                     localY,
@@ -357,6 +362,9 @@ public final class RichChatInteractionRouter {
             return -1.0D;
         }
         if (type == InlineResourceType.VIDEO) {
+            if (compact) {
+                return -1.0D;
+            }
             RichChatBounds progress = videoGeometry(bounds, url).progress();
             if (inside(
                     localX,
@@ -806,7 +814,13 @@ public final class RichChatInteractionRouter {
     }
 
     private static AudioAction resolveAudioAction(float localX, float localY, RichChatBounds bounds) {
-        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds);
+        boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
+        if (compact) {
+            return contains(bounds, localX, localY)
+                    ? new AudioAction(AudioActionKind.TOGGLE, 0.0D)
+                    : new AudioAction(AudioActionKind.NONE, 0.0D);
+        }
+        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, false);
         if (contains(geometry.play(), localX, localY)) {
             return new AudioAction(AudioActionKind.TOGGLE, 0.0D);
         }
@@ -831,6 +845,15 @@ public final class RichChatInteractionRouter {
 
     private static VideoAction resolveVideoAction(RichChatBounds bounds, String url, float localX, float localY) {
         RichChatMediaLayout.VideoGeometry geometry = videoGeometry(bounds, url);
+        boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
+        if (compact) {
+            if (contains(geometry.open(), localX, localY)) {
+                return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0D);
+            }
+            return contains(geometry.play(), localX, localY)
+                    ? new VideoAction(VideoActionKind.TOGGLE, 0.0D)
+                    : new VideoAction(VideoActionKind.NONE, 0.0D);
+        }
         if (contains(geometry.play(), localX, localY)) {
             return new VideoAction(VideoActionKind.TOGGLE, 0.0D);
         }
@@ -860,7 +883,8 @@ public final class RichChatInteractionRouter {
                 positionMs,
                 Math.max(0L, durationMs),
                 entry == null ? 0 : entry.getRawWidth(),
-                entry == null ? 0 : entry.getRawHeight());
+                entry == null ? 0 : entry.getRawHeight(),
+                ChatClientConfigRuntime.uiPreferences().compactMediaCards());
     }
 
     private static boolean contains(RichChatBounds bounds, float x, float y) {

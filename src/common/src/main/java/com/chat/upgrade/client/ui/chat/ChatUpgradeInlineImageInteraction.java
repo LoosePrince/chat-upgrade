@@ -8,6 +8,7 @@ import org.joml.Matrix3x2fc;
 import org.joml.Vector2f;
 import org.jspecify.annotations.Nullable;
 
+import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.ChatUpgradeFormatters;
 import com.chat.upgrade.client.mixin.ChatUpgradeClickableTextOnlyGraphicsAccessor;
 import com.chat.upgrade.client.mixin.ChatUpgradeDrawingBackgroundAccessor;
@@ -23,8 +24,10 @@ import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
-import com.chat.upgrade.client.ui.layout.AudioUiLayout;
-import com.chat.upgrade.client.ui.layout.VideoUiLayout;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaBox;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaLayout;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaSizing;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ActiveTextCollector;
@@ -83,16 +86,24 @@ public final class ChatUpgradeInlineImageInteraction {
             if (entry == null || entry.getState() == AudioEntry.State.FAILED) {
                 return;
             }
-            drawW = UpgradeHudInlinePaint.AUDIO_WIDTH;
-            drawH = UpgradeHudInlinePaint.AUDIO_HEIGHT;
+            RichAttachment mediaAttachment = attachment == null
+                    ? RichAttachment.bracketProtocol(url, resourceName, resourceType)
+                    : attachment;
+            RichChatMediaBox box = RichChatMediaSizing.measure(Integer.MAX_VALUE, lineHeight, mediaAttachment);
+            drawW = box.width();
+            drawH = box.height();
             tryAudioTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
         } else if (resourceType == InlineResourceType.VIDEO) {
             VideoEntry entry = VideoLoader.getIfPresent(url);
             if (entry == null || entry.getState() == VideoEntry.State.FAILED) {
                 return;
             }
-            drawW = VideoUiLayout.WIDTH;
-            drawH = VideoUiLayout.HEIGHT;
+            RichAttachment mediaAttachment = attachment == null
+                    ? RichAttachment.bracketProtocol(url, resourceName, resourceType)
+                    : attachment;
+            RichChatMediaBox box = RichChatMediaSizing.measure(Integer.MAX_VALUE, lineHeight, mediaAttachment);
+            drawW = box.width();
+            drawH = box.height();
             rawW = entry.getRawWidth();
             rawH = entry.getRawHeight();
             tryVideoTooltipOnFocused(graphics, textTop, drawW, drawH, url, parentFrom(line), entry, textOpacity);
@@ -415,7 +426,7 @@ public final class ChatUpgradeInlineImageInteraction {
         }
         Font font = acc.chatupgrade$font();
         GuiGraphicsExtractor gfx = acc.chatupgrade$graphics();
-        String tipText = describeVideoHoverAction(local.x, local.y, textTop, drawW, url, entry);
+        String tipText = describeVideoHoverAction(local.x, local.y, textTop, drawW, drawH, url, entry);
         Component tip = Component.literal(tipText);
         gfx.setTooltipForNextFrame(font, font.split(tip, 210), acc.chatupgrade$globalMouseX(),
                 acc.chatupgrade$globalMouseY());
@@ -447,7 +458,13 @@ public final class ChatUpgradeInlineImageInteraction {
         };
     }
 
-    private static String describeVideoHoverAction(float localX, float localY, int textTop, int drawW, String url,
+    private static String describeVideoHoverAction(
+            float localX,
+            float localY,
+            int textTop,
+            int drawW,
+            int drawH,
+            String url,
             VideoEntry entry) {
         long total = VideoPlayerService.durationMs(url);
         if (total <= 0L) {
@@ -459,7 +476,7 @@ public final class ChatUpgradeInlineImageInteraction {
                 0,
                 textTop,
                 drawW,
-                textTop + VideoUiLayout.HEIGHT,
+                textTop + drawH,
                 url,
                 "",
                 null,
@@ -481,73 +498,88 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     private static AudioAction resolveAudioAction(float localX, float localY, int x0, int y0, int x1) {
-        AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.playLeft(), rects.top(), rects.playRight(),
-                rects.bottom())) {
+        RichChatBounds bounds = new RichChatBounds(
+                x0,
+                y0,
+                x1,
+                y0 + (ChatClientConfigRuntime.uiPreferences().compactMediaCards()
+                        ? RichChatMediaLayout.COMPACT_AUDIO_HEIGHT
+                        : RichChatMediaLayout.AUDIO_HEIGHT));
+        if (ChatClientConfigRuntime.uiPreferences().compactMediaCards()) {
+            return bounds.contains(Math.round(localX), Math.round(localY))
+                    ? new AudioAction(AudioActionKind.TOGGLE, 0.0)
+                    : new AudioAction(AudioActionKind.NONE, 0.0);
+        }
+        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, false);
+        if (contains(geometry.play(), localX, localY)) {
             return new AudioAction(AudioActionKind.TOGGLE, 0.0);
         }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.loopLeft(), rects.top(), rects.loopRight(),
-                rects.bottom())) {
+        if (contains(geometry.loop(), localX, localY)) {
             return new AudioAction(AudioActionKind.TOGGLE_LOOP, 0.0);
         }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.openLeft(), rects.top(), rects.openRight(),
-                rects.bottom())) {
+        if (contains(geometry.open(), localX, localY)) {
             return new AudioAction(AudioActionKind.OPEN_URL, 0.0);
         }
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rects.popLeft(), rects.top(), rects.popRight(),
-                rects.bottom())) {
+        if (contains(geometry.popout(), localX, localY)) {
             return new AudioAction(AudioActionKind.TOGGLE_FLOATING, 0.0);
         }
-        int barX0 = x0 + UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barX1 = x1 - UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-        int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+        if (contains(geometry.progress(), localX, localY)) {
+            double ratio = Math.clamp(
+                    (localX - geometry.progress().left()) / Math.max(1.0, geometry.progress().width()),
+                    0.0,
+                    1.0);
             return new AudioAction(AudioActionKind.SEEK, ratio);
         }
         return new AudioAction(AudioActionKind.NONE, 0.0);
     }
 
     private static VideoAction resolveVideoAction(Plane p, float localX, float localY) {
-        int x0 = p.localLeft;
-        int y0 = p.localTop;
-        int x1 = p.localRight;
-
-        int controlY = y0 + VideoUiLayout.CONTROL_TOP;
-        int btnX0 = x0 + VideoUiLayout.PAD_X;
-        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H)) {
+        RichChatBounds bounds = new RichChatBounds(p.localLeft, p.localTop, p.localRight, p.localBottom);
+        VideoEntry entry = VideoLoader.getIfPresent(p.url);
+        long pos = Math.max(0L, VideoPlayerService.positionMs(p.url));
+        long total = VideoPlayerService.durationMs(p.url);
+        if (total <= 0L && entry != null) {
+            total = entry.getDurationMs();
+        }
+        boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
+        RichChatMediaLayout.VideoGeometry geometry = RichChatMediaLayout.video(
+                bounds,
+                Minecraft.getInstance().font,
+                pos,
+                Math.max(0L, total),
+                p.mediaRawWidth,
+                p.mediaRawHeight,
+                compact);
+        if (compact) {
+            if (contains(geometry.open(), localX, localY)) {
+                return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0);
+            }
+            return contains(geometry.play(), localX, localY)
+                    ? new VideoAction(VideoActionKind.TOGGLE, 0.0)
+                    : new VideoAction(VideoActionKind.NONE, 0.0);
+        }
+        if (contains(geometry.play(), localX, localY)) {
             return new VideoAction(VideoActionKind.TOGGLE, 0.0);
         }
-
-        Font font = Minecraft.getInstance().font;
-        long pos = Math.max(0L, VideoPlayerService.positionMs(p.url));
-        long total = Math.max(0L, VideoPlayerService.durationMs(p.url));
-        String left = ChatUpgradeFormatters.formatMs(pos);
-        String right = ChatUpgradeFormatters.formatMs(total);
-        int leftX = btnX1 + 4;
-        int rightX = x1 - VideoUiLayout.PAD_X - font.width(right);
-        int barX0 = leftX + font.width(left) + 4;
-        int barX1 = rightX - 4;
-        int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
-        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
-        if (barX1 > barX0 && ActiveTextCollector.isPointInRectangle(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+        if (contains(geometry.progress(), localX, localY)) {
+            double ratio = Math.clamp(
+                    (localX - geometry.progress().left()) / Math.max(1.0, geometry.progress().width()),
+                    0.0,
+                    1.0);
             return new VideoAction(VideoActionKind.SEEK, ratio);
         }
-
-        int boxW = Math.max(1, p.localRight - p.localLeft);
-        int rawW = p.mediaRawWidth;
-        int rawH = p.mediaRawHeight;
-        if (rawW <= 0 || rawH <= 0) {
-            return new VideoAction(VideoActionKind.NONE, 0.0);
-        }
-        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(p.localLeft, p.localTop, boxW, rawW, rawH);
-        if (ActiveTextCollector.isPointInRectangle(localX, localY, rect.left(), rect.top(), rect.right(), rect.bottom())) {
+        if (contains(geometry.open(), localX, localY) || contains(geometry.frame(), localX, localY)) {
             return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0);
         }
         return new VideoAction(VideoActionKind.NONE, 0.0);
+    }
+
+    private static boolean contains(RichChatBounds bounds, float x, float y) {
+        return bounds != null
+                && x >= bounds.left()
+                && x < bounds.right()
+                && y >= bounds.top()
+                && y < bounds.bottom();
     }
 
     private enum AudioActionKind {

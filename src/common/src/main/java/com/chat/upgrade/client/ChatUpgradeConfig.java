@@ -34,6 +34,7 @@ public final class ChatUpgradeConfig {
     public boolean manualImageReveal;
     public boolean manualAudioReveal;
     public boolean manualVideoReveal;
+    public boolean compactMediaCards;
     public Boolean smoothScrollEnabled;
     public boolean debugChatActions;
 
@@ -148,6 +149,7 @@ public final class ChatUpgradeConfig {
         config.manualImageReveal = false;
         config.manualAudioReveal = false;
         config.manualVideoReveal = false;
+        config.compactMediaCards = false;
         config.smoothScrollEnabled = true;
         config.debugChatActions = false;
         config.maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;

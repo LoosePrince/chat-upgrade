@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.mixininterface.GuiMessageLineReadable;
 import com.chat.upgrade.client.mixininterface.ImageAttachable;
@@ -18,6 +19,7 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaLayout;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.ChatComponent;
@@ -29,8 +31,7 @@ import net.minecraft.util.FormattedCharSequence;
  * decoded URL payloads.
  */
 public final class UpgradePhantomHudLayout {
-    private static final int AUDIO_PHANTOM_COUNT = 3;
-    private static final int VIDEO_PHANTOM_COUNT = 7;
+    private static final int PHANTOM_LINE_HEIGHT = 9;
     private static final Map<InlineResourceType, ConcurrentHashMap<String, Set<GuiMessage>>> URL_TO_MESSAGE_PARENTS_BY_TYPE = new EnumMap<>(
             InlineResourceType.class);
     private static final ConcurrentHashMap<GuiMessage, RichAttachment> ATTACHMENT_BY_PARENT = new ConcurrentHashMap<>();
@@ -295,8 +296,12 @@ public final class UpgradePhantomHudLayout {
         int insertAt = firstText;
         int phantomCount = switch (type) {
             case IMAGE -> ImageLoader.PHANTOM_COUNT;
-            case AUDIO -> AUDIO_PHANTOM_COUNT;
-            case VIDEO -> VIDEO_PHANTOM_COUNT;
+            case AUDIO -> phantomLines(ChatClientConfigRuntime.uiPreferences().compactMediaCards()
+                    ? RichChatMediaLayout.COMPACT_AUDIO_HEIGHT
+                    : RichChatMediaLayout.AUDIO_HEIGHT);
+            case VIDEO -> phantomLines(RichChatMediaLayout.videoHeight(
+                    RichChatMediaLayout.PLAYER_PREFERRED_WIDTH,
+                    ChatClientConfigRuntime.uiPreferences().compactMediaCards()));
         };
         for (int i = 0; i < phantomCount - 1; i++) {
             UpgradePhantomCoordinator.prepareNextPhantomType(type);
@@ -308,6 +313,10 @@ public final class UpgradePhantomHudLayout {
                 ATTACHMENT_BY_PARENT.getOrDefault(parent, RichAttachment.bracketProtocol(url, null, type)));
         trim.add(insertAt + phantomCount - 1, new GuiMessage.Line(parent, FormattedCharSequence.EMPTY, false));
         ATTACHMENT_BY_PARENT.remove(parent);
+    }
+
+    private static int phantomLines(int pixelHeight) {
+        return Math.max(1, (Math.max(1, pixelHeight) + PHANTOM_LINE_HEIGHT - 1) / PHANTOM_LINE_HEIGHT);
     }
 
     private static void stripPhantomBlock(List<GuiMessage.Line> trim, GuiMessage parent, String url,

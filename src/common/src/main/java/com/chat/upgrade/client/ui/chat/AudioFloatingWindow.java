@@ -7,7 +7,12 @@ import com.chat.upgrade.client.media.audio.AudioEntry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
-import com.chat.upgrade.client.ui.layout.AudioUiLayout;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
+import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaLayout;
+import com.chat.upgrade.client.ui.render.UiPrimitives;
+import com.chat.upgrade.client.ui.render.UiTextureAtlas;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -17,22 +22,21 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.util.Util;
 
 public final class AudioFloatingWindow {
-    private static final int WIDTH = Math.max(96, UpgradeHudInlinePaint.AUDIO_WIDTH / 2);
-    private static final int HEIGHT = UpgradeHudInlinePaint.AUDIO_HEIGHT;
-    private static final int PAD = UpgradeHudInlinePaint.AUDIO_PAD_X;
-    private static final int BTN_W = 14;
-    private static final int BTN_H = 8;
-    private static final int BTN_GAP = 4;
-    private static final int DRAG_H = 10;
+    private static final int WIDTH = 168;
+    private static final int HEIGHT = 48;
+    private static final int PAD = 7;
+    private static final int CONTROL_SIZE = 16;
+    private static final int CONTROL_GAP = 3;
+    private static final int DRAG_H = 18;
 
-    private static boolean visible = false;
+    private static boolean visible;
     private static String url;
     private static String displayName;
-    private static int x = 0;
-    private static int y = 0;
-    private static boolean dragging = false;
-    private static int dragOffsetX = 0;
-    private static int dragOffsetY = 0;
+    private static int x;
+    private static int y;
+    private static boolean dragging;
+    private static int dragOffsetX;
+    private static int dragOffsetY;
 
     private AudioFloatingWindow() {
     }
@@ -51,14 +55,11 @@ public final class AudioFloatingWindow {
         visible = true;
         dragging = false;
         AudioLoader.getOrLoad(targetUrl);
-        Minecraft mc = Minecraft.getInstance();
-        if (mc != null) {
-            int w = mc.getWindow().getGuiScaledWidth();
-            int defaultX = Math.max(8, w - WIDTH - 8);
-            if (x <= 0 && y <= 0) {
-                x = defaultX;
-                y = 8;
-            }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && x <= 0 && y <= 0) {
+            int screenWidth = minecraft.getWindow().getGuiScaledWidth();
+            x = Math.max(8, screenWidth - WIDTH - 8);
+            y = 8;
         }
     }
 
@@ -71,7 +72,7 @@ public final class AudioFloatingWindow {
             return false;
         }
         clampToScreen(screenWidth, screenHeight);
-        return inside(pointerX, pointerY, x, y, x + WIDTH, y + HEIGHT);
+        return inside(pointerX, pointerY, windowBounds());
     }
 
     public static void clear() {
@@ -87,51 +88,61 @@ public final class AudioFloatingWindow {
         }
         clampToScreen(screenWidth, screenHeight);
         AudioEntry entry = AudioLoader.getOrLoad(url);
+        ChatAppearanceSnapshot appearance = ChatAppearanceRuntime.current();
+        ChatAppearanceSnapshot.Media tokens = appearance.media();
+        int cornerRadius = Math.max(3, appearance.cornerRadius());
+        RichChatBounds window = windowBounds();
 
-        int x0 = x;
-        int y0 = y;
-        int x1 = x0 + WIDTH;
-        int y1 = y0 + HEIGHT;
+        UiPrimitives.paintBox(
+                gfx,
+                window,
+                cornerRadius,
+                1,
+                tokens.cardBackground(),
+                tokens.cardBorder());
 
-        gfx.fill(x0, y0, x1, y1, 0xF01A212C);
-        gfx.outline(x0, y0, WIDTH, HEIGHT, 0xFF3A4456);
+        Controls controls = controls(window);
+        String name = RichChatMediaLayout.displayName(displayName, url);
+        String visibleName = font.plainSubstrByWidth(name, Math.max(1, controls.title().width()));
+        gfx.text(font, visibleName, controls.title().left(), controls.title().top(), tokens.text(), false);
 
-        String name = AudioUiLayout.shortName(displayName, url);
+        paintControl(gfx, controls.close(), UiTextureAtlas.Icon.CLOSE, false, tokens, cornerRadius);
+
         long total = AudioPlayerService.durationMs(url);
         if (total <= 0L) {
             total = entry.getDurationMs();
         }
-        long pos = AudioPlayerService.positionMs(url);
-        String header = name + "  " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total);
-        gfx.text(font, header, x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE1_Y, 0xFFE7ECF4, false);
-
-        int rowTop = y0 + 11;
-        Rects rects = buttonRects(x0 + PAD, rowTop);
-        boolean playing = AudioPlayerService.isPlaying(url);
-        boolean loop = AudioPlayerService.isLoopEnabled(url);
-        String playIcon = playing ? "⏸" : "▶";
-        String loopIcon = loop ? "🔁" : "1×";
-        String openIcon = "⧉";
-        String closeIcon = "✕";
-        paintButton(gfx, font, rects.playL, rects.top, rects.playR, rects.bottom, playIcon, true);
-        paintButton(gfx, font, rects.loopL, rects.top, rects.loopR, rects.bottom, loopIcon, loop);
-        paintButton(gfx, font, rects.openL, rects.top, rects.openR, rects.bottom, openIcon, false);
-        paintButton(gfx, font, rects.removeL, rects.top, rects.removeR, rects.bottom, closeIcon, false);
-
-        int barX0 = x0 + PAD;
-        int barX1 = x1 - PAD;
-        int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-        int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        gfx.fill(barX0, barY0, barX1, barY1, 0xFF4A5568);
-        float ratio = total <= 0L ? 0.0f : Math.clamp((float) pos / total, 0.0f, 1.0f);
-        int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
-        gfx.fill(barX0, barY0, fillX, barY1, 0xFF64C8FF);
+        total = Math.max(0L, total);
+        long position = Math.max(0L, AudioPlayerService.positionMs(url));
 
         if (entry.getState() == AudioEntry.State.LOADING) {
-            gfx.text(font, I18n.get("chatupgrade.floating.audio.loading"), x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, 0xFFCAD2DD, false);
+            String label = I18n.get("chatupgrade.floating.audio.loading");
+            gfx.text(font, label, controls.play().left(), controls.play().top() + 3, tokens.muted(), false);
         } else if (entry.getState() == AudioEntry.State.FAILED) {
-            gfx.text(font, I18n.get("chatupgrade.floating.audio.failed"), x0 + PAD, y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y, 0xFFFF9090, false);
+            gfx.text(
+                    font,
+                    I18n.get("chatupgrade.floating.audio.failed"),
+                    controls.play().left(),
+                    controls.play().top() + 3,
+                    tokens.failureText(),
+                    false);
+        } else {
+            boolean playing = AudioPlayerService.isPlaying(url);
+            boolean loop = AudioPlayerService.isLoopEnabled(url);
+            paintControl(
+                    gfx,
+                    controls.play(),
+                    playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
+                    playing,
+                    tokens,
+                    cornerRadius);
+            paintControl(gfx, controls.loop(), UiTextureAtlas.Icon.LOOP, loop, tokens, cornerRadius);
+            paintControl(gfx, controls.open(), UiTextureAtlas.Icon.OPEN, false, tokens, cornerRadius);
         }
+
+        paintProgress(gfx, controls.progress(), position, total, tokens, cornerRadius);
+        String time = ChatUpgradeFormatters.formatMs(position) + " / " + ChatUpgradeFormatters.formatMs(total);
+        gfx.text(font, time, controls.time().left(), controls.time().top(), tokens.muted(), false);
     }
 
     public static boolean mouseClicked(MouseButtonEvent event, int screenWidth, int screenHeight) {
@@ -139,39 +150,43 @@ public final class AudioFloatingWindow {
             return false;
         }
         clampToScreen(screenWidth, screenHeight);
-        if (!inside(event.x(), event.y(), x, y, x + WIDTH, y + HEIGHT)) {
+        RichChatBounds window = windowBounds();
+        if (!inside(event.x(), event.y(), window)) {
             return false;
         }
-        int rowTop = y + 11;
-        Rects rects = buttonRects(x + PAD, rowTop);
-        if (inside(event.x(), event.y(), rects.playL, rects.top, rects.playR, rects.bottom)) {
-            AudioPlayerService.toggle(url);
-            return true;
-        }
-        if (inside(event.x(), event.y(), rects.loopL, rects.top, rects.loopR, rects.bottom)) {
-            AudioPlayerService.toggleLoop(url);
-            return true;
-        }
-        if (inside(event.x(), event.y(), rects.openL, rects.top, rects.openR, rects.bottom)) {
-            openUrl(url);
-            return true;
-        }
-        if (inside(event.x(), event.y(), rects.removeL, rects.top, rects.removeR, rects.bottom)) {
+        Controls controls = controls(window);
+        if (inside(event.x(), event.y(), controls.close())) {
             visible = false;
             dragging = false;
             ChatGestureArena.release(ChatGestureArena.Owner.FLOATING_AUDIO);
             return true;
         }
-        int barX0 = x + PAD;
-        int barX1 = x + WIDTH - PAD;
-        int barY0 = y + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-        int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        if (inside(event.x(), event.y(), barX0, barY0 - 4, barX1, barY1 + 4)) {
-            double ratio = Math.clamp((event.x() - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+        if (inside(event.x(), event.y(), controls.play())) {
+            AudioPlayerService.toggle(url);
+            return true;
+        }
+        if (inside(event.x(), event.y(), controls.loop())) {
+            AudioPlayerService.toggleLoop(url);
+            return true;
+        }
+        if (inside(event.x(), event.y(), controls.open())) {
+            openUrl(url);
+            return true;
+        }
+        if (inside(event.x(), event.y(), expandVertical(controls.progress(), 4))) {
+            double ratio = Math.clamp(
+                    (event.x() - controls.progress().left()) / Math.max(1.0, controls.progress().width()),
+                    0.0,
+                    1.0);
             AudioPlayerService.seek(url, ratio);
             return true;
         }
-        if (inside(event.x(), event.y(), x, y, x + WIDTH, y + DRAG_H)) {
+        RichChatBounds dragArea = new RichChatBounds(
+                window.left(),
+                window.top(),
+                controls.close().left() - 2,
+                window.top() + DRAG_H);
+        if (inside(event.x(), event.y(), dragArea)) {
             if (!ChatGestureArena.tryCapture(
                     ChatGestureArena.Owner.FLOATING_AUDIO,
                     AudioFloatingWindow::cancelDrag)) {
@@ -180,7 +195,6 @@ public final class AudioFloatingWindow {
             dragging = true;
             dragOffsetX = (int) event.x() - x;
             dragOffsetY = (int) event.y() - y;
-            return true;
         }
         return true;
     }
@@ -206,13 +220,82 @@ public final class AudioFloatingWindow {
         if (!isVisible()) {
             return false;
         }
-        if (event.button() == 0 && dragging
+        if (event.button() == 0
+                && dragging
                 && ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.FLOATING_AUDIO)) {
             dragging = false;
             ChatGestureArena.release(ChatGestureArena.Owner.FLOATING_AUDIO);
             return true;
         }
         return false;
+    }
+
+    private static Controls controls(RichChatBounds window) {
+        RichChatBounds close = RichChatBounds.ofSize(
+                window.right() - PAD - CONTROL_SIZE,
+                window.top() + 4,
+                CONTROL_SIZE,
+                CONTROL_SIZE);
+        RichChatBounds title = new RichChatBounds(
+                window.left() + PAD,
+                window.top() + 7,
+                close.left() - 5,
+                window.top() + 17);
+        int controlsTop = window.top() + 22;
+        RichChatBounds play = RichChatBounds.ofSize(window.left() + PAD, controlsTop, CONTROL_SIZE, CONTROL_SIZE);
+        RichChatBounds loop = RichChatBounds.ofSize(
+                play.right() + CONTROL_GAP,
+                controlsTop,
+                CONTROL_SIZE,
+                CONTROL_SIZE);
+        RichChatBounds open = RichChatBounds.ofSize(
+                loop.right() + CONTROL_GAP,
+                controlsTop,
+                CONTROL_SIZE,
+                CONTROL_SIZE);
+        RichChatBounds time = RichChatBounds.ofSize(window.right() - PAD - 52, controlsTop + 4, 52, 10);
+        RichChatBounds progress = new RichChatBounds(
+                open.right() + 6,
+                controlsTop + 6,
+                Math.max(open.right() + 7, time.left() - 5),
+                controlsTop + 10);
+        return new Controls(title, close, play, loop, open, progress, time);
+    }
+
+    private static void paintControl(
+            GuiGraphicsExtractor gfx,
+            RichChatBounds bounds,
+            UiTextureAtlas.Icon icon,
+            boolean active,
+            ChatAppearanceSnapshot.Media tokens,
+            int cornerRadius) {
+        UiPrimitives.fillRounded(
+                gfx,
+                bounds,
+                Math.min(cornerRadius, bounds.height() / 2),
+                active ? tokens.controlActiveBackground() : tokens.controlBackground());
+        UiTextureAtlas.drawIcon(gfx, icon, inset(bounds, 3), tokens.text());
+    }
+
+    private static void paintProgress(
+            GuiGraphicsExtractor gfx,
+            RichChatBounds bounds,
+            long positionMs,
+            long durationMs,
+            ChatAppearanceSnapshot.Media tokens,
+            int cornerRadius) {
+        UiPrimitives.fillRounded(gfx, bounds, Math.min(cornerRadius, bounds.height() / 2), tokens.progressTrack());
+        float ratio = durationMs <= 0L
+                ? 0.0F
+                : Math.clamp((float) positionMs / durationMs, 0.0F, 1.0F);
+        int fillRight = bounds.left() + Math.round(bounds.width() * ratio);
+        if (fillRight > bounds.left()) {
+            UiPrimitives.fillRounded(
+                    gfx,
+                    new RichChatBounds(bounds.left(), bounds.top(), fillRight, bounds.bottom()),
+                    Math.min(cornerRadius, bounds.height() / 2),
+                    tokens.progressFill());
+        }
     }
 
     private static void openUrl(String value) {
@@ -222,46 +305,47 @@ public final class AudioFloatingWindow {
         }
     }
 
-    private static void clampToScreen(int w, int h) {
-        int maxX = Math.max(0, w - WIDTH - 2);
-        int maxY = Math.max(0, h - HEIGHT - 2);
+    private static void clampToScreen(int screenWidth, int screenHeight) {
+        int maxX = Math.max(2, screenWidth - WIDTH - 2);
+        int maxY = Math.max(2, screenHeight - HEIGHT - 2);
         x = Math.clamp(x, 2, maxX);
         y = Math.clamp(y, 2, maxY);
     }
 
-    private static void paintButton(
-            GuiGraphicsExtractor gfx,
-            Font font,
-            int x0, int y0, int x1, int y1,
-            String label,
-            boolean active) {
-        int bg = active ? 0xFF4C6284 : 0xFF3A4456;
-        gfx.fill(x0, y0, x1, y1, bg);
-        int tx = x0 + Math.max(1, (x1 - x0 - font.width(label)) / 2);
-        gfx.text(font, label, tx, y0, 0xFFE7ECF4, false);
+    private static RichChatBounds windowBounds() {
+        return RichChatBounds.ofSize(x, y, WIDTH, HEIGHT);
     }
 
-    private static boolean inside(double px, double py, int x0, int y0, int x1, int y1) {
-        return px >= x0 && px < x1 && py >= y0 && py < y1;
+    private static RichChatBounds inset(RichChatBounds bounds, int amount) {
+        return new RichChatBounds(
+                bounds.left() + amount,
+                bounds.top() + amount,
+                bounds.right() - amount,
+                bounds.bottom() - amount);
     }
 
-    private static Rects buttonRects(int left, int top) {
-        int playL = left;
-        int playR = playL + BTN_W;
-        int loopL = playR + BTN_GAP;
-        int loopR = loopL + BTN_W;
-        int openL = loopR + BTN_GAP;
-        int openR = openL + BTN_W;
-        int removeL = openR + BTN_GAP;
-        int removeR = removeL + BTN_W;
-        return new Rects(playL, playR, loopL, loopR, openL, openR, removeL, removeR, top, top + BTN_H);
+    private static RichChatBounds expandVertical(RichChatBounds bounds, int amount) {
+        return new RichChatBounds(
+                bounds.left(),
+                bounds.top() - amount,
+                bounds.right(),
+                bounds.bottom() + amount);
     }
 
-    private record Rects(
-            int playL, int playR,
-            int loopL, int loopR,
-            int openL, int openR,
-            int removeL, int removeR,
-            int top, int bottom) {
+    private static boolean inside(double pointerX, double pointerY, RichChatBounds bounds) {
+        return pointerX >= bounds.left()
+                && pointerX < bounds.right()
+                && pointerY >= bounds.top()
+                && pointerY < bounds.bottom();
+    }
+
+    private record Controls(
+            RichChatBounds title,
+            RichChatBounds close,
+            RichChatBounds play,
+            RichChatBounds loop,
+            RichChatBounds open,
+            RichChatBounds progress,
+            RichChatBounds time) {
     }
 }

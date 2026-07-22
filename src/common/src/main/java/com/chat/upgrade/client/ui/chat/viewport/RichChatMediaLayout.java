@@ -6,28 +6,34 @@ import net.minecraft.client.gui.Font;
 
 /** Shared media-card geometry consumed by sizing, rendering, and hit testing. */
 public final class RichChatMediaLayout {
-    public static final int PREFERRED_WIDTH = 240;
-    public static final int AUDIO_HEIGHT = 58;
-    public static final int STATUS_HEIGHT = 38;
-    public static final int VIDEO_FOOTER_HEIGHT = 30;
+    public static final int IMAGE_PREFERRED_WIDTH = 240;
+    public static final int PLAYER_PREFERRED_WIDTH = 132;
+    public static final int AUDIO_HEIGHT = 42;
+    public static final int COMPACT_AUDIO_HEIGHT = 34;
+    public static final int STATUS_HEIGHT = 28;
+    public static final int VIDEO_FOOTER_HEIGHT = 24;
     public static final int IMAGE_MAX_HEIGHT = 180;
     public static final int IMAGE_PLACEHOLDER_HEIGHT = 88;
 
-    private static final int PAD = 7;
-    private static final int SMALL_CONTROL = 16;
-    private static final int PRIMARY_CONTROL = 24;
-    private static final int CONTROL_GAP = 3;
+    private static final int PAD = 6;
+    private static final int SMALL_CONTROL = 14;
+    private static final int PRIMARY_CONTROL = 18;
+    private static final int CONTROL_GAP = 2;
 
     private RichChatMediaLayout() {
     }
 
-    public static int cardWidth(int maxWidth) {
-        return Math.max(1, Math.min(PREFERRED_WIDTH, maxWidth));
+    public static int imageCardWidth(int maxWidth) {
+        return Math.max(1, Math.min(IMAGE_PREFERRED_WIDTH, maxWidth));
     }
 
-    public static int videoHeight(int width) {
-        int previewHeight = Math.clamp(Math.round(Math.max(1, width) * 9.0F / 16.0F), 72, 150);
-        return previewHeight + VIDEO_FOOTER_HEIGHT;
+    public static int playerCardWidth(int maxWidth) {
+        return Math.max(1, Math.min(PLAYER_PREFERRED_WIDTH, maxWidth));
+    }
+
+    public static int videoHeight(int width, boolean compact) {
+        int previewHeight = Math.clamp(Math.round(Math.max(1, width) * 9.0F / 16.0F), 54, 96);
+        return previewHeight + (compact ? 0 : VIDEO_FOOTER_HEIGHT);
     }
 
     public static String displayName(String resourceName, String url) {
@@ -55,44 +61,68 @@ public final class RichChatMediaLayout {
                 Math.max(1, (int) Math.round(safeHeight * scale)));
     }
 
-    public static AudioGeometry audio(RichChatBounds bounds) {
+    public static AudioGeometry audio(RichChatBounds bounds, boolean compact) {
         int top = bounds.top();
         int right = bounds.right();
+        if (compact) {
+            RichChatBounds play = RichChatBounds.ofSize(
+                    bounds.left() + PAD,
+                    top + 8,
+                    PRIMARY_CONTROL,
+                    PRIMARY_CONTROL);
+            RichChatBounds time = RichChatBounds.ofSize(
+                    Math.max(play.right() + 8, right - PAD - 30),
+                    top + 21,
+                    30,
+                    10);
+            RichChatBounds progress = new RichChatBounds(
+                    play.right() + 7,
+                    top + 24,
+                    Math.max(play.right() + 8, time.left() - 4),
+                    top + 28);
+            RichChatBounds title = new RichChatBounds(
+                    play.right() + 7,
+                    top + 6,
+                    right - PAD,
+                    top + 16);
+            RichChatBounds empty = RichChatBounds.ofSize(right - PAD, top + PAD, 0, 0);
+            return new AudioGeometry(bounds, title, play, empty, empty, empty, progress, time);
+        }
         RichChatBounds popout = RichChatBounds.ofSize(
                 right - PAD - SMALL_CONTROL,
-                top + PAD,
+                top + 5,
                 SMALL_CONTROL,
                 SMALL_CONTROL);
         RichChatBounds open = RichChatBounds.ofSize(
                 popout.left() - CONTROL_GAP - SMALL_CONTROL,
-                top + PAD,
+                top + 5,
                 SMALL_CONTROL,
                 SMALL_CONTROL);
         RichChatBounds loop = RichChatBounds.ofSize(
                 open.left() - CONTROL_GAP - SMALL_CONTROL,
-                top + PAD,
+                top + 5,
                 SMALL_CONTROL,
                 SMALL_CONTROL);
         RichChatBounds title = new RichChatBounds(
                 bounds.left() + PAD,
-                top + PAD,
-                Math.max(bounds.left() + PAD, loop.left() - 5),
-                top + PAD + SMALL_CONTROL);
+                top + 5,
+                Math.max(bounds.left() + PAD, loop.left() - 4),
+                top + 15);
         RichChatBounds play = RichChatBounds.ofSize(
                 bounds.left() + PAD,
-                top + 27,
+                top + 20,
                 PRIMARY_CONTROL,
                 PRIMARY_CONTROL);
         RichChatBounds progress = new RichChatBounds(
-                play.right() + 8,
-                top + 32,
-                Math.max(play.right() + 9, right - PAD),
-                top + 36);
+                play.right() + 6,
+                top + 25,
+                Math.max(play.right() + 7, right - PAD),
+                top + 29);
         RichChatBounds time = new RichChatBounds(
                 progress.left(),
-                top + 42,
+                top + 31,
                 progress.right(),
-                top + 54);
+                top + 41);
         return new AudioGeometry(bounds, title, play, loop, open, popout, progress, time);
     }
 
@@ -102,46 +132,61 @@ public final class RichChatMediaLayout {
             long positionMs,
             long durationMs,
             int rawWidth,
-            int rawHeight) {
-        int footerTop = Math.max(bounds.top(), bounds.bottom() - VIDEO_FOOTER_HEIGHT);
+            int rawHeight,
+            boolean compact) {
+        int footerTop = compact
+                ? bounds.bottom()
+                : Math.max(bounds.top(), bounds.bottom() - VIDEO_FOOTER_HEIGHT);
         RichChatBounds preview = new RichChatBounds(
                 bounds.left(),
                 bounds.top(),
                 bounds.right(),
                 footerTop);
         RichChatBounds frame = fitRect(preview, rawWidth, rawHeight);
-        RichChatBounds play = RichChatBounds.ofSize(
-                bounds.left() + PAD,
-                footerTop + 4,
-                22,
-                22);
+        RichChatBounds play = compact
+                ? RichChatBounds.ofSize(
+                        bounds.left() + Math.max(0, (bounds.width() - 26) / 2),
+                        bounds.top() + Math.max(0, (bounds.height() - 26) / 2),
+                        26,
+                        26)
+                : RichChatBounds.ofSize(
+                        bounds.left() + PAD,
+                        footerTop + 3,
+                        PRIMARY_CONTROL,
+                        PRIMARY_CONTROL);
         String leftLabel = ChatUpgradeFormatters.formatMs(Math.max(0L, positionMs));
         String rightLabel = ChatUpgradeFormatters.formatMs(Math.max(0L, durationMs));
-        int leftWidth = font == null ? 28 : font.width(leftLabel);
-        int rightWidth = font == null ? 28 : font.width(rightLabel);
-        RichChatBounds leftTime = RichChatBounds.ofSize(
-                play.right() + 6,
-                footerTop + 11,
-                leftWidth,
-                10);
-        RichChatBounds rightTime = RichChatBounds.ofSize(
-                bounds.right() - PAD - rightWidth,
-                footerTop + 11,
-                rightWidth,
-                10);
-        RichChatBounds progress = new RichChatBounds(
-                leftTime.right() + 6,
-                footerTop + 13,
-                Math.max(leftTime.right() + 7, rightTime.left() - 6),
-                footerTop + 17);
+        int leftWidth = font == null ? 24 : font.width(leftLabel);
+        int rightWidth = font == null ? 24 : font.width(rightLabel);
+        RichChatBounds leftTime = compact
+                ? RichChatBounds.ofSize(bounds.left(), bounds.bottom(), 0, 0)
+                : RichChatBounds.ofSize(
+                        play.right() + 4,
+                        footerTop + 8,
+                        leftWidth,
+                        10);
+        RichChatBounds rightTime = compact
+                ? RichChatBounds.ofSize(bounds.right(), bounds.bottom(), 0, 0)
+                : RichChatBounds.ofSize(
+                        bounds.right() - PAD - rightWidth,
+                        footerTop + 8,
+                        rightWidth,
+                        10);
+        RichChatBounds progress = compact
+                ? RichChatBounds.ofSize(bounds.left(), bounds.bottom(), 0, 0)
+                : new RichChatBounds(
+                        leftTime.right() + 4,
+                        footerTop + 10,
+                        Math.max(leftTime.right() + 5, rightTime.left() - 4),
+                        footerTop + 14);
         RichChatBounds title = new RichChatBounds(
                 bounds.left() + PAD,
-                bounds.top() + PAD,
-                Math.max(bounds.left() + PAD, bounds.right() - 30),
-                bounds.top() + PAD + 14);
+                bounds.top() + 5,
+                Math.max(bounds.left() + PAD, bounds.right() - 25),
+                bounds.top() + (compact ? 14 : 15));
         RichChatBounds open = RichChatBounds.ofSize(
                 bounds.right() - PAD - SMALL_CONTROL,
-                bounds.top() + PAD,
+                bounds.top() + 5,
                 SMALL_CONTROL,
                 SMALL_CONTROL);
         return new VideoGeometry(bounds, preview, frame, title, open, play, progress, leftTime, rightTime);

@@ -750,6 +750,8 @@ public final class ChatSettingsOverlay {
 
     private List<SettingsOption> mediaOptions() {
         return List.of(
+                bool("chatupgrade.settings.option.compact_media_cards", () -> draft.compactMediaCards,
+                        value -> draft.compactMediaCards = value),
                 bool("chatupgrade.settings.option.manual_image", () -> draft.manualImageReveal,
                         value -> draft.manualImageReveal = value),
                 bool("chatupgrade.settings.option.manual_audio", () -> draft.manualAudioReveal,
@@ -875,6 +877,7 @@ public final class ChatSettingsOverlay {
                 syncTextEditorValue("");
             }
             case MEDIA -> {
+                draft.compactMediaCards = false;
                 draft.manualImageReveal = false;
                 draft.manualAudioReveal = false;
                 draft.manualVideoReveal = false;

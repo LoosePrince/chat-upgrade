@@ -8,6 +8,7 @@ import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeInlineImageInteraction;
 import com.chat.upgrade.client.ui.chat.InlineEmojiHudPaint;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaHoverState;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.util.FormattedCharSequence;
@@ -42,6 +43,12 @@ public abstract class ChatComponentInnerMixin {
         int lineHeight = chatupgrade$lineHeight();
         graphics.updatePose(pose -> pose.translate(0.0F, smoothOffset));
         try {
+            if (graphics instanceof ChatUpgradeDrawingFocusedAccessor focused) {
+                var localMouse = focused.chatupgrade$localMousePos();
+                RichChatMediaHoverState.update(localMouse.x, localMouse.y);
+            } else {
+                RichChatMediaHoverState.clear();
+            }
             UpgradePhantomHudLayout.dispatchLinePaint(line, y, opacity);
             InlineEmojiHudPaint.paintLineEmoji(line, y, opacity, lineHeight);
             ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity, lineHeight);

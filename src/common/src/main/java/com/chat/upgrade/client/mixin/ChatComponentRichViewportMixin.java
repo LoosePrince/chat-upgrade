@@ -10,6 +10,7 @@ import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceFrame;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaHoverState;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayout;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayoutEngine;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
@@ -70,6 +71,7 @@ public abstract class ChatComponentRichViewportMixin {
             ChatComponent.DisplayMode displayMode,
             Operation<Void> original) {
         if (!ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            RichChatMediaHoverState.clear();
             RichChatInteractionRouter.cancelPointerCapture();
             RichChatInteractionRouter.clearActiveLayout();
             original.call(instance, graphics, screenHeight, ticks, displayMode);
@@ -132,6 +134,12 @@ public abstract class ChatComponentRichViewportMixin {
                                 && surfaceFrame.appearance().vanillaStyleInput());
             } else {
                 RichChatInteractionRouter.clearActiveLayout();
+            }
+            if (displayMode.foreground && graphics instanceof ChatUpgradeDrawingFocusedAccessor focused) {
+                Vector2f localMouse = focused.chatupgrade$localMousePos();
+                RichChatMediaHoverState.update(localMouse.x, localMouse.y);
+            } else {
+                RichChatMediaHoverState.clear();
             }
             if (paintsTimeline) {
                 Runnable paintTimeline = () -> {

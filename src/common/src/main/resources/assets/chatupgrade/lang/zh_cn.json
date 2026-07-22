@@ -48,6 +48,7 @@
   "chatupgrade.settings.option.chat_screen_mask.description": "打开聊天界面时压暗游戏画面",
   "chatupgrade.settings.option.smooth_scroll": "平滑滚动",
   "chatupgrade.settings.option.debug_actions": "消息调试动作",
+  "chatupgrade.settings.option.compact_media_cards": "简约媒体卡片",
   "chatupgrade.settings.option.manual_image": "图片手动加载",
   "chatupgrade.settings.option.manual_audio": "音频手动加载",
   "chatupgrade.settings.option.manual_video": "视频手动加载",

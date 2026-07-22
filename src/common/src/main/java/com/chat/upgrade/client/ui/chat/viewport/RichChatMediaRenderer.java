@@ -1,5 +1,6 @@
 package com.chat.upgrade.client.ui.chat.viewport;
 
+import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.ChatUpgradeFormatters;
 import com.chat.upgrade.client.media.audio.AudioEntry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
@@ -280,7 +281,8 @@ public final class RichChatMediaRenderer {
             ChatAppearanceSnapshot.Media tokens,
             int cornerRadius) {
         AudioEntry entry = AudioLoader.getOrLoad(url);
-        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds);
+        boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
+        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, compact);
         String name = RichChatMediaLayout.displayName(resourceName, url);
         String visibleName = font.plainSubstrByWidth(name, Math.max(1, geometry.title().width()));
 
@@ -292,7 +294,7 @@ public final class RichChatMediaRenderer {
                     font,
                     visibleName,
                     geometry.title().left(),
-                    geometry.title().top() + 3,
+                    geometry.title().top(),
                     UiPrimitives.withOpacity(tokens.text(), opacity),
                     false);
             gfx.text(
@@ -329,19 +331,23 @@ public final class RichChatMediaRenderer {
                 font,
                 visibleName,
                 geometry.title().left(),
-                geometry.title().top() + 3,
+                geometry.title().top(),
                 UiPrimitives.withOpacity(tokens.text(), opacity),
                 false);
         paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
-                opacity, true, tokens, cornerRadius);
-        paintButton(gfx, geometry.loop(), UiTextureAtlas.Icon.LOOP, opacity, loop, tokens, cornerRadius);
-        paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
-        paintButton(gfx, geometry.popout(), UiTextureAtlas.Icon.POPOUT, opacity, false, tokens, cornerRadius);
+                opacity, playing, tokens, cornerRadius);
+        if (!compact) {
+            paintButton(gfx, geometry.loop(), UiTextureAtlas.Icon.LOOP, opacity, loop, tokens, cornerRadius);
+            paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
+            paintButton(gfx, geometry.popout(), UiTextureAtlas.Icon.POPOUT, opacity, false, tokens, cornerRadius);
+        }
 
         paintProgress(gfx, geometry.progress(), pos, total, opacity, tokens);
         gfx.text(
                 font,
-                ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
+                compact
+                        ? ChatUpgradeFormatters.formatMs(total)
+                        : ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
                 geometry.time().left(),
                 geometry.time().top(),
                 UiPrimitives.withOpacity(tokens.muted(), opacity),
@@ -358,6 +364,8 @@ public final class RichChatMediaRenderer {
             ChatAppearanceSnapshot.Media tokens,
             int cornerRadius) {
         VideoEntry entry = VideoLoader.getOrLoad(url);
+        boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
+        boolean hovered = RichChatMediaHoverState.contains(bounds);
         String name = RichChatMediaLayout.displayName(resourceName, url);
         long pos = Math.max(0L, VideoPlayerService.positionMs(url));
         long total = VideoPlayerService.durationMs(url);
@@ -371,7 +379,8 @@ public final class RichChatMediaRenderer {
                 pos,
                 total,
                 entry.getRawWidth(),
-                entry.getRawHeight());
+                entry.getRawHeight(),
+                compact);
 
         gfx.fill(
                 geometry.preview().left(),
@@ -430,7 +439,7 @@ public final class RichChatMediaRenderer {
                 bounds.left(),
                 bounds.top(),
                 bounds.right(),
-                Math.min(geometry.preview().bottom(), bounds.top() + 28));
+                Math.min(geometry.preview().bottom(), bounds.top() + (compact ? 29 : 24)));
         gfx.fill(
                 titleScrim.left(),
                 titleScrim.top(),
@@ -445,11 +454,27 @@ public final class RichChatMediaRenderer {
                 geometry.title().top(),
                 UiPrimitives.withOpacity(tokens.text(), opacity),
                 false);
-        paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
+        if (compact) {
+            gfx.text(
+                    font,
+                    ChatUpgradeFormatters.formatBytes(entry.getFetchedByteLength()),
+                    geometry.title().left(),
+                    bounds.top() + 16,
+                    UiPrimitives.withOpacity(tokens.muted(), opacity),
+                    false);
+        }
+        if (!compact || hovered) {
+            paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
+        }
 
         boolean playing = VideoPlayerService.isPlaying(url);
-        paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
-                opacity, true, tokens, cornerRadius);
+        if (!compact || !playing || hovered) {
+            paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
+                    opacity, playing, tokens, cornerRadius);
+        }
+        if (compact) {
+            return;
+        }
         gfx.text(
                 font,
                 ChatUpgradeFormatters.formatMs(pos),

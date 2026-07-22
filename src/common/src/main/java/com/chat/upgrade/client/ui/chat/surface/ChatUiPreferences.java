@@ -7,11 +7,12 @@ import net.minecraft.network.chat.Component;
 /** Immutable non-appearance UI preferences consumed while a chat screen is open. */
 public record ChatUiPreferences(
         String inputPlaceholder,
-        boolean screenMaskEnabled) {
+        boolean screenMaskEnabled,
+        boolean compactMediaCards) {
     public static ChatUiPreferences from(ChatUpgradeConfig config) {
         ChatUpgradeConfig source = config == null ? ChatUpgradeConfig.get() : config;
         String placeholder = source.chatInputPlaceholder == null ? "" : source.chatInputPlaceholder;
-        return new ChatUiPreferences(placeholder, source.usesChatScreenMask());
+        return new ChatUiPreferences(placeholder, source.usesChatScreenMask(), source.compactMediaCards);
     }
 
     public Component resolvedInputPlaceholder() {
