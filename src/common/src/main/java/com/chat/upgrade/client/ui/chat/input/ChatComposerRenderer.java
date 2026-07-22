@@ -27,6 +27,32 @@ public final class ChatComposerRenderer {
     private ChatComposerRenderer() {
     }
 
+    public static void paintInputPlaceholder(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            ChatAppearanceSnapshot appearance,
+            RichChatBounds inputBounds,
+            String currentValue,
+            Component placeholder) {
+        if (graphics == null || font == null || appearance == null || inputBounds == null
+                || currentValue == null || !currentValue.isEmpty() || placeholder == null) {
+            return;
+        }
+        String visibleText = font.plainSubstrByWidth(
+                placeholder.getString(),
+                Math.max(0, inputBounds.width()));
+        if (visibleText.isEmpty()) {
+            return;
+        }
+        graphics.text(
+                font,
+                visibleText,
+                inputBounds.left(),
+                inputBounds.top(),
+                appearance.surface().muted(),
+                false);
+    }
+
     public static void paintReplyPreview(
             GuiGraphicsExtractor graphics,
             Font font,

@@ -27,7 +27,7 @@ import net.minecraft.resources.Identifier;
 public final class UiTextureAtlas {
     public enum Icon {
         GEAR,
-        ATTACHMENT,
+        FOLDER,
         EMOJI,
         SEND,
         CLOSE,
@@ -326,7 +326,7 @@ public final class UiTextureAtlas {
             iconGraphics.setStroke(new BasicStroke(1.5F, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             switch (icon) {
                 case GEAR -> paintGear(iconGraphics);
-                case ATTACHMENT -> paintAttachment(iconGraphics);
+                case FOLDER -> paintFolder(iconGraphics);
                 case EMOJI -> paintEmoji(iconGraphics);
                 case SEND -> paintSend(iconGraphics);
                 case CLOSE -> paintClose(iconGraphics);
@@ -356,15 +356,17 @@ public final class UiTextureAtlas {
         }
     }
 
-    private static void paintAttachment(Graphics2D graphics) {
+    private static void paintFolder(Graphics2D graphics) {
         Path2D path = new Path2D.Float();
-        path.moveTo(5.0D, 8.0D);
-        path.lineTo(10.5D, 2.5D);
-        path.curveTo(14.5D, -1.0D, 18.0D, 3.0D, 14.0D, 7.0D);
-        path.lineTo(7.0D, 14.0D);
-        path.curveTo(3.0D, 18.0D, -1.0D, 13.0D, 3.0D, 9.0D);
-        path.lineTo(9.5D, 2.5D);
+        path.moveTo(1.5D, 4.0D);
+        path.lineTo(6.0D, 4.0D);
+        path.lineTo(7.5D, 6.0D);
+        path.lineTo(14.5D, 6.0D);
+        path.lineTo(14.5D, 13.5D);
+        path.lineTo(1.5D, 13.5D);
+        path.closePath();
         graphics.draw(path);
+        graphics.draw(new Line2D.Float(1.5F, 6.0F, 14.5F, 6.0F));
     }
 
     private static void paintEmoji(Graphics2D graphics) {

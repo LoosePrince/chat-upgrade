@@ -1,5 +1,7 @@
 package com.chat.upgrade.client.upload;
 import com.chat.upgrade.ChatUpgrade;
+import com.chat.upgrade.client.ui.chat.input.NativeFileDialogModal;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
 
 import javax.imageio.ImageIO;
@@ -7,8 +9,6 @@ import javax.swing.SwingUtilities;
 import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.Image;
-import java.awt.FileDialog;
-import java.awt.Frame;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 /**
- * Resolves local images: folder scan, Swing {@link JFileChooser}, AWT clipboard (requires non-headless JVM).
+ * Resolves local media from folders, native file dialogs, and the AWT clipboard.
  */
 public final class LocalImageSources {
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
@@ -106,8 +106,15 @@ public final class LocalImageSources {
         return pickWithFileDialog(I18n.get("chatupgrade.file_chooser.attachment.title"), ATTACHMENT_EXTENSIONS);
     }
 
+    public static Optional<Path> pickAttachmentWithFileChooser(NativeFileDialogModal.Session session) {
+        return pickWithFileDialog(
+                session,
+                I18n.get("chatupgrade.file_chooser.attachment.title"),
+                ATTACHMENT_EXTENSIONS);
+    }
+
     /**
-     * Cross-platform {@link JFileChooser}; requires {@code java.awt.headless=false} and a working AWT/Swing display.
+     * Cross-platform native file dialog; requires {@code java.awt.headless=false} and a working AWT display.
      */
     public static Optional<Path> pickImageWithFileChooser() {
         if (GraphicsEnvironment.isHeadless()) {
@@ -153,42 +160,25 @@ public final class LocalImageSources {
     }
 
     private static Optional<Path> pickWithFileDialog(String title, Set<String> extensions) {
-        final Path[] holder = new Path[1];
-        Runnable show = () -> {
-            try {
-                FileDialog dialog = new FileDialog((Frame) null, title, FileDialog.LOAD);
-                dialog.setMultipleMode(false);
-                dialog.setFilenameFilter((dir, name) -> {
-                    if (name == null) {
-                        return false;
-                    }
-                    int dot = name.lastIndexOf('.');
-                    if (dot < 0 || dot >= name.length() - 1) {
-                        return false;
-                    }
-                    String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
-                    return extensions.contains(ext);
-                });
-                dialog.setVisible(true);
-                String dir = dialog.getDirectory();
-                String file = dialog.getFile();
-                if (dir != null && file != null && !file.isBlank()) {
-                    holder[0] = Path.of(dir, file);
-                }
-            } catch (Throwable t) {
-                ChatUpgrade.LOGGER.warn("ChatUpgrade: FileDialog error: {}", t.toString());
-            }
-        };
-        try {
-            if (SwingUtilities.isEventDispatchThread()) {
-                show.run();
-            } else {
-                SwingUtilities.invokeAndWait(show);
-            }
-        } catch (Throwable t) {
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: FileDialog invoke error: {}", t.toString());
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.getWindow() == null) {
+            return Optional.empty();
         }
-        return Optional.ofNullable(holder[0]);
+        Optional<NativeFileDialogModal.Session> session = NativeFileDialogModal.tryOpen(
+                minecraft.getWindow().handle());
+        if (session.isEmpty()) {
+            return Optional.empty();
+        }
+        try (NativeFileDialogModal.Session currentSession = session.get()) {
+            return pickWithFileDialog(currentSession, title, extensions);
+        }
+    }
+
+    private static Optional<Path> pickWithFileDialog(
+            NativeFileDialogModal.Session session,
+            String title,
+            Set<String> extensions) {
+        return NativeFileDialogModal.pickFile(session, title, extensions);
     }
 
     /**

@@ -19,6 +19,7 @@ import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
 import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.chat.surface.ChatPresentationMode;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.Font;
@@ -34,7 +35,21 @@ public final class RichChatLayoutEngine {
             Font font,
             RichChatViewportMetrics metrics,
             ChatAppearanceSnapshot appearance) {
-        return layout(font, metrics, RichChatStateStore.snapshotNewestFirst(), RichChatStateStore.version(), appearance);
+        return layoutFromStore(font, metrics, appearance, ChatPresentationMode.OPEN_PANEL);
+    }
+
+    public RichChatLayout layoutFromStore(
+            Font font,
+            RichChatViewportMetrics metrics,
+            ChatAppearanceSnapshot appearance,
+            ChatPresentationMode presentationMode) {
+        return layout(
+                font,
+                metrics,
+                RichChatStateStore.snapshotNewestFirst(),
+                RichChatStateStore.version(),
+                appearance,
+                presentationMode);
     }
 
     public RichChatLayout layoutFromStore(Font font, RichChatViewportMetrics metrics) {
@@ -47,6 +62,16 @@ public final class RichChatLayoutEngine {
             List<RichChatMessage> newestFirst,
             long storeVersion,
             ChatAppearanceSnapshot appearance) {
+        return layout(font, metrics, newestFirst, storeVersion, appearance, ChatPresentationMode.OPEN_PANEL);
+    }
+
+    public RichChatLayout layout(
+            Font font,
+            RichChatViewportMetrics metrics,
+            List<RichChatMessage> newestFirst,
+            long storeVersion,
+            ChatAppearanceSnapshot appearance,
+            ChatPresentationMode presentationMode) {
         if (font == null) {
             throw new IllegalArgumentException("font must not be null");
         }
@@ -56,6 +81,9 @@ public final class RichChatLayoutEngine {
         ChatAppearanceSnapshot policy = appearance == null
                 ? ChatAppearanceRuntime.current()
                 : appearance;
+        ChatPresentationMode mode = presentationMode == null
+                ? ChatPresentationMode.CLOSED_HUD
+                : presentationMode;
         if (newestFirst == null || newestFirst.isEmpty()) {
             return RichChatLayout.empty(storeVersion, metrics.textWidth());
         }
@@ -70,7 +98,7 @@ public final class RichChatLayoutEngine {
         int cursorY = 0;
         for (int index = 0; index < timeline.size(); index++) {
             ChatTimelineProjection projection = timeline.get(index);
-            RichChatMessageLayout layout = layoutMessage(font, metrics, projection, cursorY, policy);
+            RichChatMessageLayout layout = layoutMessage(font, metrics, projection, cursorY, policy, mode);
             cursorY = layout.bounds().bottom();
             if (!layout.nodes().isEmpty()) {
                 messageLayouts.add(layout);
@@ -107,7 +135,8 @@ public final class RichChatLayoutEngine {
             RichChatViewportMetrics metrics,
             ChatTimelineProjection timeline,
             int top,
-            ChatAppearanceSnapshot policy) {
+            ChatAppearanceSnapshot policy,
+            ChatPresentationMode presentationMode) {
         RichChatMessage message = timeline.message();
         List<RichChatRenderNode> nodes = new ArrayList<>();
         List<RichChatHitBox> hitBoxes = new ArrayList<>();
@@ -333,7 +362,7 @@ public final class RichChatLayoutEngine {
 
         int alignmentShift = alignRight
                 ? 0
-                : nonPlayerAlignmentShift(timeline, policy, metrics, visualBounds);
+                : nonPlayerAlignmentShift(timeline, policy, metrics, visualBounds, presentationMode);
         if (alignmentShift != 0) {
             visualBounds = visualBounds.translate(alignmentShift, 0);
             identityBounds = translate(identityBounds, alignmentShift, 0);
@@ -356,8 +385,9 @@ public final class RichChatLayoutEngine {
             ChatTimelineProjection timeline,
             ChatAppearanceSnapshot policy,
             RichChatViewportMetrics metrics,
-            RichChatBounds visualBounds) {
-        if (timeline.kind().playerAuthored()) {
+            RichChatBounds visualBounds,
+            ChatPresentationMode presentationMode) {
+        if (timeline.kind().playerAuthored() || presentationMode == ChatPresentationMode.CLOSED_HUD) {
             return 0;
         }
         int contentLeft = metrics.textLeft();

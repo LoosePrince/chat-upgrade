@@ -55,10 +55,12 @@ public final class AttachmentDraftResolver {
 
     public static ResolveResult pickFile() {
         Optional<Path> picked = LocalImageSources.pickAttachmentWithFileChooser();
-        if (picked.isEmpty()) {
-            return ResolveResult.message(Component.translatable("chatupgrade.upload.no_file_picked").withStyle(ChatFormatting.GRAY));
-        }
-        return fromFile(picked.get(), AttachmentDraft.Source.FILE_PICKER, Optional.empty());
+        return pickedFileResult(picked, Optional.empty());
+    }
+
+    public static ResolveResult pickFile(NativeFileDialogModal.Session session) {
+        Optional<Path> picked = LocalImageSources.pickAttachmentWithFileChooser(session);
+        return pickedFileResult(picked, Optional.empty());
     }
 
     public static ResolveResult pickFile(InlineResourceType type) {
@@ -67,10 +69,16 @@ public final class AttachmentDraftResolver {
             case AUDIO -> LocalImageSources.pickAudioWithFileChooser();
             case VIDEO -> LocalImageSources.pickVideoWithFileChooser();
         };
+        return pickedFileResult(picked, Optional.of(type));
+    }
+
+    private static ResolveResult pickedFileResult(
+            Optional<Path> picked,
+            Optional<InlineResourceType> forcedType) {
         if (picked.isEmpty()) {
             return ResolveResult.message(Component.translatable("chatupgrade.upload.no_file_picked").withStyle(ChatFormatting.GRAY));
         }
-        return fromFile(picked.get(), AttachmentDraft.Source.FILE_PICKER, Optional.of(type));
+        return fromFile(picked.get(), AttachmentDraft.Source.FILE_PICKER, forcedType);
     }
 
     public static ResolveResult fromClipboard() {

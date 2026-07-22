@@ -24,7 +24,9 @@
     "ChatScreenRichInputMixin",
     "CommandSuggestionsAnchorMixin",
     "ContainerEventHandlerAudioFloatingDragMixin",
-    "MouseHandlerActiveButtonAccessor"
+    "KeyboardHandlerModalInputMixin",
+    "MouseHandlerActiveButtonAccessor",
+    "MouseHandlerModalInputMixin"
   ],
   "injectors": {
     "defaultRequire": 1

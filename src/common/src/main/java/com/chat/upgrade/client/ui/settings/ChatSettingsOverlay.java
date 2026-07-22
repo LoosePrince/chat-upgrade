@@ -17,9 +17,13 @@ import com.chat.upgrade.client.ui.render.UiTextureAtlas;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.PreeditEvent;
 import net.minecraft.client.resources.language.I18n;
+import net.minecraft.network.chat.Component;
 
 /** Owns settings draft state, rendering, hit testing, preview, commit, and rollback. */
 public final class ChatSettingsOverlay {
@@ -31,9 +35,12 @@ public final class ChatSettingsOverlay {
     private static final int NAV_WIDTH = 132;
     private static final int OPTION_GAP = 3;
     private static final int OPTION_HEIGHT = 25;
+    private static final int DESCRIBED_OPTION_HEIGHT = 40;
     private static final int COLOR_OPTION_HEIGHT = 50;
+    private static final int TEXT_OPTION_HEIGHT = 59;
     private static final int HEADING_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 18;
+    private static final int PLACEHOLDER_MAX_LENGTH = 256;
     private static final float TEXT_SCALE = 0.75F;
 
     private static final int DIM = 0xA0000000;
@@ -56,6 +63,9 @@ public final class ChatSettingsOverlay {
     private ChatUpgradeConfig draft;
     private double scrollY;
     private @Nullable ActiveSlider activeSlider;
+    private @Nullable EditBox textEditor;
+    private @Nullable SettingsOption.TextOption visibleTextOption;
+    private boolean syncingTextEditor;
     private @Nullable String errorMessage;
     private int screenWidth = 1;
     private int screenHeight = 1;
@@ -64,7 +74,7 @@ public final class ChatSettingsOverlay {
         return open;
     }
 
-    public void open(int width, int height) {
+    public void open(Font font, int width, int height) {
         screenWidth = Math.max(1, width);
         screenHeight = Math.max(1, height);
         baseline = ChatClientConfigRuntime.draft();
@@ -74,6 +84,7 @@ public final class ChatSettingsOverlay {
         activeSlider = null;
         errorMessage = null;
         open = true;
+        createTextEditor(font);
         ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.SETTINGS);
         ChatSurfaceController.setFocusOwner(ChatSurfaceState.FocusOwner.OVERLAY);
         previewDraft();
@@ -109,11 +120,35 @@ public final class ChatSettingsOverlay {
         }
         if (event.isEscape()) {
             cancel();
+            return true;
+        }
+        if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
+            textEditor.keyPressed(event);
         }
         return true;
     }
 
-    public boolean mouseClicked(MouseButtonEvent event, int width, int height) {
+    public boolean charTyped(CharacterEvent event) {
+        if (!open) {
+            return false;
+        }
+        if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
+            textEditor.charTyped(event);
+        }
+        return true;
+    }
+
+    public boolean preeditUpdated(PreeditEvent event) {
+        if (!open) {
+            return false;
+        }
+        if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
+            textEditor.preeditUpdated(event);
+        }
+        return true;
+    }
+
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick, int width, int height) {
         if (!open) {
             return false;
         }
@@ -143,8 +178,19 @@ public final class ChatSettingsOverlay {
             category = selected;
             scrollY = 0.0D;
             activeSlider = null;
+            setTextEditorFocused(false);
+            layoutTextEditor(layout());
             errorMessage = null;
             return true;
+        }
+        layoutTextEditor(layout);
+        if (textEditor != null && textEditor.visible) {
+            if (textEditor.isMouseOver(event.x(), event.y())) {
+                textEditor.setFocused(true);
+                textEditor.mouseClicked(event, doubleClick);
+                return true;
+            }
+            textEditor.setFocused(false);
         }
         for (OptionRow row : optionRows(layout)) {
             if (!row.bounds().contains(round(event.x()), round(event.y()))) {
@@ -156,21 +202,27 @@ public final class ChatSettingsOverlay {
         return true;
     }
 
-    public boolean mouseDragged(double mouseX, double mouseY, int button) {
-        if (!open || button != 0) {
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (!open || event.button() != 0) {
             return false;
         }
+        if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
+            textEditor.mouseDragged(event, dx, dy);
+        }
         if (activeSlider != null) {
-            updateSlider(activeSlider, mouseX);
+            updateSlider(activeSlider, event.x());
         }
         return true;
     }
 
-    public boolean mouseReleased(int button) {
+    public boolean mouseReleased(MouseButtonEvent event) {
         if (!open) {
             return false;
         }
-        if (button == 0) {
+        if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
+            textEditor.mouseReleased(event);
+        }
+        if (event.button() == 0) {
             activeSlider = null;
         }
         return true;
@@ -185,6 +237,7 @@ public final class ChatSettingsOverlay {
         if (layout.optionsViewport().contains(round(mouseX), round(mouseY))) {
             double maxScroll = maxScroll(layout);
             scrollY = Math.clamp(scrollY - scrollAmount * 20.0D, 0.0D, maxScroll);
+            layoutTextEditor(layout);
         }
         return true;
     }
@@ -201,6 +254,7 @@ public final class ChatSettingsOverlay {
         }
         updateScreenSize(width, height);
         Layout layout = layout();
+        layoutTextEditor(layout);
         graphics.fill(0, 0, screenWidth, screenHeight, DIM);
         UiPrimitives.paintBox(graphics, layout.panel(), 7, 1, PANEL, PANEL_BORDER);
         graphics.fill(
@@ -300,15 +354,49 @@ public final class ChatSettingsOverlay {
                             0x553F516A);
                     continue;
                 }
+                if (row.option() instanceof SettingsOption.TextOption textOption) {
+                    int background = row.bounds().contains(mouseX, mouseY) ? ROW_HOVER : ROW;
+                    UiPrimitives.fillRounded(graphics, row.bounds(), 4, background);
+                    paintText(
+                            graphics,
+                            font,
+                            I18n.get(textOption.labelKey()),
+                            row.bounds().left() + 7,
+                            row.bounds().top() + 7,
+                            TEXT);
+                    paintText(
+                            graphics,
+                            font,
+                            trim(font, I18n.get(textOption.descriptionKey()), row.bounds().width() - 14),
+                            row.bounds().left() + 7,
+                            row.bounds().top() + 21,
+                            MUTED);
+                    if (textEditor != null && textEditor.visible) {
+                        textEditor.extractWidgetRenderState(graphics, mouseX, mouseY, 0.0F);
+                    }
+                    continue;
+                }
                 int background = row.bounds().contains(mouseX, mouseY) ? ROW_HOVER : ROW;
                 UiPrimitives.fillRounded(graphics, row.bounds(), 4, background);
+                boolean hasDescription = row.option() instanceof SettingsOption.BooleanOption booleanOption
+                        && !booleanOption.descriptionKey().isBlank();
                 paintText(
                         graphics,
                         font,
                         I18n.get(row.option().labelKey()),
                         row.bounds().left() + 7,
-                        row.bounds().top() + 9,
+                        row.bounds().top() + (hasDescription ? 7 : 9),
                         TEXT);
+                if (hasDescription) {
+                    SettingsOption.BooleanOption booleanOption = (SettingsOption.BooleanOption) row.option();
+                    paintText(
+                            graphics,
+                            font,
+                            trim(font, I18n.get(booleanOption.descriptionKey()), row.control().left() - row.bounds().left() - 14),
+                            row.bounds().left() + 7,
+                            row.bounds().top() + 22,
+                            MUTED);
+                }
                 paintOptionControl(graphics, font, row, mouseX, mouseY);
             }
         } finally {
@@ -443,6 +531,11 @@ public final class ChatSettingsOverlay {
 
     private void activateOption(OptionRow row, double mouseX, double mouseY) {
         SettingsOption option = row.option();
+        if (option instanceof SettingsOption.TextOption && textEditor != null) {
+            textEditor.setFocused(true);
+            textEditor.setCursorPosition(textEditor.getValue().length());
+            return;
+        }
         if (option instanceof SettingsOption.BooleanOption booleanOption) {
             booleanOption.setter().accept(!booleanOption.getter().getAsBoolean());
             previewDraft();
@@ -506,7 +599,9 @@ public final class ChatSettingsOverlay {
             RichChatBounds control;
             List<RichChatBounds> channels = List.of();
             if (option instanceof SettingsOption.BooleanOption) {
-                control = RichChatBounds.ofSize(controlRight - 60, y + 5, 60, 16);
+                control = RichChatBounds.ofSize(controlRight - 60, y + Math.max(5, (height - 16) / 2), 60, 16);
+            } else if (option instanceof SettingsOption.TextOption) {
+                control = RichChatBounds.ofSize(bounds.left() + 7, y + 36, Math.max(20, bounds.width() - 14), 18);
             } else if (option instanceof SettingsOption.EnumOption) {
                 control = RichChatBounds.ofSize(controlRight - 124, y + 4, 124, 18);
             } else if (option instanceof SettingsOption.IntOption) {
@@ -636,6 +731,17 @@ public final class ChatSettingsOverlay {
 
     private List<SettingsOption> behaviorOptions() {
         return List.of(
+                text(
+                        "chatupgrade.settings.option.input_placeholder",
+                        "chatupgrade.settings.option.input_placeholder.description",
+                        () -> draft.chatInputPlaceholder,
+                        value -> draft.chatInputPlaceholder = value,
+                        PLACEHOLDER_MAX_LENGTH),
+                bool(
+                        "chatupgrade.settings.option.chat_screen_mask",
+                        "chatupgrade.settings.option.chat_screen_mask.description",
+                        draft::usesChatScreenMask,
+                        value -> draft.chatScreenMaskEnabled = value),
                 bool("chatupgrade.settings.option.smooth_scroll", () -> Boolean.TRUE.equals(draft.smoothScrollEnabled),
                         value -> draft.smoothScrollEnabled = value),
                 bool("chatupgrade.settings.option.debug_actions", () -> draft.debugChatActions,
@@ -679,6 +785,79 @@ public final class ChatSettingsOverlay {
                         "chatupgrade.settings.value.input_compat"));
     }
 
+    private void createTextEditor(Font font) {
+        if (font == null || draft == null) {
+            textEditor = null;
+            return;
+        }
+        textEditor = new EditBox(
+                font,
+                0,
+                0,
+                100,
+                18,
+                Component.translatable("chatupgrade.settings.option.input_placeholder"));
+        textEditor.setMaxLength(PLACEHOLDER_MAX_LENGTH);
+        textEditor.setHint(Component.translatable("chatupgrade.input.placeholder.default"));
+        textEditor.setVisible(false);
+        textEditor.setResponder(value -> {
+            if (syncingTextEditor || visibleTextOption == null) {
+                return;
+            }
+            visibleTextOption.setter().accept(value);
+            previewDraft();
+        });
+        syncTextEditorValue(draft.chatInputPlaceholder);
+    }
+
+    private void layoutTextEditor(Layout layout) {
+        if (textEditor == null || layout == null) {
+            return;
+        }
+        OptionRow textRow = optionRows(layout).stream()
+                .filter(row -> row.option() instanceof SettingsOption.TextOption)
+                .findFirst()
+                .orElse(null);
+        if (textRow == null || !intersects(textRow.bounds(), layout.optionsViewport())) {
+            visibleTextOption = null;
+            textEditor.setVisible(false);
+            textEditor.setFocused(false);
+            return;
+        }
+        SettingsOption.TextOption option = (SettingsOption.TextOption) textRow.option();
+        boolean optionChanged = visibleTextOption == null
+                || !visibleTextOption.labelKey().equals(option.labelKey());
+        visibleTextOption = option;
+        textEditor.setMaxLength(option.maxLength());
+        textEditor.setRectangle(
+                textRow.control().width(),
+                textRow.control().height(),
+                textRow.control().left(),
+                textRow.control().top());
+        textEditor.setVisible(true);
+        if (optionChanged) {
+            syncTextEditorValue(option.getter().get());
+        }
+    }
+
+    private void syncTextEditorValue(String value) {
+        if (textEditor == null) {
+            return;
+        }
+        syncingTextEditor = true;
+        try {
+            textEditor.setValue(value == null ? "" : value);
+        } finally {
+            syncingTextEditor = false;
+        }
+    }
+
+    private void setTextEditorFocused(boolean focused) {
+        if (textEditor != null) {
+            textEditor.setFocused(focused);
+        }
+    }
+
     private void resetCurrentCategory() {
         if (draft == null) {
             return;
@@ -689,8 +868,11 @@ public final class ChatSettingsOverlay {
                 draft.chatPanel = new ChatUpgradeConfig.ChatPanelConfig();
             }
             case CHAT_BEHAVIOR -> {
+                draft.chatInputPlaceholder = "";
+                draft.chatScreenMaskEnabled = true;
                 draft.smoothScrollEnabled = true;
                 draft.debugChatActions = false;
+                syncTextEditorValue("");
             }
             case MEDIA -> {
                 draft.manualImageReveal = false;
@@ -727,6 +909,12 @@ public final class ChatSettingsOverlay {
         baseline = null;
         draft = null;
         activeSlider = null;
+        visibleTextOption = null;
+        if (textEditor != null) {
+            textEditor.setFocused(false);
+            textEditor.setVisible(false);
+        }
+        textEditor = null;
         scrollY = 0.0D;
         ChatSurfaceController.finishPanelGeometryPreview();
         ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.NONE);
@@ -789,14 +977,38 @@ public final class ChatSettingsOverlay {
         if (option instanceof SettingsOption.HeadingOption) {
             return HEADING_HEIGHT;
         }
+        if (option instanceof SettingsOption.BooleanOption booleanOption
+                && !booleanOption.descriptionKey().isBlank()) {
+            return DESCRIBED_OPTION_HEIGHT;
+        }
         if (option instanceof SettingsOption.ColorOption) {
             return COLOR_OPTION_HEIGHT;
+        }
+        if (option instanceof SettingsOption.TextOption) {
+            return TEXT_OPTION_HEIGHT;
         }
         return OPTION_HEIGHT;
     }
 
     private static SettingsOption.HeadingOption heading(String labelKey) {
         return new SettingsOption.HeadingOption(labelKey);
+    }
+
+    private static SettingsOption.TextOption text(
+            String labelKey,
+            String descriptionKey,
+            java.util.function.Supplier<String> getter,
+            java.util.function.Consumer<String> setter,
+            int maxLength) {
+        return new SettingsOption.TextOption(labelKey, descriptionKey, getter, setter, maxLength);
+    }
+
+    private static SettingsOption.BooleanOption bool(
+            String labelKey,
+            String descriptionKey,
+            java.util.function.BooleanSupplier getter,
+            java.util.function.Consumer<Boolean> setter) {
+        return new SettingsOption.BooleanOption(labelKey, descriptionKey, getter, setter);
     }
 
     private static SettingsOption.BooleanOption bool(

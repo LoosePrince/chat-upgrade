@@ -15,10 +15,38 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.PreeditEvent;
 
 @Mixin(ContainerEventHandler.class)
 public interface ContainerEventHandlerAudioFloatingDragMixin {
+    @Inject(method = "charTyped(Lnet/minecraft/client/input/CharacterEvent;)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$captureSettingsCharacter(
+            CharacterEvent event,
+            CallbackInfoReturnable<Boolean> cir) {
+        Object self = this;
+        if (self instanceof ChatScreen
+                && self instanceof ChatSettingsOverlayAccess settingsOverlay
+                && settingsOverlay.chatupgrade$isSettingsOverlayOpen()
+                && settingsOverlay.chatupgrade$settingsCharTyped(event)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "preeditUpdated(Lnet/minecraft/client/input/PreeditEvent;)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$captureSettingsPreedit(
+            PreeditEvent event,
+            CallbackInfoReturnable<Boolean> cir) {
+        Object self = this;
+        if (self instanceof ChatScreen
+                && self instanceof ChatSettingsOverlayAccess settingsOverlay
+                && settingsOverlay.chatupgrade$isSettingsOverlayOpen()
+                && settingsOverlay.chatupgrade$settingsPreeditUpdated(event)) {
+            cir.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "mouseDragged(Lnet/minecraft/client/input/MouseButtonEvent;DD)Z", at = @At("HEAD"), cancellable = true)
     private void chatupgrade$handleAudioFloatingDrag(
             MouseButtonEvent event,
@@ -29,7 +57,7 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
         if (self instanceof ChatScreen
                 && self instanceof ChatSettingsOverlayAccess settingsOverlay
                 && settingsOverlay.chatupgrade$isSettingsOverlayOpen()
-                && settingsOverlay.chatupgrade$updateSettingsDrag(event.x(), event.y(), event.button())) {
+                && settingsOverlay.chatupgrade$updateSettingsDrag(event, dx, dy)) {
             cir.setReturnValue(true);
             return;
         }
@@ -69,7 +97,7 @@ public interface ContainerEventHandlerAudioFloatingDragMixin {
         if (self instanceof ChatScreen
                 && self instanceof ChatSettingsOverlayAccess settingsOverlay
                 && settingsOverlay.chatupgrade$isSettingsOverlayOpen()
-                && settingsOverlay.chatupgrade$releaseSettingsDrag(event.button())) {
+                && settingsOverlay.chatupgrade$releaseSettingsDrag(event)) {
             cir.setReturnValue(true);
             return;
         }

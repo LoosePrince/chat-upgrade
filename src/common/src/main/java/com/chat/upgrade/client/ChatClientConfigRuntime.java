@@ -6,11 +6,18 @@ import java.util.function.Consumer;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
+import com.chat.upgrade.client.ui.chat.surface.ChatUiPreferences;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
 /** Single entry point for loading, previewing, saving, and applying client configuration. */
 public final class ChatClientConfigRuntime {
+    private static volatile ChatUiPreferences uiPreferences = ChatUiPreferences.from(ChatUpgradeConfig.get());
+
     private ChatClientConfigRuntime() {
+    }
+
+    public static ChatUiPreferences uiPreferences() {
+        return uiPreferences;
     }
 
     public static void initializeLoadedConfig() {
@@ -27,6 +34,7 @@ public final class ChatClientConfigRuntime {
             return;
         }
         draft.normalizeLimits();
+        uiPreferences = ChatUiPreferences.from(draft);
         AudioPlayerService.setGlobalVolumePercent(draft.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(draft.videoVolumePercent);
         ChatAppearanceRuntime.preview(draft);
@@ -40,6 +48,7 @@ public final class ChatClientConfigRuntime {
     public static void restorePreviewBaseline(ChatUpgradeConfig baseline) {
         ChatUpgradeConfig restore = baseline == null ? ChatUpgradeConfig.get() : baseline;
         restore.normalizeLimits();
+        uiPreferences = ChatUiPreferences.from(restore);
         AudioPlayerService.setGlobalVolumePercent(restore.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(restore.videoVolumePercent);
         ChatAppearanceRuntime.commit(restore);
@@ -64,6 +73,7 @@ public final class ChatClientConfigRuntime {
 
     private static void applyRuntime(ChatUpgradeConfig config) {
         config.normalizeLimits();
+        uiPreferences = ChatUiPreferences.from(config);
         AudioPlayerService.setGlobalVolumePercent(config.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(config.videoVolumePercent);
         ChatAppearanceRuntime.commit(config);

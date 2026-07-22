@@ -11,15 +11,11 @@ import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
-import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
-import com.chat.upgrade.client.ui.layout.AudioUiLayout;
-import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -118,20 +114,29 @@ public final class RichChatMediaRenderer {
             ChatAppearanceSnapshot appearance) {
         ChatAppearanceSnapshot.Media tokens = appearance.media();
         int cornerRadius = appearance.cornerRadius();
+        UiPrimitives.fillRounded(
+                gfx,
+                bounds,
+                cornerRadius,
+                UiPrimitives.withOpacity(tokens.cardBackground(), opacity));
         if (attachment == null || kind == RichChatRenderNodeKind.ATTACHMENT_PENDING || !attachment.hasRenderableUrl()) {
             paintPending(gfx, font, bounds, opacity, tokens, cornerRadius);
-            return;
-        }
-        if (kind == RichChatRenderNodeKind.ATTACHMENT_FAILED) {
+        } else if (kind == RichChatRenderNodeKind.ATTACHMENT_FAILED) {
             paintFailure(gfx, font, bounds, attachment, opacity, tokens, cornerRadius);
-            return;
+        } else {
+            String url = attachment.requireRenderableUrl();
+            switch (attachment.type()) {
+                case IMAGE -> paintImage(gfx, font, bounds, url, opacity, tokens, cornerRadius);
+                case AUDIO -> paintAudio(gfx, font, bounds, attachment.displayName(), url, opacity, tokens, cornerRadius);
+                case VIDEO -> paintVideo(gfx, font, bounds, attachment.displayName(), url, opacity, tokens, cornerRadius);
+            }
         }
-        String url = attachment.requireRenderableUrl();
-        switch (attachment.type()) {
-            case IMAGE -> paintImage(gfx, font, bounds, url, opacity, tokens, cornerRadius);
-            case AUDIO -> paintAudio(gfx, font, bounds, attachment.displayName(), url, opacity, tokens, cornerRadius);
-            case VIDEO -> paintVideo(gfx, font, bounds, attachment.displayName(), url, opacity, tokens, cornerRadius);
-        }
+        UiPrimitives.strokeRounded(
+                gfx,
+                bounds,
+                cornerRadius,
+                1,
+                UiPrimitives.withOpacity(tokens.cardBorder(), opacity));
     }
 
     public static void paintAttachment(
@@ -275,25 +280,28 @@ public final class RichChatMediaRenderer {
             ChatAppearanceSnapshot.Media tokens,
             int cornerRadius) {
         AudioEntry entry = AudioLoader.getOrLoad(url);
-        int x0 = bounds.left();
-        int y0 = bounds.top();
-        int x1 = bounds.right();
-        String name = AudioUiLayout.shortName(resourceName, url);
-        UiPrimitives.fillRounded(
-                gfx,
-                bounds,
-                cornerRadius,
-                UiPrimitives.withOpacity(tokens.loadingBackground(), opacity));
+        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds);
+        String name = RichChatMediaLayout.displayName(resourceName, url);
+        String visibleName = font.plainSubstrByWidth(name, Math.max(1, geometry.title().width()));
+
         if (entry.getState() == AudioEntry.State.LOADING) {
             String label = entry.getLoadPhase() == AudioEntry.LoadPhase.DECODE
                     ? I18n.get("chatupgrade.hud.audio.processing")
                     : I18n.get("chatupgrade.hud.audio.downloading");
-            gfx.text(font, name + "  " + ChatUpgradeFormatters.formatMs(0) + " / " + ChatUpgradeFormatters.formatMs(0),
-                    x0 + UpgradeHudInlinePaint.AUDIO_PAD_X, y0 + UpgradeHudInlinePaint.AUDIO_LINE1_Y,
-                    UiPrimitives.withOpacity(tokens.muted(), opacity), false);
-            gfx.text(font, label, x0 + UpgradeHudInlinePaint.AUDIO_PAD_X,
-                    y0 + UpgradeHudInlinePaint.AUDIO_LINE2_Y,
-                    UiPrimitives.withOpacity(tokens.muted(), opacity), false);
+            gfx.text(
+                    font,
+                    visibleName,
+                    geometry.title().left(),
+                    geometry.title().top() + 3,
+                    UiPrimitives.withOpacity(tokens.text(), opacity),
+                    false);
+            gfx.text(
+                    font,
+                    label,
+                    geometry.progress().left(),
+                    geometry.progress().top() - 2,
+                    UiPrimitives.withOpacity(tokens.muted(), opacity),
+                    false);
             return;
         }
         if (entry.getState() == AudioEntry.State.FAILED) {
@@ -309,79 +317,35 @@ public final class RichChatMediaRenderer {
         }
 
         boolean playing = AudioPlayerService.isPlaying(url);
-        long pos = AudioPlayerService.positionMs(url);
+        boolean loop = AudioPlayerService.isLoopEnabled(url);
+        long pos = Math.max(0L, AudioPlayerService.positionMs(url));
         long total = AudioPlayerService.durationMs(url);
-        if (total <= 0) {
+        if (total <= 0L) {
             total = entry.getDurationMs();
         }
-        gfx.text(font,
-                name + "  " + ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
-                x0 + UpgradeHudInlinePaint.AUDIO_PAD_X,
-                y0 + UpgradeHudInlinePaint.AUDIO_LINE1_Y,
+        total = Math.max(0L, total);
+
+        gfx.text(
+                font,
+                visibleName,
+                geometry.title().left(),
+                geometry.title().top() + 3,
                 UiPrimitives.withOpacity(tokens.text(), opacity),
                 false);
+        paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
+                opacity, true, tokens, cornerRadius);
+        paintButton(gfx, geometry.loop(), UiTextureAtlas.Icon.LOOP, opacity, loop, tokens, cornerRadius);
+        paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
+        paintButton(gfx, geometry.popout(), UiTextureAtlas.Icon.POPOUT, opacity, false, tokens, cornerRadius);
 
-        boolean loop = AudioPlayerService.isLoopEnabled(url);
-        AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(x0, y0);
-        paintButton(
-                gfx,
-                rects.playLeft(),
-                rects.top(),
-                rects.playRight(),
-                rects.bottom(),
-                playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
-                opacity,
-                true,
-                tokens);
-        paintButton(
-                gfx,
-                rects.loopLeft(),
-                rects.top(),
-                rects.loopRight(),
-                rects.bottom(),
-                UiTextureAtlas.Icon.LOOP,
-                opacity,
-                loop,
-                tokens);
-        paintButton(
-                gfx,
-                rects.openLeft(),
-                rects.top(),
-                rects.openRight(),
-                rects.bottom(),
-                UiTextureAtlas.Icon.OPEN,
-                opacity,
-                false,
-                tokens);
-        paintButton(
-                gfx,
-                rects.popLeft(),
-                rects.top(),
-                rects.popRight(),
-                rects.bottom(),
-                UiTextureAtlas.Icon.POPOUT,
-                opacity,
-                false,
-                tokens);
-
-        int barX0 = x0 + UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barX1 = x1 - UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barY0 = y0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-        int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        gfx.fill(
-                barX0,
-                barY0,
-                barX1,
-                barY1,
-                UiPrimitives.withOpacity(tokens.progressTrack(), opacity));
-        float ratio = total <= 0 ? 0f : Math.clamp((float) pos / total, 0f, 1f);
-        int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
-        gfx.fill(
-                barX0,
-                barY0,
-                fillX,
-                barY1,
-                UiPrimitives.withOpacity(tokens.progressFill(), opacity));
+        paintProgress(gfx, geometry.progress(), pos, total, opacity, tokens);
+        gfx.text(
+                font,
+                ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
+                geometry.time().left(),
+                geometry.time().top(),
+                UiPrimitives.withOpacity(tokens.muted(), opacity),
+                false);
     }
 
     private static void paintVideo(
@@ -394,34 +358,45 @@ public final class RichChatMediaRenderer {
             ChatAppearanceSnapshot.Media tokens,
             int cornerRadius) {
         VideoEntry entry = VideoLoader.getOrLoad(url);
-        int x0 = bounds.left();
-        int y0 = bounds.top();
-        int drawW = Math.max(1, bounds.width());
-        int x1 = bounds.right();
-        String name = AudioUiLayout.shortName(resourceName, url);
-        UiPrimitives.fillRounded(
-                gfx,
+        String name = RichChatMediaLayout.displayName(resourceName, url);
+        long pos = Math.max(0L, VideoPlayerService.positionMs(url));
+        long total = VideoPlayerService.durationMs(url);
+        if (total <= 0L) {
+            total = entry.getDurationMs();
+        }
+        total = Math.max(0L, total);
+        RichChatMediaLayout.VideoGeometry geometry = RichChatMediaLayout.video(
                 bounds,
-                cornerRadius,
-                UiPrimitives.withOpacity(tokens.loadingBackground(), opacity));
+                font,
+                pos,
+                total,
+                entry.getRawWidth(),
+                entry.getRawHeight());
+
+        gfx.fill(
+                geometry.preview().left(),
+                geometry.preview().top(),
+                geometry.preview().right(),
+                geometry.preview().bottom(),
+                UiPrimitives.withOpacity(tokens.mediaBackground(), opacity));
         if (entry.getState() == VideoEntry.State.LOADING) {
             String label = entry.getLoadPhase() == VideoEntry.LoadPhase.DECODE
                     ? I18n.get("chatupgrade.hud.video.processing")
                     : I18n.get("chatupgrade.hud.video.downloading");
+            String visibleName = font.plainSubstrByWidth(name, Math.max(1, geometry.title().width()));
             gfx.text(
                     font,
-                    name,
-                    x0 + VideoUiLayout.PAD_X,
-                    y0 + 2,
+                    visibleName,
+                    geometry.title().left(),
+                    geometry.title().top(),
                     UiPrimitives.withOpacity(tokens.text(), opacity),
                     false);
-            gfx.text(
+            gfx.centeredText(
                     font,
                     label,
-                    x0 + VideoUiLayout.PAD_X,
-                    y0 + 13,
-                    UiPrimitives.withOpacity(tokens.muted(), opacity),
-                    false);
+                    geometry.preview().left() + geometry.preview().width() / 2,
+                    geometry.preview().top() + geometry.preview().height() / 2 - font.lineHeight / 2,
+                    UiPrimitives.withOpacity(tokens.muted(), opacity));
             return;
         }
         if (entry.getState() == VideoEntry.State.FAILED) {
@@ -437,78 +412,59 @@ public final class RichChatMediaRenderer {
         }
 
         Identifier textureId = VideoPlayerService.textureIdAtMillis(url, Util.getMillis());
-        VideoUiLayout.Rect videoRect = VideoUiLayout.fitVideoRect(
-                x0,
-                y0,
-                drawW,
-                entry.getRawWidth(),
-                entry.getRawHeight());
-        if (textureId != null && videoRect.right() > videoRect.left() && videoRect.bottom() > videoRect.top()) {
+        if (textureId != null && geometry.frame().width() > 0 && geometry.frame().height() > 0) {
             gfx.blit(
                     RenderPipelines.GUI_TEXTURED,
                     textureId,
-                    videoRect.left(), videoRect.top(),
+                    geometry.frame().left(), geometry.frame().top(),
                     0.0f, 0.0f,
-                    videoRect.right() - videoRect.left(), videoRect.bottom() - videoRect.top(),
-                    entry.getRawWidth() > 0 ? entry.getRawWidth() : drawW,
-                    entry.getRawHeight() > 0 ? entry.getRawHeight() : VideoUiLayout.VIDEO_BOTTOM,
-                    entry.getRawWidth() > 0 ? entry.getRawWidth() : drawW,
-                    entry.getRawHeight() > 0 ? entry.getRawHeight() : VideoUiLayout.VIDEO_BOTTOM,
+                    geometry.frame().width(), geometry.frame().height(),
+                    entry.getRawWidth() > 0 ? entry.getRawWidth() : geometry.frame().width(),
+                    entry.getRawHeight() > 0 ? entry.getRawHeight() : geometry.frame().height(),
+                    entry.getRawWidth() > 0 ? entry.getRawWidth() : geometry.frame().width(),
+                    entry.getRawHeight() > 0 ? entry.getRawHeight() : geometry.frame().height(),
                     ARGB.white(opacity));
         }
 
-        long pos = VideoPlayerService.positionMs(url);
-        long total = VideoPlayerService.durationMs(url);
-        if (total <= 0L) {
-            total = entry.getDurationMs();
-        }
-        boolean playing = VideoPlayerService.isPlaying(url);
-        int controlY = y0 + VideoUiLayout.CONTROL_TOP;
-        int btnX0 = x0 + VideoUiLayout.PAD_X;
-        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
+        RichChatBounds titleScrim = new RichChatBounds(
+                bounds.left(),
+                bounds.top(),
+                bounds.right(),
+                Math.min(geometry.preview().bottom(), bounds.top() + 28));
         gfx.fill(
-                btnX0,
-                controlY,
-                btnX1,
-                controlY + VideoUiLayout.BTN_H,
-                UiPrimitives.withOpacity(tokens.controlBackground(), opacity));
-        UiTextureAtlas.drawIcon(
-                gfx,
-                playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
-                RichChatBounds.ofSize(
-                        btnX0 + Math.max(1, (VideoUiLayout.BTN_W - 12) / 2),
-                        controlY + Math.max(1, (VideoUiLayout.BTN_H - 12) / 2),
-                        12,
-                        12),
-                UiPrimitives.withOpacity(tokens.text(), opacity));
+                titleScrim.left(),
+                titleScrim.top(),
+                titleScrim.right(),
+                titleScrim.bottom(),
+                UiPrimitives.withOpacity(tokens.scrim(), opacity));
+        String visibleName = font.plainSubstrByWidth(name, Math.max(1, geometry.title().width()));
+        gfx.text(
+                font,
+                visibleName,
+                geometry.title().left(),
+                geometry.title().top(),
+                UiPrimitives.withOpacity(tokens.text(), opacity),
+                false);
+        paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
 
-        String left = ChatUpgradeFormatters.formatMs(pos);
-        String right = ChatUpgradeFormatters.formatMs(total);
-        int leftX = btnX1 + 4;
-        int rightX = x1 - VideoUiLayout.PAD_X - font.width(right);
-        gfx.text(font, left, leftX, controlY, UiPrimitives.withOpacity(tokens.text(), opacity), false);
-        gfx.text(font, right, rightX, controlY, UiPrimitives.withOpacity(tokens.text(), opacity), false);
-
-        int barX0 = leftX + font.width(left) + 4;
-        int barX1 = rightX - 4;
-        int barY0 = y0 + VideoUiLayout.PROGRESS_TOP;
-        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
-        if (barX1 > barX0) {
-            gfx.fill(
-                    barX0,
-                    barY0,
-                    barX1,
-                    barY1,
-                    UiPrimitives.withOpacity(tokens.progressTrack(), opacity));
-            float ratio = total <= 0 ? 0f : Math.clamp((float) pos / total, 0f, 1f);
-            int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
-            gfx.fill(
-                    barX0,
-                    barY0,
-                    fillX,
-                    barY1,
-                    UiPrimitives.withOpacity(tokens.progressFill(), opacity));
-        }
+        boolean playing = VideoPlayerService.isPlaying(url);
+        paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
+                opacity, true, tokens, cornerRadius);
+        gfx.text(
+                font,
+                ChatUpgradeFormatters.formatMs(pos),
+                geometry.leftTime().left(),
+                geometry.leftTime().top(),
+                UiPrimitives.withOpacity(tokens.muted(), opacity),
+                false);
+        gfx.text(
+                font,
+                ChatUpgradeFormatters.formatMs(total),
+                geometry.rightTime().left(),
+                geometry.rightTime().top(),
+                UiPrimitives.withOpacity(tokens.muted(), opacity),
+                false);
+        paintProgress(gfx, geometry.progress(), pos, total, opacity, tokens);
     }
 
     private static void paintDecodedImage(GuiGraphicsExtractor gfx, RichChatBounds bounds, ImageEntry entry, float opacity) {
@@ -645,26 +601,56 @@ public final class RichChatMediaRenderer {
 
     private static void paintButton(
             GuiGraphicsExtractor gfx,
-            int x0,
-            int y0,
-            int x1,
-            int y1,
+            RichChatBounds bounds,
             UiTextureAtlas.Icon icon,
             float opacity,
             boolean active,
-            ChatAppearanceSnapshot.Media tokens) {
+            ChatAppearanceSnapshot.Media tokens,
+            int cornerRadius) {
         int background = active ? tokens.controlActiveBackground() : tokens.controlBackground();
-        gfx.fill(x0, y0, x1, y1, UiPrimitives.withOpacity(background, opacity));
-        int size = Math.max(1, Math.min(12, Math.min(x1 - x0, y1 - y0) - 2));
+        UiPrimitives.fillRounded(
+                gfx,
+                bounds,
+                Math.min(Math.max(2, cornerRadius), Math.min(bounds.width(), bounds.height()) / 2),
+                UiPrimitives.withOpacity(background, opacity));
+        int size = Math.max(1, Math.min(12, Math.min(bounds.width(), bounds.height()) - 4));
         UiTextureAtlas.drawIcon(
                 gfx,
                 icon,
                 RichChatBounds.ofSize(
-                        x0 + Math.max(0, (x1 - x0 - size) / 2),
-                        y0 + Math.max(0, (y1 - y0 - size) / 2),
+                        bounds.left() + Math.max(0, (bounds.width() - size) / 2),
+                        bounds.top() + Math.max(0, (bounds.height() - size) / 2),
                         size,
                         size),
                 UiPrimitives.withOpacity(tokens.text(), opacity));
+    }
+
+    private static void paintProgress(
+            GuiGraphicsExtractor gfx,
+            RichChatBounds bounds,
+            long positionMs,
+            long durationMs,
+            float opacity,
+            ChatAppearanceSnapshot.Media tokens) {
+        if (bounds.width() <= 0 || bounds.height() <= 0) {
+            return;
+        }
+        UiPrimitives.fillRounded(
+                gfx,
+                bounds,
+                Math.max(1, bounds.height() / 2),
+                UiPrimitives.withOpacity(tokens.progressTrack(), opacity));
+        float ratio = durationMs <= 0L
+                ? 0.0F
+                : Math.clamp((float) positionMs / durationMs, 0.0F, 1.0F);
+        int fillX = bounds.left() + Math.round(bounds.width() * ratio);
+        if (fillX > bounds.left()) {
+            UiPrimitives.fillRounded(
+                    gfx,
+                    new RichChatBounds(bounds.left(), bounds.top(), fillX, bounds.bottom()),
+                    Math.max(1, bounds.height() / 2),
+                    UiPrimitives.withOpacity(tokens.progressFill(), opacity));
+        }
     }
 
     private static com.chat.upgrade.client.media.model.InlineResourceType attachmentTypeAudio() {

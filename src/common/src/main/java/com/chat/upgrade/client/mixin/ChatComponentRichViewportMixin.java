@@ -87,7 +87,11 @@ public abstract class ChatComponentRichViewportMixin {
                 displayMode.showRestrictedPrompt);
         Font font = minecraft.font;
         RichChatViewportMetrics metrics = chatupgrade$metrics(screenHeight, displayMode, surfaceFrame);
-        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(font, metrics, surfaceFrame.appearance());
+        RichChatLayout layout = chatupgrade$layoutEngine.layoutFromStore(
+                font,
+                metrics,
+                surfaceFrame.appearance(),
+                surfaceFrame.presentationMode());
         ChatScene scene = new ChatScene(surfaceFrame, metrics, layout);
         boolean paintsTimeline = !surfaceFrame.restricted() && layout.totalHeight() > 0;
 

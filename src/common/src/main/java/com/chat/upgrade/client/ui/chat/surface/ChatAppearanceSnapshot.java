@@ -102,6 +102,9 @@ public record ChatAppearanceSnapshot(
                         appearance.bubbleBorderEnabled ? appearance.bubbleBorderWidth : 0),
                 new Identity(0xFFDDE7F5, 0xB3FFFFFF),
                 new Media(
+                        0xE51A2029,
+                        0xFF485A73,
+                        0xFF0F1319,
                         0xD21C1C20,
                         0x80181A1F,
                         0x80281212,
@@ -109,9 +112,11 @@ public record ChatAppearanceSnapshot(
                         0xFFD2D2D7,
                         0xFFFF7878,
                         0xFF3A3E48,
+                        0xFF45536A,
                         0xFF4C6284,
                         0xFF444852,
                         0xFF64C8FF,
+                        0xA8000000,
                         0xD91C1C20),
                 new Scrollbar(0xAA526176, 0x60343D4D, 0xCCCB3A33),
                 appearance.vanillaStyleInput,
@@ -242,6 +247,9 @@ public record ChatAppearanceSnapshot(
     }
 
     public record Media(
+            int cardBackground,
+            int cardBorder,
+            int mediaBackground,
             int loadingBackground,
             int pendingBackground,
             int failureBackground,
@@ -249,9 +257,11 @@ public record ChatAppearanceSnapshot(
             int muted,
             int failureText,
             int controlBackground,
+            int controlHoverBackground,
             int controlActiveBackground,
             int progressTrack,
             int progressFill,
+            int scrim,
             int emojiLoadingBackground) {
     }
 

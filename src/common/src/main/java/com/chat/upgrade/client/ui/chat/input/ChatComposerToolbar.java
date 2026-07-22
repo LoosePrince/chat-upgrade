@@ -113,7 +113,7 @@ public final class ChatComposerToolbar {
                 font,
                 appearance,
                 layout.attachment(),
-                UiTextureAtlas.Icon.ATTACHMENT,
+                UiTextureAtlas.Icon.FOLDER,
                 "chatupgrade.input.button.attachment.tooltip",
                 state.attachmentEnabled(),
                 false,

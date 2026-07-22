@@ -21,7 +21,6 @@ import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
-import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
 import com.chat.upgrade.client.ui.chat.interaction.ChatAction;
 import com.chat.upgrade.client.ui.chat.interaction.ChatActionStyleAdapter;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
@@ -31,8 +30,6 @@ import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
-import com.chat.upgrade.client.ui.layout.AudioUiLayout;
-import com.chat.upgrade.client.ui.layout.VideoUiLayout;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 
 import net.minecraft.client.Minecraft;
@@ -344,35 +341,34 @@ public final class RichChatInteractionRouter {
             float localX,
             float localY) {
         if (type == InlineResourceType.AUDIO) {
-            AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(bounds.left(), bounds.top());
-            int barX0 = bounds.left() + UpgradeHudInlinePaint.AUDIO_PAD_X;
-            int barX1 = bounds.right() - UpgradeHudInlinePaint.AUDIO_PAD_X;
-            int barY0 = bounds.top() + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-            int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-            if (inside(localX, localY, barX0, barY0 - 4, barX1, barY1 + 4)
-                    && !inside(localX, localY, rects.playLeft(), rects.top(), rects.popRight(), rects.bottom())) {
-                return Math.clamp((localX - barX0) / Math.max(1.0D, barX1 - barX0), 0.0D, 1.0D);
+            RichChatBounds progress = RichChatMediaLayout.audio(bounds).progress();
+            if (inside(
+                    localX,
+                    localY,
+                    progress.left(),
+                    progress.top() - 4,
+                    progress.right(),
+                    progress.bottom() + 4)) {
+                return Math.clamp(
+                        (localX - progress.left()) / Math.max(1.0D, progress.width()),
+                        0.0D,
+                        1.0D);
             }
             return -1.0D;
         }
         if (type == InlineResourceType.VIDEO) {
-            int controlY = bounds.top() + VideoUiLayout.CONTROL_TOP;
-            int btnX0 = bounds.left() + VideoUiLayout.PAD_X;
-            int btnX1 = btnX0 + VideoUiLayout.BTN_W;
-            if (inside(localX, localY, btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H)) {
-                return -1.0D;
-            }
-            Font font = Minecraft.getInstance().font;
-            String left = ChatUpgradeFormatters.formatMs(Math.max(0L, VideoPlayerService.positionMs(url)));
-            String right = ChatUpgradeFormatters.formatMs(Math.max(0L, VideoPlayerService.durationMs(url)));
-            int leftX = btnX1 + 4;
-            int rightX = bounds.right() - VideoUiLayout.PAD_X - font.width(right);
-            int barX0 = leftX + font.width(left) + 4;
-            int barX1 = rightX - 4;
-            int barY0 = bounds.top() + VideoUiLayout.PROGRESS_TOP;
-            int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
-            if (barX1 > barX0 && inside(localX, localY, barX0, barY0 - 4, barX1, barY1 + 4)) {
-                return Math.clamp((localX - barX0) / Math.max(1.0D, barX1 - barX0), 0.0D, 1.0D);
+            RichChatBounds progress = videoGeometry(bounds, url).progress();
+            if (inside(
+                    localX,
+                    localY,
+                    progress.left(),
+                    progress.top() - 4,
+                    progress.right(),
+                    progress.bottom() + 4)) {
+                return Math.clamp(
+                        (localX - progress.left()) / Math.max(1.0D, progress.width()),
+                        0.0D,
+                        1.0D);
             }
         }
         return -1.0D;
@@ -810,65 +806,65 @@ public final class RichChatInteractionRouter {
     }
 
     private static AudioAction resolveAudioAction(float localX, float localY, RichChatBounds bounds) {
-        AudioUiLayout.ButtonRects rects = AudioUiLayout.buttonRects(bounds.left(), bounds.top());
-        if (inside(localX, localY, rects.playLeft(), rects.top(), rects.playRight(), rects.bottom())) {
-            return new AudioAction(AudioActionKind.TOGGLE, 0.0);
+        RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds);
+        if (contains(geometry.play(), localX, localY)) {
+            return new AudioAction(AudioActionKind.TOGGLE, 0.0D);
         }
-        if (inside(localX, localY, rects.loopLeft(), rects.top(), rects.loopRight(), rects.bottom())) {
-            return new AudioAction(AudioActionKind.TOGGLE_LOOP, 0.0);
+        if (contains(geometry.loop(), localX, localY)) {
+            return new AudioAction(AudioActionKind.TOGGLE_LOOP, 0.0D);
         }
-        if (inside(localX, localY, rects.openLeft(), rects.top(), rects.openRight(), rects.bottom())) {
-            return new AudioAction(AudioActionKind.OPEN_URL, 0.0);
+        if (contains(geometry.open(), localX, localY)) {
+            return new AudioAction(AudioActionKind.OPEN_URL, 0.0D);
         }
-        if (inside(localX, localY, rects.popLeft(), rects.top(), rects.popRight(), rects.bottom())) {
-            return new AudioAction(AudioActionKind.TOGGLE_FLOATING, 0.0);
+        if (contains(geometry.popout(), localX, localY)) {
+            return new AudioAction(AudioActionKind.TOGGLE_FLOATING, 0.0D);
         }
-        int barX0 = bounds.left() + UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barX1 = bounds.right() - UpgradeHudInlinePaint.AUDIO_PAD_X;
-        int barY0 = bounds.top() + UpgradeHudInlinePaint.AUDIO_PROGRESS_Y;
-        int barY1 = barY0 + UpgradeHudInlinePaint.AUDIO_PROGRESS_H;
-        if (inside(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+        if (contains(geometry.progress(), localX, localY)) {
+            double ratio = Math.clamp(
+                    (localX - geometry.progress().left()) / Math.max(1.0D, geometry.progress().width()),
+                    0.0D,
+                    1.0D);
             return new AudioAction(AudioActionKind.SEEK, ratio);
         }
-        return new AudioAction(AudioActionKind.NONE, 0.0);
+        return new AudioAction(AudioActionKind.NONE, 0.0D);
     }
 
     private static VideoAction resolveVideoAction(RichChatBounds bounds, String url, float localX, float localY) {
-        int controlY = bounds.top() + VideoUiLayout.CONTROL_TOP;
-        int btnX0 = bounds.left() + VideoUiLayout.PAD_X;
-        int btnX1 = btnX0 + VideoUiLayout.BTN_W;
-        if (inside(localX, localY, btnX0, controlY, btnX1, controlY + VideoUiLayout.BTN_H)) {
-            return new VideoAction(VideoActionKind.TOGGLE, 0.0);
+        RichChatMediaLayout.VideoGeometry geometry = videoGeometry(bounds, url);
+        if (contains(geometry.play(), localX, localY)) {
+            return new VideoAction(VideoActionKind.TOGGLE, 0.0D);
         }
-
-        Font font = Minecraft.getInstance().font;
-        long pos = Math.max(0L, VideoPlayerService.positionMs(url));
-        long total = Math.max(0L, VideoPlayerService.durationMs(url));
-        String left = ChatUpgradeFormatters.formatMs(pos);
-        String right = ChatUpgradeFormatters.formatMs(total);
-        int leftX = btnX1 + 4;
-        int rightX = bounds.right() - VideoUiLayout.PAD_X - font.width(right);
-        int barX0 = leftX + font.width(left) + 4;
-        int barX1 = rightX - 4;
-        int barY0 = bounds.top() + VideoUiLayout.PROGRESS_TOP;
-        int barY1 = barY0 + VideoUiLayout.PROGRESS_H;
-        if (barX1 > barX0 && inside(localX, localY, barX0, barY0, barX1, barY1)) {
-            double ratio = Math.clamp((localX - barX0) / Math.max(1.0, barX1 - barX0), 0.0, 1.0);
+        if (contains(geometry.progress(), localX, localY)) {
+            double ratio = Math.clamp(
+                    (localX - geometry.progress().left()) / Math.max(1.0D, geometry.progress().width()),
+                    0.0D,
+                    1.0D);
             return new VideoAction(VideoActionKind.SEEK, ratio);
         }
+        if (contains(geometry.open(), localX, localY) || contains(geometry.frame(), localX, localY)) {
+            return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0D);
+        }
+        return new VideoAction(VideoActionKind.NONE, 0.0D);
+    }
 
+    private static RichChatMediaLayout.VideoGeometry videoGeometry(RichChatBounds bounds, String url) {
         VideoEntry entry = VideoLoader.getIfPresent(url);
-        int rawW = entry == null ? 0 : entry.getRawWidth();
-        int rawH = entry == null ? 0 : entry.getRawHeight();
-        if (rawW <= 0 || rawH <= 0) {
-            return new VideoAction(VideoActionKind.NONE, 0.0);
+        long positionMs = Math.max(0L, VideoPlayerService.positionMs(url));
+        long durationMs = VideoPlayerService.durationMs(url);
+        if (durationMs <= 0L && entry != null) {
+            durationMs = entry.getDurationMs();
         }
-        VideoUiLayout.Rect rect = VideoUiLayout.fitVideoRect(bounds.left(), bounds.top(), bounds.width(), rawW, rawH);
-        if (inside(localX, localY, rect.left(), rect.top(), rect.right(), rect.bottom())) {
-            return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0);
-        }
-        return new VideoAction(VideoActionKind.NONE, 0.0);
+        return RichChatMediaLayout.video(
+                bounds,
+                Minecraft.getInstance().font,
+                positionMs,
+                Math.max(0L, durationMs),
+                entry == null ? 0 : entry.getRawWidth(),
+                entry == null ? 0 : entry.getRawHeight());
+    }
+
+    private static boolean contains(RichChatBounds bounds, float x, float y) {
+        return bounds != null && inside(x, y, bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
     }
 
     private static boolean inside(float x, float y, int left, int top, int right, int bottom) {

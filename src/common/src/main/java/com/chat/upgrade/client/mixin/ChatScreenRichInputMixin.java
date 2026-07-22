@@ -1,7 +1,5 @@
 package com.chat.upgrade.client.mixin;
 
-import java.util.concurrent.CompletableFuture;
-
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -12,10 +10,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.chat.upgrade.client.MinecraftGuiBridge;
+import com.chat.upgrade.client.mixininterface.ChatCommandSuggestionAreaAccess;
 import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
 import com.chat.upgrade.client.mixininterface.ChatSettingsOverlayAccess;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
+import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerRenderer;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerState;
@@ -25,6 +25,7 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraftResolver;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import com.chat.upgrade.client.ui.chat.input.EmojiPickerPopover;
+import com.chat.upgrade.client.ui.chat.input.NativeFileDialogModal;
 import com.chat.upgrade.client.ui.chat.interaction.ChatContextMenu;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
@@ -47,13 +48,15 @@ import net.minecraft.client.gui.components.CommandSuggestions;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.PreeditEvent;
 import net.minecraft.network.chat.Component;
 
 @Mixin(ChatScreen.class)
 public abstract class ChatScreenRichInputMixin extends Screen
-        implements ChatComposerAttachmentDragAccess, ChatSettingsOverlayAccess {
+        implements ChatCommandSuggestionAreaAccess, ChatComposerAttachmentDragAccess, ChatSettingsOverlayAccess {
     @Shadow
     protected EditBox input;
 
@@ -170,7 +173,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
             CallbackInfoReturnable<Boolean> cir) {
         if (chatupgrade$settingsOverlay.isOpen()) {
             boolean wasOpen = true;
-            chatupgrade$settingsOverlay.mouseClicked(event, this.width, this.height);
+            chatupgrade$settingsOverlay.mouseClicked(event, doubleClick, this.width, this.height);
             if (wasOpen && !chatupgrade$settingsOverlay.isOpen()) {
                 chatupgrade$restoreComposerFocus();
                 chatupgrade$refreshControls();
@@ -359,18 +362,41 @@ public abstract class ChatScreenRichInputMixin extends Screen
     }
 
     @Override
+    public RichChatBounds chatupgrade$commandSuggestionArea() {
+        if (input == null) {
+            return new RichChatBounds(4, 0, Math.max(5, this.width - 4), Math.max(1, this.height - 12));
+        }
+        int left = input.getScreenX(0);
+        return new RichChatBounds(
+                left,
+                0,
+                left + Math.max(1, input.getInnerWidth()),
+                Math.max(1, input.getY()));
+    }
+
+    @Override
     public boolean chatupgrade$isSettingsOverlayOpen() {
         return chatupgrade$settingsOverlay.isOpen();
     }
 
     @Override
-    public boolean chatupgrade$updateSettingsDrag(double mouseX, double mouseY, int button) {
-        return chatupgrade$settingsOverlay.mouseDragged(mouseX, mouseY, button);
+    public boolean chatupgrade$updateSettingsDrag(MouseButtonEvent event, double dx, double dy) {
+        return chatupgrade$settingsOverlay.mouseDragged(event, dx, dy);
     }
 
     @Override
-    public boolean chatupgrade$releaseSettingsDrag(int button) {
-        return chatupgrade$settingsOverlay.mouseReleased(button);
+    public boolean chatupgrade$releaseSettingsDrag(MouseButtonEvent event) {
+        return chatupgrade$settingsOverlay.mouseReleased(event);
+    }
+
+    @Override
+    public boolean chatupgrade$settingsCharTyped(CharacterEvent event) {
+        return chatupgrade$settingsOverlay.charTyped(event);
+    }
+
+    @Override
+    public boolean chatupgrade$settingsPreeditUpdated(PreeditEvent event) {
+        return chatupgrade$settingsOverlay.preeditUpdated(event);
     }
 
     @Override
@@ -536,6 +562,18 @@ public abstract class ChatScreenRichInputMixin extends Screen
         cir.setReturnValue(true);
     }
 
+    @Inject(method = "extractBackground(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("TAIL"))
+    private void chatupgrade$paintChatScreenMask(
+            GuiGraphicsExtractor graphics,
+            int mouseX,
+            int mouseY,
+            float partialTick,
+            CallbackInfo ci) {
+        if (ChatClientConfigRuntime.uiPreferences().screenMaskEnabled()) {
+            graphics.fill(0, 0, this.width, this.height, 0x66000000);
+        }
+    }
+
     @Redirect(
             method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",
             at = @At(
@@ -570,17 +608,43 @@ public abstract class ChatScreenRichInputMixin extends Screen
         }
     }
 
-    @Inject(method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("TAIL"))
-    private void chatupgrade$renderComposerOverlays(
+    @Inject(
+            method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/screens/Screen;extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",
+                    shift = At.Shift.BEFORE))
+    private void chatupgrade$renderInputPlaceholder(
+            GuiGraphicsExtractor graphics,
+            int mouseX,
+            int mouseY,
+            float partialTick,
+            CallbackInfo ci) {
+        if (input == null || !input.isVisible()) {
+            return;
+        }
+        ChatComposerRenderer.paintInputPlaceholder(
+                graphics,
+                this.font,
+                ChatSurfaceController.state().appearance(),
+                RichChatBounds.ofSize(input.getX(), input.getY(), input.getWidth(), this.font.lineHeight),
+                input.getValue(),
+                ChatClientConfigRuntime.uiPreferences().resolvedInputPlaceholder());
+    }
+
+    @Inject(
+            method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/components/CommandSuggestions;extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;II)V",
+                    shift = At.Shift.BEFORE))
+    private void chatupgrade$renderComposerBelowSuggestions(
             GuiGraphicsExtractor graphics,
             int mouseX,
             int mouseY,
             float partialTick,
             CallbackInfo ci) {
         boolean takeover = ChatUpgradeChatPipelineGate.isTakeoverMode();
-        if (chatupgrade$emojiSearchBox != null) {
-            chatupgrade$emojiSearchBox.visible = chatupgrade$emojiSearchVisibleBeforeRender;
-        }
         if (!takeover) {
             ChatSurfaceRenderer.paintSettingsButton(graphics, chatupgrade$settingsButtonFrame());
         }
@@ -602,6 +666,27 @@ public abstract class ChatScreenRichInputMixin extends Screen
                 chatupgrade$toolbarState,
                 mouseX,
                 mouseY);
+        ChatComposerRenderer.paintAttachmentChips(
+                graphics,
+                this.font,
+                ChatSurfaceController.state().appearance(),
+                chatupgrade$composerState.drafts(),
+                chatupgrade$attachmentChipX(),
+                Math.max(chatupgrade$attachmentChipX() + 24, chatupgrade$attachmentChipRight()),
+                y);
+    }
+
+    @Inject(method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("TAIL"))
+    private void chatupgrade$renderComposerOverlays(
+            GuiGraphicsExtractor graphics,
+            int mouseX,
+            int mouseY,
+            float partialTick,
+            CallbackInfo ci) {
+        if (chatupgrade$emojiSearchBox != null) {
+            chatupgrade$emojiSearchBox.visible = chatupgrade$emojiSearchVisibleBeforeRender;
+        }
+        int y = chatupgrade$buttonRowY();
         chatupgrade$emojiPopover.render(
                 graphics,
                 this.font,
@@ -615,14 +700,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (chatupgrade$emojiSearchBox != null && chatupgrade$emojiSearchBox.visible) {
             chatupgrade$emojiSearchBox.extractWidgetRenderState(graphics, mouseX, mouseY, partialTick);
         }
-        ChatComposerRenderer.paintAttachmentChips(
-                graphics,
-                this.font,
-                ChatSurfaceController.state().appearance(),
-                chatupgrade$composerState.drafts(),
-                chatupgrade$attachmentChipX(),
-                Math.max(chatupgrade$attachmentChipX() + 24, chatupgrade$attachmentChipRight()),
-                y);
         chatupgrade$contextMenu.render(
                 graphics,
                 this.font,
@@ -708,8 +785,11 @@ public abstract class ChatScreenRichInputMixin extends Screen
     private void chatupgrade$pickAttachment() {
         chatupgrade$systemMessage(Component.translatable("chatupgrade.upload.open_attachment_picker")
                 .withStyle(ChatFormatting.GRAY));
-        CompletableFuture.supplyAsync(AttachmentDraftResolver::pickFile)
-                .thenAccept(result -> this.minecraft.execute(() -> chatupgrade$applyResolveResult(result)));
+        NativeFileDialogModal.supplyAsync(
+                this.minecraft.getWindow().handle(),
+                AttachmentDraftResolver::pickFile)
+                .ifPresent(future -> future.thenAccept(result -> this.minecraft.execute(
+                        () -> chatupgrade$applyResolveResult(result))));
     }
 
     @Unique
@@ -906,6 +986,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (input == null) {
             return;
         }
+        input.setHint(Component.empty());
         boolean mergedTakeoverInput = ChatUpgradeChatPipelineGate.isTakeoverMode()
                 && !chatupgrade$usesVanillaStyleInput();
         if (mergedTakeoverInput) {
@@ -1005,7 +1086,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (input != null) {
             input.setFocused(false);
         }
-        chatupgrade$settingsOverlay.open(this.width, this.height);
+        chatupgrade$settingsOverlay.open(this.font, this.width, this.height);
     }
 
     @Unique

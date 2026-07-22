@@ -4,9 +4,12 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public sealed interface SettingsOption permits SettingsOption.BooleanOption, SettingsOption.ColorOption,
-        SettingsOption.EnumOption, SettingsOption.HeadingOption, SettingsOption.IntOption {
+        SettingsOption.EnumOption, SettingsOption.HeadingOption, SettingsOption.IntOption,
+        SettingsOption.TextOption {
     String labelKey();
 
     record HeadingOption(String labelKey) implements SettingsOption {
@@ -14,8 +17,15 @@ public sealed interface SettingsOption permits SettingsOption.BooleanOption, Set
 
     record BooleanOption(
             String labelKey,
+            String descriptionKey,
             BooleanSupplier getter,
             java.util.function.Consumer<Boolean> setter) implements SettingsOption {
+        public BooleanOption(
+                String labelKey,
+                BooleanSupplier getter,
+                java.util.function.Consumer<Boolean> setter) {
+            this(labelKey, "", getter, setter);
+        }
     }
 
     record IntOption(
@@ -47,6 +57,19 @@ public sealed interface SettingsOption permits SettingsOption.BooleanOption, Set
     }
 
     record ColorOption(String labelKey, IntSupplier getter, IntConsumer setter) implements SettingsOption {
+    }
+
+    record TextOption(
+            String labelKey,
+            String descriptionKey,
+            Supplier<String> getter,
+            Consumer<String> setter,
+            int maxLength) implements SettingsOption {
+        public TextOption {
+            if (maxLength < 1) {
+                throw new IllegalArgumentException("maxLength must be positive");
+            }
+        }
     }
 
     enum ValueFormat {

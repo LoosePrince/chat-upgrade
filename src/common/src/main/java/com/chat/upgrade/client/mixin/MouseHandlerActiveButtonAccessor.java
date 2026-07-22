@@ -11,4 +11,7 @@ public interface MouseHandlerActiveButtonAccessor {
     @Accessor("activeButton")
     @Nullable
     MouseButtonInfo chatupgrade$getActiveButton();
+
+    @Accessor("activeButton")
+    void chatupgrade$setActiveButton(@Nullable MouseButtonInfo activeButton);
 }

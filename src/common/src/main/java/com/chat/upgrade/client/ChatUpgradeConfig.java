@@ -26,6 +26,8 @@ public final class ChatUpgradeConfig {
 
     public boolean ciCompatibility;
     public ChatInputMode chatInputMode = ChatInputMode.TAKEOVER;
+    public String chatInputPlaceholder = "";
+    public Boolean chatScreenMaskEnabled = true;
     public ChatPanelConfig chatPanel = new ChatPanelConfig();
     public AppearanceConfig appearance = new AppearanceConfig();
 
@@ -154,6 +156,8 @@ public final class ChatUpgradeConfig {
         config.videoVolumePercent = 100;
         config.uploadMode = UploadMode.AUTO;
         config.chatInputMode = ChatInputMode.TAKEOVER;
+        config.chatInputPlaceholder = "";
+        config.chatScreenMaskEnabled = true;
         config.chatPanel = new ChatPanelConfig();
         config.appearance = new AppearanceConfig();
         config.normalizeLimits();
@@ -168,6 +172,8 @@ public final class ChatUpgradeConfig {
         Boolean beforeSmoothScroll = smoothScrollEnabled;
         UploadMode beforeUploadMode = uploadMode;
         ChatInputMode beforeChatInputMode = chatInputMode;
+        String beforeChatInputPlaceholder = chatInputPlaceholder;
+        Boolean beforeChatScreenMaskEnabled = chatScreenMaskEnabled;
         ChatPanelConfig beforeChatPanel = chatPanel;
         AppearanceConfig beforeAppearance = appearance;
         String beforeChatPanelJson = chatPanel == null ? "" : GSON.toJson(chatPanel);
@@ -180,6 +186,8 @@ public final class ChatUpgradeConfig {
         smoothScrollEnabled = smoothScrollEnabled == null ? true : smoothScrollEnabled;
         uploadMode = uploadMode == null ? UploadMode.AUTO : uploadMode;
         chatInputMode = chatInputMode == null ? ChatInputMode.TAKEOVER : chatInputMode;
+        chatInputPlaceholder = chatInputPlaceholder == null ? "" : chatInputPlaceholder;
+        chatScreenMaskEnabled = chatScreenMaskEnabled == null ? true : chatScreenMaskEnabled;
 
         if (chatPanel == null) {
             chatPanel = new ChatPanelConfig();
@@ -202,6 +210,10 @@ public final class ChatUpgradeConfig {
                 || beforeSmoothScroll == null
                 || beforeUploadMode != uploadMode
                 || beforeChatInputMode != chatInputMode
+                || beforeChatInputPlaceholder == null
+                || !beforeChatInputPlaceholder.equals(chatInputPlaceholder)
+                || beforeChatScreenMaskEnabled == null
+                || beforeChatScreenMaskEnabled != chatScreenMaskEnabled
                 || beforeChatPanel != chatPanel
                 || !beforeChatPanelJson.equals(GSON.toJson(chatPanel))
                 || beforeAppearance != appearance
@@ -272,6 +284,8 @@ public final class ChatUpgradeConfig {
                 boolean containsMessageBackground = json.contains("\"messageBackgroundColor\"");
                 boolean containsAvatarFirstLineOnly = json.contains("\"avatarFirstLineOnly\"");
                 boolean containsBubblePadding = json.contains("\"bubblePadding\"");
+                boolean containsChatInputPlaceholder = json.contains("\"chatInputPlaceholder\"");
+                boolean containsChatScreenMask = json.contains("\"chatScreenMaskEnabled\"");
                 ChatUpgradeConfig read = GSON.fromJson(json, ChatUpgradeConfig.class);
                 if (read == null) {
                     instance = defaults();
@@ -295,6 +309,8 @@ public final class ChatUpgradeConfig {
                         || !containsMessageBackground
                         || !containsAvatarFirstLineOnly
                         || !containsBubblePadding
+                        || !containsChatInputPlaceholder
+                        || !containsChatScreenMask
                         || migratedLegacyDefaults;
                 instance = read;
                 if (corrected) {
@@ -393,6 +409,10 @@ public final class ChatUpgradeConfig {
     public static boolean isSmoothScrollEnabled() {
         Boolean enabled = instance.smoothScrollEnabled;
         return enabled == null || enabled;
+    }
+
+    public boolean usesChatScreenMask() {
+        return chatScreenMaskEnabled == null || chatScreenMaskEnabled;
     }
 
     public static void setMaxReceiveBytesAndSave(int bytes) throws IOException {
