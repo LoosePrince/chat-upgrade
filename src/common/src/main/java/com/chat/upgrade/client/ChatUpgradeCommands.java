@@ -181,6 +181,10 @@ public final class ChatUpgradeCommands {
                                     .then(arg("enabled", BoolArgumentType.bool())
                                             .executes(ctx -> setSmoothScrollEnabled(sink(ctx),
                                                     BoolArgumentType.getBool(ctx, "enabled")))))
+                            .then(lit("modbuttonarrownavigation")
+                                    .then(arg("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> setModButtonArrowNavigation(sink(ctx),
+                                                    BoolArgumentType.getBool(ctx, "enabled")))))
                             .then(lit("reload")
                                     .executes(ctx -> reloadConfig(sink(ctx))))
                             .then(lit("audiovolume")
@@ -413,6 +417,7 @@ public final class ChatUpgradeCommands {
                 cfg.manualImageReveal ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
                 cfg.manualAudioReveal ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
                 cfg.manualVideoReveal ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
+                cfg.modButtonArrowNavigation ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"),
                 cfg.audioVolumePercent,
                 cfg.videoVolumePercent,
                 ChatUpgradeConfig.formatBytesHuman(cfg.maxReceiveBytes),
@@ -507,6 +512,20 @@ public final class ChatUpgradeCommands {
             ChatUpgradeConfig.setSmoothScrollEnabledAndSave(enabled);
             sink.feedback(Component.translatable(
                     "chatupgrade.config.smooth_scroll.updated",
+                    enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
+                    .withStyle(ChatFormatting.GREEN));
+            return 1;
+        } catch (IOException e) {
+            sink.error(Component.translatable("chatupgrade.error.write_config", e.getMessage()).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+    }
+
+    private static int setModButtonArrowNavigation(CommandSink sink, boolean enabled) {
+        try {
+            ChatUpgradeConfig.setModButtonArrowNavigationAndSave(enabled);
+            sink.feedback(Component.translatable(
+                    "chatupgrade.config.mod_button_arrow_navigation.updated",
                     enabled ? Component.translatable("chatupgrade.common.on") : Component.translatable("chatupgrade.common.off"))
                     .withStyle(ChatFormatting.GREEN));
             return 1;
