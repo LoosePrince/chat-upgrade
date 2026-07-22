@@ -115,6 +115,17 @@ TAKEOVER 下不要新增依赖这些路径的主功能。
 4. 如果影响服务端路由或客户端模式，需要在 reload 后刷新上报。
 5. 更新 README 和 `docs/config-commands-and-runtime.md`。
 
+## 模组按钮导航的扩展边界
+
+附件、表情和清空按钮使用自定义按钮焦点路径来控制方向键导航。`modButtonArrowNavigation=false` 时，只对 `FocusNavigationEvent.ArrowNavigation` 返回不参与；鼠标、`Tab` / `Shift+Tab` 和其它焦点行为仍委托给原版实现。`true` 时，这些按钮参与原版四方向焦点遍历。
+
+扩展聊天按钮时遵守以下边界：
+
+- 不要拦截 `ArrowUp` / `ArrowDown`，也不要重写或复制聊天历史逻辑。模组配置只控制按钮是否成为方向焦点目标；原版 `ChatScreen` 独立处理输入框历史。
+- 只让模组添加的按钮受 `modButtonArrowNavigation` 控制，不改变输入框或其它原版控件的焦点路径。
+- 隐藏控件不能留下不可见焦点目标；清空按钮的显示状态需要单独验证。
+- 运行时手动检查鼠标、`Tab`、`Shift+Tab`、`Left`、`Right`、`Up`、`Down`，并覆盖配置切换、reload、`TAKEOVER` 和 `COMPAT_TEXT_VANILLA`。这些检查是 QA 边界，不代表已有自动化覆盖或已经通过。
+
 ## 验证清单
 
 ### TAKEOVER
@@ -136,6 +147,15 @@ TAKEOVER 下不要新增依赖这些路径的主功能。
 - 有附件草稿仍能发送。
 - bracket 文本仍能显示富媒体。
 - 结构化附件仍能显示富媒体。
+
+### 模组聊天按钮导航
+
+- `modButtonArrowNavigation=false` 和字段缺失时，四方向键不把焦点移入附件、表情、清空按钮，输入框 `Up` / `Down` 历史保留。
+- `modButtonArrowNavigation=true` 时，附件、表情、清空按钮参与原版 `Left` / `Right` / `Up` / `Down` 焦点遍历。
+- 两种设置下，鼠标、`Tab` 和 `Shift+Tab` 都能访问可见的模组按钮。
+- 清空按钮隐藏时，不出现不可见焦点目标。
+- 命令切换和配置 reload 后重新打开聊天界面，行为与当前值一致。
+- 在 `TAKEOVER` 和 `COMPAT_TEXT_VANILLA` 下分别执行以上检查。
 
 ### 多客户端
 

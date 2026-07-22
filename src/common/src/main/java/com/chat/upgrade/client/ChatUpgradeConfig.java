@@ -59,6 +59,8 @@ public final class ChatUpgradeConfig {
     public boolean manualVideoReveal;
     /** Enable smooth chat scrolling (default on). */
     public Boolean smoothScrollEnabled;
+    /** Enable directional focus navigation for mod-added chat buttons (default off). */
+    public boolean modButtonArrowNavigation;
 
     /**
      * Maximum HTTP response body size when downloading an image for chat preview.
@@ -101,6 +103,7 @@ public final class ChatUpgradeConfig {
         c.manualAudioReveal = false;
         c.manualVideoReveal = false;
         c.smoothScrollEnabled = true;
+        c.modButtonArrowNavigation = false;
         c.maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
         c.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
         c.audioVolumePercent = 100;
@@ -253,9 +256,20 @@ public final class ChatUpgradeConfig {
         }
     }
 
+    public static void setModButtonArrowNavigationAndSave(boolean value) throws IOException {
+        synchronized (LOCK) {
+            instance.modButtonArrowNavigation = value;
+            writeConfigFile();
+        }
+    }
+
     public static boolean isSmoothScrollEnabled() {
         Boolean enabled = instance.smoothScrollEnabled;
         return enabled == null || enabled;
+    }
+
+    public static boolean isModButtonArrowNavigationEnabled() {
+        return instance.modButtonArrowNavigation;
     }
 
     public static void setMaxReceiveBytesAndSave(int bytes) throws IOException {

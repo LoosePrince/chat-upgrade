@@ -60,6 +60,7 @@ jps -l -v
 | --- | --- | --- | --- |
 | `chatInputMode` | `TAKEOVER` / `COMPAT_TEXT_VANILLA` | `TAKEOVER` | 聊天输入/渲染模式。字段缺失时等价于 `TAKEOVER`。 |
 | `ciCompatibility` | boolean | `false` | 图片发送是否优先使用受支持的 `[[CICode,...]]` bracket tag；关闭时使用标准 `[[ChatUpgrade,...]]`。 |
+| `modButtonArrowNavigation` | boolean | `false` | 模组添加的附件、表情和清空按钮是否参与原版方向键焦点遍历。字段缺失时等价于 `false`。 |
 | `manualImageReveal` | boolean | `false` | 图片是否点击后加载。 |
 | `manualAudioReveal` | boolean | `false` | 音频是否点击后加载。 |
 | `manualVideoReveal` | boolean | `false` | 视频是否点击后加载。 |
@@ -94,6 +95,23 @@ jps -l -v
 ```text
 /chatupgrade config inputmode takeover
 /chatupgrade config inputmode compat
+```
+
+## 模组按钮方向键导航
+
+`modButtonArrowNavigation` 只控制模组添加的附件、表情和清空按钮，不改变输入框或其它原版控件。配置文件缺少该字段时按 `false` 处理。
+
+| 值 | 行为 |
+| --- | --- |
+| `false` | 三个模组按钮不作为四方向焦点导航目标，避免方向键把焦点从输入框移到这些按钮；原版 `ChatScreen` 仍独立处理 `Up` / `Down` 聊天历史。 |
+| `true` | 三个模组按钮参与原版四方向焦点遍历。 |
+
+两种设置下，鼠标和 `Tab` / `Shift+Tab` 都仍可用于访问这些按钮。该行为由自定义按钮的焦点路径覆写实现：仅当事件是 `FocusNavigationEvent.ArrowNavigation` 且配置为 `false` 时返回 `null`，其它焦点行为继续委托给原版实现。这里没有注册或接管 `ArrowUp` 处理器。
+
+设置命令：
+
+```text
+/chatupgrade config modbuttonarrownavigation <true|false>
 ```
 
 ## 上传模式
@@ -136,6 +154,7 @@ jps -l -v
 | `/chatupgrade config manualaudio <true|false>` | 音频手动加载。 |
 | `/chatupgrade config manualvideo <true|false>` | 视频手动加载。 |
 | `/chatupgrade config smoothscroll <true|false>` | 平滑滚动开关。 |
+| `/chatupgrade config modbuttonarrownavigation <true|false>` | 设置模组聊天按钮是否参与原版方向键焦点遍历。 |
 | `/chatupgrade config audiovolume <1-100>` | 音频音量。 |
 | `/chatupgrade config videovolume <1-100>` | 视频音量。 |
 | `/chatupgrade config maxreceive <1-10>` | 接收上限，单位 MiB。 |
@@ -176,6 +195,8 @@ config/chat-upgrade/server-media.json
 
 ## Smoke 验证矩阵
 
+下表用于运行时手动 smoke 验证，不表示存在对应的自动化测试，也不表示这些场景已经通过。
+
 | 场景 | 预期 |
 | --- | --- |
 | TAKEOVER 纯文本 | 结构化发送，viewport 文本渲染。 |
@@ -188,6 +209,11 @@ config/chat-upgrade/server-media.json
 | 断开重连 | 状态、pending、缓存按预期清理。 |
 | 服务端无结构化支持 | 发送降级 bracket 文本或原版聊天包。 |
 | vanilla 接收端 | 收到安全可读文本。 |
+| `modButtonArrowNavigation=false` 或字段缺失 | 附件、表情、清空按钮不参与 `Left` / `Right` / `Up` / `Down` 焦点遍历；输入框的原版按键行为保留，包括 `Up` / `Down` 历史。 |
+| `modButtonArrowNavigation=true` | 附件、表情、清空按钮参与原版四方向焦点遍历。 |
+| 两种方向键导航设置 | 三个模组按钮均可通过鼠标和 `Tab` / `Shift+Tab` 访问；清空按钮隐藏时不产生不可见焦点目标。 |
+| 配置切换与 reload | 用命令切换 `true` / `false` 或修改配置后执行 reload，重新打开聊天界面后行为与当前值一致。 |
+| TAKEOVER / COMPAT | 在两种聊天模式下分别重复模组按钮方向键、鼠标和 Tab 导航检查，行为边界一致。 |
 
 ## 常见排查入口
 
