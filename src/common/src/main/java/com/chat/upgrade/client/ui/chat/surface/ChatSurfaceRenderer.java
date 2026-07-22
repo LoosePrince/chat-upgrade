@@ -61,12 +61,7 @@ public final class ChatSurfaceRenderer {
             graphics.fill(panel.left(), composer.top(), panel.right(), composer.top() + 1, tokens.separator());
         }
         RichChatBounds settingsButton = settingsButtonBounds(frame);
-        UiPrimitives.fillRounded(graphics, settingsButton, 3, 0x70343D4D);
-        UiTextureAtlas.drawIcon(
-                graphics,
-                UiTextureAtlas.Icon.GEAR,
-                RichChatBounds.ofSize(settingsButton.left() + 1, settingsButton.top() + 1, 12, 12),
-                tokens.title());
+        paintSettingsButton(graphics, frame);
         graphics.text(
                 font,
                 I18n.get("chatupgrade.surface.title"),
@@ -75,6 +70,29 @@ public final class ChatSurfaceRenderer {
                 tokens.title(),
                 false);
         paintResizeGrip(graphics, panel, tokens.resizeGrip());
+    }
+
+    public static void paintSettingsButton(
+            GuiGraphicsExtractor graphics,
+            ChatSurfaceFrame frame) {
+        if (graphics == null || frame == null || !frame.isOpenPanel()) {
+            return;
+        }
+        ChatAppearanceSnapshot appearance = frame.appearance();
+        RichChatBounds bounds = settingsButtonBounds(frame);
+        int radius = Math.clamp(appearance.cornerRadius(), 0, Math.min(bounds.width(), bounds.height()) / 2);
+        UiPrimitives.paintBox(
+                graphics,
+                bounds,
+                radius,
+                appearance.contextMenu().borderWidth(),
+                appearance.media().controlBackground(),
+                appearance.contextMenu().border());
+        UiTextureAtlas.drawIcon(
+                graphics,
+                UiTextureAtlas.Icon.GEAR,
+                RichChatBounds.ofSize(bounds.left() + 1, bounds.top() + 1, 12, 12),
+                appearance.surface().title());
     }
 
     public static RichChatBounds settingsButtonBounds(ChatSurfaceFrame frame) {

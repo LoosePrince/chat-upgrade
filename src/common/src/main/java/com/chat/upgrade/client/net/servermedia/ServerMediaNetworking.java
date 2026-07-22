@@ -20,9 +20,8 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.MinecraftGuiBridge;
-import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
-import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
+import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.state.ChatAuthor;
@@ -30,6 +29,7 @@ import com.chat.upgrade.client.ui.chat.state.ChatMessageKind;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.state.ChatTeamSnapshot;
 import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
+import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
@@ -77,7 +77,6 @@ public final class ServerMediaNetworking {
     public static void onClientJoin() {
         ChatUpgradeClientBootstrap.clearAllRuntimeState();
         SESSION_OPEN.set(true);
-        sendChatInputMode();
     }
 
     public static void registerClientHandlers(NetworkRegistrar r) {
@@ -207,18 +206,6 @@ public final class ServerMediaNetworking {
         Net.sendToServer(new ServerMediaPayloads.C2SRequestMedia(mediaId));
     }
 
-    public static void sendChatInputMode() {
-        try {
-            if (!Net.canSendToServer(ServerMediaPayloads.C2SChatInputMode.TYPE)) {
-                return;
-            }
-            Net.sendToServer(new ServerMediaPayloads.C2SChatInputMode(
-                    ChatUpgradeConfig.get().chatInputMode.name()));
-        } catch (Exception ex) {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to send chat input mode: {}", ex.getMessage());
-        }
-    }
-
     private static void handleStructuredChatAttachment(ServerMediaPayloads.S2CStructuredChatAttachment payload) {
         Optional<StructuredAttachment> structuredOpt = toStructuredAttachment(
                 payload.schemaVersion(),
@@ -236,14 +223,13 @@ public final class ServerMediaNetworking {
         if (!attachment.hasRenderableUrl()) {
             return;
         }
-        Component message = buildStructuredChatMessage(payload.senderName(), payload.text(), List.of(attachment));
-        renderStructuredProjection(
+        RichChatMessage stored = recordLegacyStructuredMessage(
                 "",
                 payload.senderName(),
-                message,
-                message.getString(),
-                List.of(attachment),
-                RichChatMessageSource.STRUCTURED_PACKET);
+                payload.text(),
+                payload.text(),
+                List.of(attachment));
+        projectStoredMessage(stored);
     }
 
     private static void handleStructuredChatMessage(StructuredChatMessage message) {
@@ -252,21 +238,13 @@ public final class ServerMediaNetworking {
                 .map(RichAttachment::fromStructured)
                 .filter(RichAttachment::hasRenderableUrl)
                 .toList();
-        Component component = buildStructuredChatMessage(
-                message.senderName(),
-                message.plainText(),
-                attachments);
-        if (attachments.isEmpty() && !ChatUpgradeChatPipelineGate.shouldEnhancePlainTextChat()) {
-            renderStructuredPlainText(component);
-            return;
-        }
-        renderStructuredProjection(
+        RichChatMessage stored = recordLegacyStructuredMessage(
                 message.clientNonce(),
                 message.senderName(),
-                component,
+                message.plainText(),
                 message.fallbackText(),
-                attachments,
-                RichChatMessageSource.STRUCTURED_PACKET);
+                attachments);
+        projectStoredMessage(stored);
     }
 
     private static void handleStructuredChatV2(StructuredChatEnvelope envelope) {
@@ -275,19 +253,9 @@ public final class ServerMediaNetworking {
                 .map(RichAttachment::fromStructured)
                 .filter(RichAttachment::hasRenderableUrl)
                 .toList();
-        boolean takeover = ChatUpgradeChatPipelineGate.isTakeoverMode();
-        Component component = takeover
-                ? Component.literal(envelope.plainText())
-                : buildStructuredChatMessage(
-                        envelope.author().displayName(),
-                        envelope.plainText(),
-                        attachments);
-        if (!takeover) {
-            renderStructuredPlainText(component);
-            return;
-        }
+        Component component = Component.literal(envelope.plainText());
         InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(component);
-        RichChatIngress.recordStructured(
+        RichChatMessage stored = RichChatIngress.recordStructured(
                 envelope.messageId(),
                 toClientAuthor(envelope.author()),
                 toClientKind(envelope.kind()),
@@ -299,14 +267,15 @@ public final class ServerMediaNetworking {
                 attachments,
                 emojiDecoded.slots(),
                 RichChatMessageSource.STRUCTURED_PACKET);
-        attachments.forEach(ServerMediaNetworking::preloadStructuredAttachmentMedia);
+        projectStoredMessage(stored);
     }
 
     private static ChatAuthor toClientAuthor(StructuredChatAuthor author) {
+        StructuredChatAuthor safeAuthor = author == null ? StructuredChatAuthor.legacy("") : author;
         UUID playerId = null;
         try {
-            if (author != null && !author.playerUuid().isBlank()) {
-                playerId = UUID.fromString(author.playerUuid());
+            if (!safeAuthor.playerUuid().isBlank()) {
+                playerId = UUID.fromString(safeAuthor.playerUuid());
             }
         } catch (IllegalArgumentException ignored) {
         }
@@ -315,7 +284,6 @@ public final class ServerMediaNetworking {
                 && minecraft != null
                 && minecraft.player != null
                 && playerId.equals(minecraft.player.getUUID());
-        StructuredChatAuthor safeAuthor = author == null ? StructuredChatAuthor.legacy("") : author;
         return new ChatAuthor(
                 playerId,
                 Component.literal(safeAuthor.displayName()),
@@ -351,60 +319,43 @@ public final class ServerMediaNetworking {
                 reply.excerpt());
     }
 
-    private static void renderStructuredPlainText(Component component) {
-        Minecraft minecraft = Minecraft.getInstance();
-        ChatComponent chat = MinecraftGuiBridge.chat(minecraft);
-        if (chat == null) {
-            return;
-        }
-        chat.addServerSystemMessage(component);
-    }
-
-    private static void renderStructuredProjection(
+    private static RichChatMessage recordLegacyStructuredMessage(
             String messageId,
             String senderName,
-            Component component,
+            String plainText,
             String fallbackText,
-            List<RichAttachment> attachments,
-            RichChatMessageSource source) {
+            List<RichAttachment> attachments) {
+        String visibleSender = senderName == null || senderName.isBlank() ? "?" : senderName;
+        String body = plainText == null ? "" : plainText;
+        InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(
+                Component.literal("<" + visibleSender + "> " + body));
+        return RichChatIngress.recordLegacy(
+                messageId,
+                senderName,
+                ChatMessageKind.PLAYER,
+                emojiDecoded.modified(),
+                fallbackText,
+                attachments,
+                emojiDecoded.slots(),
+                RichChatMessageSource.STRUCTURED_PACKET);
+    }
+
+    private static void projectStoredMessage(RichChatMessage message) {
+        message.attachments().stream()
+                .filter(RichAttachment::hasRenderableUrl)
+                .forEach(ServerMediaNetworking::preloadStructuredAttachmentMedia);
         Minecraft minecraft = Minecraft.getInstance();
         ChatComponent chat = MinecraftGuiBridge.chat(minecraft);
         if (chat == null) {
             return;
         }
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(component);
-            RichChatIngress.recordLegacy(
-                    messageId,
-                    senderName,
-                    ChatMessageKind.PLAYER,
-                    emojiDecoded.modified(),
-                    fallbackText,
-                    attachments,
-                    emojiDecoded.slots(),
-                    source);
-            attachments.stream()
-                    .filter(RichAttachment::hasRenderableUrl)
-                    .forEach(ServerMediaNetworking::preloadStructuredAttachmentMedia);
-            return;
-        }
-        RichChatProjection projection = RichChatProjectionService.recordAndProject(
-                messageId,
-                senderName,
-                component,
-                fallbackText,
-                attachments,
-                source);
+        RichChatProjection projection = RichChatProjectionService.project(message);
         RichChatProjectionCoordinator.prepareNext(projection);
+        InlineEmojiCoordinator.setPendingSlots(message.inlineEmojiSlots());
         if (projection.hasMediaBlock()) {
-            beginStructuredAttachmentRender(projection.mediaAttachment());
+            UpgradePhantomCoordinator.setPendingDecoded(projection.mediaAttachment());
         }
         chat.addServerSystemMessage(projection.textProjection());
-    }
-
-    private static void beginStructuredAttachmentRender(RichAttachment attachment) {
-        UpgradePhantomCoordinator.setPendingDecoded(attachment);
-        preloadStructuredAttachmentMedia(attachment);
     }
 
     private static void preloadStructuredAttachmentMedia(RichAttachment attachment) {
@@ -429,22 +380,6 @@ public final class ServerMediaNetworking {
                 }
             }
         }
-    }
-
-    private static Component buildStructuredChatMessage(String senderName, String text, List<RichAttachment> attachments) {
-        String prefix = "<" + (senderName == null || senderName.isBlank() ? "?" : senderName) + "> ";
-        String body = text == null ? "" : text.trim();
-        Component base = body.isEmpty() ? Component.literal(prefix) : Component.literal(prefix + body + " ");
-        for (RichAttachment attachment : attachments) {
-            if (attachment == null || !attachment.hasRenderableUrl()) {
-                continue;
-            }
-            base = base.copy().append(UpgradeBracketCodec.buildPlaceholderComponent(
-                    attachment.type(),
-                    attachment.displayName(),
-                    attachment.requireRenderableUrl()));
-        }
-        return base;
     }
 
     public static CompletableFuture<Optional<StructuredAttachment>> submitAttachment(StructuredAttachment attachment) {

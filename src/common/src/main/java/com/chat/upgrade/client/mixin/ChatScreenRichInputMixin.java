@@ -33,6 +33,7 @@ import com.chat.upgrade.client.ui.chat.interaction.ChatMessageActionExecutor;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceFrame;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
 import com.chat.upgrade.client.ui.settings.ChatSettingsOverlay;
@@ -177,9 +178,8 @@ public abstract class ChatScreenRichInputMixin extends Screen
             cir.setReturnValue(true);
             return;
         }
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
-                && event.button() == 0
-                && ChatSurfaceRenderer.settingsButtonBounds(ChatSurfaceController.state().frame())
+        if (event.button() == 0
+                && ChatSurfaceRenderer.settingsButtonBounds(chatupgrade$settingsButtonFrame())
                         .contains((int) Math.round(event.x()), (int) Math.round(event.y()))) {
             chatupgrade$openSettingsOverlay();
             cir.setReturnValue(true);
@@ -581,6 +581,9 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (chatupgrade$emojiSearchBox != null) {
             chatupgrade$emojiSearchBox.visible = chatupgrade$emojiSearchVisibleBeforeRender;
         }
+        if (!takeover) {
+            ChatSurfaceRenderer.paintSettingsButton(graphics, chatupgrade$settingsButtonFrame());
+        }
         if (takeover) {
             RichChatBounds composer = chatupgrade$composerBounds();
             chatupgrade$composerState.replyTarget().ifPresent(target -> ChatComposerRenderer.paintReplyPreview(
@@ -843,6 +846,14 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (chat != null) {
             chat.addRecentChat(normalized);
         }
+    }
+
+    @Unique
+    private ChatSurfaceFrame chatupgrade$settingsButtonFrame() {
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
+            return ChatSurfaceController.state().frame();
+        }
+        return ChatSurfaceController.synchronize(this.width, this.height, true, false);
     }
 
     @Unique

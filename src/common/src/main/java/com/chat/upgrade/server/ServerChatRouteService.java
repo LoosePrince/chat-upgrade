@@ -148,13 +148,11 @@ public final class ServerChatRouteService {
         AttachmentRouteDescriptor firstAttachment = firstAttachmentDescriptor(legacyMessage);
         for (ServerPlayer target : playerList.getPlayers()) {
             int route = routeFor(target);
-            if (route == ROUTE_STRUCTURED_V2
-                    && !shouldKeepVanillaPlainText(target, legacyMessage)) {
+            if (route == ROUTE_STRUCTURED_V2) {
                 Net.sendToClient(target, ServerMediaPayloads.S2CStructuredChatV2.fromEnvelope(envelope));
                 continue;
             }
             if (route == ROUTE_STRUCTURED_MESSAGE
-                    && !shouldKeepVanillaPlainText(target, legacyMessage)
                     && sendStructuredMessage(target, legacyMessage)) {
                 continue;
             }
@@ -341,15 +339,6 @@ public final class ServerChatRouteService {
     private static void pruneRetractions(long nowMs) {
         long cutoff = Math.max(0L, nowMs - RETRACTED_TOMBSTONE_TTL_MS);
         RETRACTED_MESSAGES.entrySet().removeIf(entry -> entry.getValue() < cutoff);
-    }
-
-    private static boolean shouldKeepVanillaPlainText(ServerPlayer target, StructuredChatMessage message) {
-        return ServerMediaServerNetworking.isCompatTextVanillaPlayer(target) && !message.hasAttachments();
-    }
-
-    private static boolean shouldKeepVanillaPlainText(ServerPlayer target, AttachmentRouteDescriptor descriptor) {
-        return ServerMediaServerNetworking.isCompatTextVanillaPlayer(target)
-                && descriptor.structuredAttachment().isEmpty();
     }
 
     private static boolean sendStructuredMessage(ServerPlayer target, StructuredChatMessage message) {

@@ -4,7 +4,8 @@ public record ChatTimelineProjection(
         RichChatMessage message,
         ChatAvatar avatar,
         ChatTimelineGroupPosition groupPosition,
-        String groupKey) {
+        String groupKey,
+        boolean continuesIdentityGroup) {
     public ChatTimelineProjection {
         if (message == null) {
             throw new IllegalArgumentException("message must not be null");
@@ -22,8 +23,8 @@ public record ChatTimelineProjection(
         return message.kind();
     }
 
-    public boolean showIdentity() {
-        return kind().playerAuthored() && groupPosition.startsGroup();
+    public boolean startsIdentityGroup() {
+        return kind().playerAuthored() && !continuesIdentityGroup;
     }
 
     public boolean groupedWithPrevious() {

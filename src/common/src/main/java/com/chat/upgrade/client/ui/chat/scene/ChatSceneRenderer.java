@@ -294,10 +294,15 @@ public final class ChatSceneRenderer {
             }
         }
         for (RichChatRenderNode node : message.nodes()) {
+            RichChatBounds row = node.bounds().translateY(contentToLocalY);
             if (node.text() == null) {
+                paintVanillaBackgroundRow(
+                        graphics,
+                        messageBounds,
+                        row,
+                        background);
                 continue;
             }
-            RichChatBounds row = node.bounds().translateY(contentToLocalY);
             if (!paintedRows.add(row.top())) {
                 continue;
             }

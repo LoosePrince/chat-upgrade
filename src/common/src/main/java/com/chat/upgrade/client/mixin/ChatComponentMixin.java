@@ -31,7 +31,6 @@ import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
-import com.chat.upgrade.client.ui.chat.state.RichChatProjectionService;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
 import net.minecraft.client.gui.components.ChatComponent;
@@ -85,25 +84,6 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             Component original,
             com.chat.upgrade.client.ui.chat.state.ChatMessageKind kind) {
         if (RichChatProjectionCoordinator.hasPending()) {
-            InlineEmojiCoordinator.clearPendingSlots();
-            return original;
-        }
-        if (!ChatUpgradeChatPipelineGate.shouldEnhancePlainTextChat()) {
-            InlineEmojiCoordinator.clearPendingSlots();
-            UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(original);
-            if (decoded.attachment().isPresent() && decoded.attachment().get().hasRenderableUrl()) {
-                RichAttachment attachment = decoded.attachment().get();
-                RichChatProjection projection = RichChatProjectionService.recordAndProject(
-                        "",
-                        "",
-                        decoded.modified(),
-                        decoded.modified().getString(),
-                        List.of(attachment),
-                        RichChatMessageSource.BRACKET_PROTOCOL);
-                RichChatProjectionCoordinator.prepareNext(projection);
-                chatupgrade$prepareMediaProjection(projection);
-                return decoded.modified();
-            }
             return original;
         }
         InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(original);
@@ -113,40 +93,26 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             InlineEmojiCoordinator.clearPendingSlots();
         }
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(emojiDecoded.modified());
-        if (decoded.attachment().isPresent() && decoded.attachment().get().hasRenderableUrl()) {
-            RichAttachment attachment = decoded.attachment().get();
-            RichChatIngress.recordLegacy(
-                    "",
-                    kind,
-                    decoded.modified(),
-                    decoded.modified().getString(),
-                    List.of(attachment),
-                    emojiDecoded.slots(),
-                    RichChatMessageSource.BRACKET_PROTOCOL);
+        List<RichAttachment> attachments = decoded.attachment()
+                .filter(RichAttachment::hasRenderableUrl)
+                .map(List::of)
+                .orElseGet(List::of);
+        RichChatIngress.recordLegacy(
+                "",
+                kind,
+                decoded.modified(),
+                decoded.modified().getString(),
+                attachments,
+                emojiDecoded.slots(),
+                attachments.isEmpty()
+                        ? RichChatMessageSource.VANILLA_TEXT
+                        : RichChatMessageSource.BRACKET_PROTOCOL);
+        if (!attachments.isEmpty()) {
+            RichAttachment attachment = attachments.getFirst();
+            UpgradePhantomCoordinator.setPendingDecoded(attachment);
             chatupgrade$preloadMedia(attachment);
-            return decoded.modified();
         }
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            RichChatIngress.recordLegacy(
-                    "",
-                    kind,
-                    emojiDecoded.modified(),
-                    emojiDecoded.modified().getString(),
-                    List.of(),
-                    emojiDecoded.slots(),
-                    RichChatMessageSource.VANILLA_TEXT);
-        }
-        return emojiDecoded.modified();
-    }
-
-    @Unique
-    private void chatupgrade$prepareMediaProjection(RichChatProjection projection) {
-        RichAttachment attachment = projection.mediaAttachment();
-        if (attachment == null || !attachment.hasRenderableUrl()) {
-            return;
-        }
-        UpgradePhantomCoordinator.setPendingDecoded(attachment);
-        chatupgrade$preloadMedia(attachment);
+        return decoded.modified();
     }
 
     @Unique
@@ -290,13 +256,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
 
     @Unique
     private void chatupgrade$insertPhantoms() {
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode()) {
-            RichChatProjectionCoordinator.clear();
-            UpgradePhantomCoordinator.clear();
-            return;
-        }
-        if (!ChatUpgradeChatPipelineGate.shouldEnhancePlainTextChat()
-                && !RichChatProjectionCoordinator.hasPending()
+        if (!RichChatProjectionCoordinator.hasPending()
                 && !UpgradePhantomCoordinator.hasPendingDecoded()) {
             return;
         }

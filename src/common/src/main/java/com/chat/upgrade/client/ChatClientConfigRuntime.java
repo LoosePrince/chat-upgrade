@@ -5,11 +5,8 @@ import java.util.function.Consumer;
 
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
-import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
-
-import net.minecraft.client.Minecraft;
 
 /** Single entry point for loading, previewing, saving, and applying client configuration. */
 public final class ChatClientConfigRuntime {
@@ -17,7 +14,7 @@ public final class ChatClientConfigRuntime {
     }
 
     public static void initializeLoadedConfig() {
-        applyRuntime(ChatUpgradeConfig.get(), false);
+        applyRuntime(ChatUpgradeConfig.get());
     }
 
     public static ChatUpgradeConfig draft() {
@@ -51,7 +48,7 @@ public final class ChatClientConfigRuntime {
 
     public static void save(ChatUpgradeConfig draft) throws IOException {
         ChatUpgradeConfig.replaceAndSave(draft);
-        applyRuntime(ChatUpgradeConfig.get(), true);
+        applyRuntime(ChatUpgradeConfig.get());
     }
 
     public static void updateAndSave(Consumer<ChatUpgradeConfig> mutation) throws IOException {
@@ -62,22 +59,14 @@ public final class ChatClientConfigRuntime {
 
     public static void reload() {
         ChatUpgradeConfig.load();
-        applyRuntime(ChatUpgradeConfig.get(), true);
+        applyRuntime(ChatUpgradeConfig.get());
     }
 
-    private static void applyRuntime(ChatUpgradeConfig config, boolean synchronizeServer) {
+    private static void applyRuntime(ChatUpgradeConfig config) {
         config.normalizeLimits();
         AudioPlayerService.setGlobalVolumePercent(config.audioVolumePercent);
         VideoPlayerService.setGlobalVolumePercent(config.videoVolumePercent);
         ChatAppearanceRuntime.commit(config);
         RichChatViewport.invalidateAll();
-        if (synchronizeServer && isConnected()) {
-            ServerMediaNetworking.sendChatInputMode();
-        }
-    }
-
-    private static boolean isConnected() {
-        Minecraft minecraft = Minecraft.getInstance();
-        return minecraft != null && minecraft.player != null;
     }
 }

@@ -26,12 +26,15 @@ public final class ChatTimelineProjector {
             ResolvedMessage current = resolved.get(index);
             boolean joinsPrevious = index > 0 && canGroup(resolved.get(index - 1), current);
             boolean joinsNext = index + 1 < resolved.size() && canGroup(current, resolved.get(index + 1));
+            boolean continuesIdentityGroup = index > 0
+                    && canContinueIdentityGroup(resolved.get(index - 1), current);
             ChatTimelineGroupPosition position = groupPosition(joinsPrevious, joinsNext);
             projected.add(new ChatTimelineProjection(
                     current.message(),
                     ChatAvatar.forMessage(current.message().author(), current.message().kind()),
                     position,
-                    current.groupKey()));
+                    current.groupKey(),
+                    continuesIdentityGroup));
         }
         return List.copyOf(projected);
     }
@@ -45,6 +48,12 @@ public final class ChatTimelineProjector {
     }
 
     private static boolean canGroup(ResolvedMessage earlier, ResolvedMessage later) {
+        return canContinueIdentityGroup(earlier, later)
+                && earlier.message().replyTo() == null
+                && later.message().replyTo() == null;
+    }
+
+    private static boolean canContinueIdentityGroup(ResolvedMessage earlier, ResolvedMessage later) {
         RichChatMessage earlierMessage = earlier.message();
         RichChatMessage laterMessage = later.message();
         if (!earlierMessage.kind().playerAuthored()
@@ -52,9 +61,7 @@ public final class ChatTimelineProjector {
                 || earlierMessage.status() != RichChatMessageStatus.VISIBLE
                 || laterMessage.status() != RichChatMessageStatus.VISIBLE
                 || earlier.groupKey().isBlank()
-                || !earlier.groupKey().equals(later.groupKey())
-                || earlierMessage.replyTo() != null
-                || laterMessage.replyTo() != null) {
+                || !earlier.groupKey().equals(later.groupKey())) {
             return false;
         }
         long earlierTimestamp = earlierMessage.serverTimestampMs();

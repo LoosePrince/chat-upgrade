@@ -143,7 +143,7 @@ public record ChatAppearanceSnapshot(
         return showPlayerAvatars
                 && timeline != null
                 && timeline.kind().playerAuthored()
-                && (!avatarFirstLineOnly || timeline.groupPosition().startsGroup());
+                && (!avatarFirstLineOnly || timeline.startsIdentityGroup());
     }
 
     public int avatarSize(int messageLineHeight) {
