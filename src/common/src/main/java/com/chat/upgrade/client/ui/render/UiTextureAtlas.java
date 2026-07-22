@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.Arc2D;
+import java.awt.geom.Area;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
@@ -41,6 +42,10 @@ public final class UiTextureAtlas {
 
     private static final int TILE_LOGICAL_SIZE = 32;
     private static final int ICON_LOGICAL_SIZE = 16;
+    private static final int ROUNDED_FILL_ENTRY_COUNT = 16;
+    private static final int BORDER_WIDTH_COUNT = 4;
+    private static final int ROUNDED_BORDER_ENTRY_COUNT = ROUNDED_FILL_ENTRY_COUNT * BORDER_WIDTH_COUNT;
+    private static final int ICON_ENTRY_START = ROUNDED_FILL_ENTRY_COUNT + ROUNDED_BORDER_ENTRY_COUNT;
     private static final int COLUMN_COUNT = 8;
     private static final int MAX_PIXEL_SCALE = 8;
     private static final AtomicInteger GENERATION = new AtomicInteger();
@@ -123,6 +128,72 @@ public final class UiTextureAtlas {
         return sourceDiameter > 0;
     }
 
+    public static boolean paintRoundedBorder(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds bounds,
+            int radius,
+            int borderWidth,
+            int color) {
+        if (graphics == null || bounds == null || bounds.width() <= 0 || bounds.height() <= 0
+                || (color >>> 24) == 0) {
+            return true;
+        }
+        int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        int safeBorder = Math.clamp(borderWidth, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        if (safeRadius <= 0 || safeBorder <= 0) {
+            return false;
+        }
+        Atlas atlas = ensure();
+        if (atlas == null) {
+            return false;
+        }
+        int sourceX = tileX(borderTileEntry(safeRadius, safeBorder), atlas.tileSize());
+        int sourceY = tileY(borderTileEntry(safeRadius, safeBorder), atlas.tileSize());
+        int sourceRadius = safeRadius * atlas.pixelScale();
+
+        int left = bounds.left();
+        int top = bounds.top();
+        int right = bounds.right();
+        int bottom = bounds.bottom();
+        graphics.fill(left + safeRadius, top, right - safeRadius, top + safeBorder, color);
+        graphics.fill(left + safeRadius, bottom - safeBorder, right - safeRadius, bottom, color);
+        graphics.fill(left, top + safeRadius, left + safeBorder, bottom - safeRadius, color);
+        graphics.fill(right - safeBorder, top + safeRadius, right, bottom - safeRadius, color);
+
+        blitMask(graphics, atlas, left, top, safeRadius, sourceX, sourceY, sourceRadius, color);
+        blitMask(
+                graphics,
+                atlas,
+                right - safeRadius,
+                top,
+                safeRadius,
+                sourceX + sourceRadius,
+                sourceY,
+                sourceRadius,
+                color);
+        blitMask(
+                graphics,
+                atlas,
+                left,
+                bottom - safeRadius,
+                safeRadius,
+                sourceX,
+                sourceY + sourceRadius,
+                sourceRadius,
+                color);
+        blitMask(
+                graphics,
+                atlas,
+                right - safeRadius,
+                bottom - safeRadius,
+                safeRadius,
+                sourceX + sourceRadius,
+                sourceY + sourceRadius,
+                sourceRadius,
+                color);
+        return true;
+    }
+
     public static void drawIcon(
             GuiGraphicsExtractor graphics,
             Icon icon,
@@ -135,7 +206,7 @@ public final class UiTextureAtlas {
         if (atlas == null) {
             return;
         }
-        int entry = 16 + icon.ordinal();
+        int entry = ICON_ENTRY_START + icon.ordinal();
         int sourceSize = ICON_LOGICAL_SIZE * atlas.pixelScale();
         int sourceOffset = (TILE_LOGICAL_SIZE - ICON_LOGICAL_SIZE) * atlas.pixelScale() / 2;
         int sourceX = tileX(entry, atlas.tileSize()) + sourceOffset;
@@ -195,7 +266,7 @@ public final class UiTextureAtlas {
     }
 
     private static BufferedImage buildAtlas(int pixelScale) {
-        int entryCount = 16 + Icon.values().length;
+        int entryCount = ICON_ENTRY_START + Icon.values().length;
         int rows = (entryCount + COLUMN_COUNT - 1) / COLUMN_COUNT;
         int tileSize = TILE_LOGICAL_SIZE * pixelScale;
         BufferedImage atlas = new BufferedImage(
@@ -207,15 +278,35 @@ public final class UiTextureAtlas {
             graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
             graphics.setColor(Color.WHITE);
-            for (int radius = 1; radius <= 16; radius++) {
+            for (int radius = 1; radius <= ROUNDED_FILL_ENTRY_COUNT; radius++) {
                 int entry = radius - 1;
                 int x = tileX(entry, tileSize);
                 int y = tileY(entry, tileSize);
                 int diameter = radius * 2 * pixelScale;
                 graphics.fill(new Ellipse2D.Float(x, y, diameter, diameter));
             }
+            for (int radius = 1; radius <= ROUNDED_FILL_ENTRY_COUNT; radius++) {
+                for (int borderWidth = 1; borderWidth <= BORDER_WIDTH_COUNT; borderWidth++) {
+                    int entry = borderTileEntry(radius, borderWidth);
+                    int x = tileX(entry, tileSize);
+                    int y = tileY(entry, tileSize);
+                    float diameter = radius * 2.0F * pixelScale;
+                    Area border = new Area(new Ellipse2D.Float(x, y, diameter, diameter));
+                    int innerRadius = Math.max(0, radius - borderWidth);
+                    if (innerRadius > 0) {
+                        float innerDiameter = innerRadius * 2.0F * pixelScale;
+                        float inset = borderWidth * pixelScale;
+                        border.subtract(new Area(new Ellipse2D.Float(
+                                x + inset,
+                                y + inset,
+                                innerDiameter,
+                                innerDiameter)));
+                    }
+                    graphics.fill(border);
+                }
+            }
             for (Icon icon : Icon.values()) {
-                int entry = 16 + icon.ordinal();
+                int entry = ICON_ENTRY_START + icon.ordinal();
                 int x = tileX(entry, tileSize) + (TILE_LOGICAL_SIZE - ICON_LOGICAL_SIZE) * pixelScale / 2;
                 int y = tileY(entry, tileSize) + (TILE_LOGICAL_SIZE - ICON_LOGICAL_SIZE) * pixelScale / 2;
                 paintIcon(graphics, icon, x, y, pixelScale);
@@ -367,6 +458,12 @@ public final class UiTextureAtlas {
                 atlas.width(),
                 atlas.height(),
                 color);
+    }
+
+    private static int borderTileEntry(int radius, int borderWidth) {
+        int radiusIndex = Math.clamp(radius, 1, ROUNDED_FILL_ENTRY_COUNT) - 1;
+        int widthIndex = Math.clamp(borderWidth, 1, BORDER_WIDTH_COUNT) - 1;
+        return ROUNDED_FILL_ENTRY_COUNT + radiusIndex * BORDER_WIDTH_COUNT + widthIndex;
     }
 
     private static int tileX(int entry, int tileSize) {

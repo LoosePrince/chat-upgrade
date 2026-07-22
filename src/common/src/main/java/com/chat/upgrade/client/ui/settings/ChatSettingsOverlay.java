@@ -34,6 +34,7 @@ public final class ChatSettingsOverlay {
     private static final int COLOR_OPTION_HEIGHT = 50;
     private static final int HEADING_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 18;
+    private static final float TEXT_SCALE = 0.75F;
 
     private static final int DIM = 0xA0000000;
     private static final int PANEL = 0xF2181D26;
@@ -208,13 +209,13 @@ public final class ChatSettingsOverlay {
                 layout.panel().right() - 1,
                 layout.headerBottom(),
                 HEADER);
-        graphics.text(
+        paintText(
+                graphics,
                 font,
                 I18n.get("chatupgrade.settings.title"),
                 layout.panel().left() + 10,
                 layout.panel().top() + 10,
-                TEXT,
-                false);
+                TEXT);
         paintCloseButton(graphics, layout.closeButton(), mouseX, mouseY);
         paintCategories(graphics, font, layout, mouseX, mouseY);
         paintOptions(graphics, font, layout, mouseX, mouseY);
@@ -256,13 +257,13 @@ public final class ChatSettingsOverlay {
             if (selected || hover) {
                 UiPrimitives.fillRounded(graphics, bounds, 4, selected ? ACTIVE : ROW_HOVER);
             }
-            graphics.text(
+            paintText(
+                    graphics,
                     font,
                     I18n.get(value.labelKey()),
                     bounds.left() + 7,
                     bounds.top() + 8,
-                    selected ? TEXT : MUTED,
-                    false);
+                    selected ? TEXT : MUTED);
             y += 28;
         }
     }
@@ -284,13 +285,13 @@ public final class ChatSettingsOverlay {
                     continue;
                 }
                 if (row.option() instanceof SettingsOption.HeadingOption heading) {
-                    graphics.text(
+                    paintText(
+                            graphics,
                             font,
                             I18n.get(heading.labelKey()),
                             row.bounds().left() + 2,
                             row.bounds().top() + 7,
-                            0xFF8FB8EC,
-                            false);
+                            0xFF8FB8EC);
                     graphics.fill(
                             row.bounds().left(),
                             row.bounds().bottom() - 1,
@@ -301,13 +302,13 @@ public final class ChatSettingsOverlay {
                 }
                 int background = row.bounds().contains(mouseX, mouseY) ? ROW_HOVER : ROW;
                 UiPrimitives.fillRounded(graphics, row.bounds(), 4, background);
-                graphics.text(
+                paintText(
+                        graphics,
                         font,
                         I18n.get(row.option().labelKey()),
                         row.bounds().left() + 7,
                         row.bounds().top() + 9,
-                        TEXT,
-                        false);
+                        TEXT);
                 paintOptionControl(graphics, font, row, mouseX, mouseY);
             }
         } finally {
@@ -334,14 +335,14 @@ public final class ChatSettingsOverlay {
                         TEXT);
             }
             String value = I18n.get(enabled ? "chatupgrade.common.on" : "chatupgrade.common.off");
-            graphics.text(font, value, control.left() + 18, control.top() + 5, enabled ? TEXT : MUTED, false);
+            paintText(graphics, font, value, control.left() + 18, control.top() + 5, enabled ? TEXT : MUTED);
             return;
         }
         if (option instanceof SettingsOption.EnumOption enumOption) {
             UiPrimitives.fillRounded(graphics, control, 4, control.contains(mouseX, mouseY) ? ACTIVE : CONTROL);
             int index = Math.floorMod(enumOption.selectedIndex().getAsInt(), enumOption.valueLabelKeys().size());
             String value = I18n.get(enumOption.valueLabelKeys().get(index));
-            graphics.centeredText(font, value, control.left() + control.width() / 2, control.top() + 5, TEXT);
+            paintCenteredText(graphics, font, value, control.left() + control.width() / 2, control.top() + 5, TEXT);
             return;
         }
         if (option instanceof SettingsOption.IntOption intOption) {
@@ -368,7 +369,7 @@ public final class ChatSettingsOverlay {
                 RichChatBounds.ofSize(knobX - 5, track.top() + 1, 10, 10),
                 TEXT);
         String text = formatValue(value, option.format());
-        graphics.text(font, text, track.right() + 7, track.top() + 3, MUTED, false);
+        paintText(graphics, font, text, track.right() + 7, track.top() + 3, MUTED);
     }
 
     private void paintColorControl(
@@ -379,7 +380,7 @@ public final class ChatSettingsOverlay {
         int color = option.getter().getAsInt() & 0x00FFFFFF;
         RichChatBounds swatch = RichChatBounds.ofSize(row.bounds().left() + 7, row.bounds().top() + 25, 40, 14);
         UiPrimitives.paintBox(graphics, swatch, 3, 1, 0xFF000000 | color, PANEL_BORDER);
-        graphics.text(font, String.format("#%06X", color), swatch.right() + 6, swatch.top() + 3, MUTED, false);
+        paintText(graphics, font, String.format("#%06X", color), swatch.right() + 6, swatch.top() + 3, MUTED);
         for (int channel = 0; channel < 3; channel++) {
             RichChatBounds track = row.colorChannels().get(channel);
             int value = channelValue(color, channel);
@@ -417,7 +418,7 @@ public final class ChatSettingsOverlay {
         if (errorMessage != null && !errorMessage.isBlank()) {
             int maxWidth = Math.max(20, layout.cancelButton().left() - layout.resetButton().right() - 12);
             String text = trim(font, errorMessage, maxWidth);
-            graphics.text(font, text, layout.resetButton().right() + 6, layout.footerTop() + 13, ERROR, false);
+            paintText(graphics, font, text, layout.resetButton().right() + 6, layout.footerTop() + 13, ERROR);
         }
     }
 
@@ -431,7 +432,13 @@ public final class ChatSettingsOverlay {
             boolean primary) {
         int color = bounds.contains(mouseX, mouseY) ? ROW_HOVER : primary ? ACTIVE : CONTROL;
         UiPrimitives.fillRounded(graphics, bounds, 4, color);
-        graphics.centeredText(font, I18n.get(labelKey), bounds.left() + bounds.width() / 2, bounds.top() + 6, TEXT);
+        paintCenteredText(
+                graphics,
+                font,
+                I18n.get(labelKey),
+                bounds.left() + bounds.width() / 2,
+                bounds.top() + 6,
+                TEXT);
     }
 
     private void activateOption(OptionRow row, double mouseX, double mouseY) {
@@ -554,14 +561,30 @@ public final class ChatSettingsOverlay {
                 integer("chatupgrade.settings.option.corner_radius", () -> appearance.cornerRadius,
                         value -> appearance.cornerRadius = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
                 heading("chatupgrade.settings.group.messages"),
+                color("chatupgrade.settings.option.message_background", () -> appearance.messageBackgroundColor,
+                        value -> appearance.messageBackgroundColor = value),
+                integer("chatupgrade.settings.option.message_background_opacity",
+                        () -> appearance.messageBackgroundOpacityPercent,
+                        value -> appearance.messageBackgroundOpacityPercent = value,
+                        0,
+                        100,
+                        SettingsOption.ValueFormat.PERCENT),
+                integer("chatupgrade.settings.option.message_gap", () -> appearance.messageGap,
+                        value -> appearance.messageGap = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
+                integer("chatupgrade.settings.option.group_gap", () -> appearance.groupGap,
+                        value -> appearance.groupGap = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
                 bool("chatupgrade.settings.option.vanilla_style_input", () -> appearance.vanillaStyleInput,
                         value -> appearance.vanillaStyleInput = value),
                 bool("chatupgrade.settings.option.player_avatars", () -> appearance.showPlayerAvatars,
                         value -> appearance.showPlayerAvatars = value),
+                bool("chatupgrade.settings.option.avatar_first_line_only", () -> appearance.avatarFirstLineOnly,
+                        value -> appearance.avatarFirstLineOnly = value),
                 bool("chatupgrade.settings.option.double_line", () -> appearance.doubleLineLayout,
                         value -> appearance.doubleLineLayout = value),
                 bool("chatupgrade.settings.option.message_bubbles", () -> appearance.messageBubbles,
                         value -> appearance.messageBubbles = value),
+                integer("chatupgrade.settings.option.bubble_padding", () -> appearance.bubblePadding,
+                        value -> appearance.bubblePadding = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
                 color("chatupgrade.settings.option.bubble_color", () -> appearance.bubbleColor,
                         value -> appearance.bubbleColor = value),
                 bool("chatupgrade.settings.option.bubble_border", () -> appearance.bubbleBorderEnabled,
@@ -580,14 +603,22 @@ public final class ChatSettingsOverlay {
                         "chatupgrade.settings.value.center",
                         "chatupgrade.settings.value.right"),
                 heading("chatupgrade.settings.group.geometry"),
+                bool("chatupgrade.settings.option.panel_auto_height", panel::usesAutomaticHeight,
+                        value -> panel.automaticHeight = value),
                 integer("chatupgrade.settings.option.panel_left", () -> panel.left,
                         value -> panel.left = value, 0, Math.max(0, screenWidth - 1), SettingsOption.ValueFormat.PIXELS),
                 integer("chatupgrade.settings.option.panel_bottom_offset", () -> panel.bottomOffset,
-                        value -> panel.bottomOffset = value, 0, Math.max(0, screenHeight - 1), SettingsOption.ValueFormat.PIXELS),
+                        value -> {
+                            panel.bottomOffset = value;
+                            panel.automaticHeight = false;
+                        }, 0, Math.max(0, screenHeight - 1), SettingsOption.ValueFormat.PIXELS),
                 integer("chatupgrade.settings.option.panel_width", () -> panel.width,
                         value -> panel.width = value, minWidth, availableWidth, SettingsOption.ValueFormat.PIXELS),
                 integer("chatupgrade.settings.option.panel_height", () -> panel.height,
-                        value -> panel.height = value, minHeight, availableHeight, SettingsOption.ValueFormat.PIXELS),
+                        value -> {
+                            panel.height = value;
+                            panel.automaticHeight = false;
+                        }, minHeight, availableHeight, SettingsOption.ValueFormat.PIXELS),
                 heading("chatupgrade.settings.group.context_menu"),
                 integer("chatupgrade.settings.option.context_menu_scale", () -> appearance.contextMenuScalePercent,
                         value -> appearance.contextMenuScalePercent = value, 75, 150, SettingsOption.ValueFormat.PERCENT),
@@ -697,6 +728,7 @@ public final class ChatSettingsOverlay {
         draft = null;
         activeSlider = null;
         scrollY = 0.0D;
+        ChatSurfaceController.finishPanelGeometryPreview();
         ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.NONE);
     }
 
@@ -828,11 +860,41 @@ public final class ChatSettingsOverlay {
         };
     }
 
+    private static void paintText(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            String text,
+            int x,
+            int y,
+            int color) {
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        try {
+            pose.translate(x, y);
+            pose.scale(TEXT_SCALE, TEXT_SCALE);
+            graphics.text(font, text, 0, 0, color, false);
+        } finally {
+            pose.popMatrix();
+        }
+    }
+
+    private static void paintCenteredText(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            String text,
+            int centerX,
+            int y,
+            int color) {
+        int x = Math.round(centerX - font.width(text) * TEXT_SCALE / 2.0F);
+        paintText(graphics, font, text, x, y, color);
+    }
+
     private static String trim(Font font, String value, int maxWidth) {
-        if (font.width(value) <= maxWidth) {
+        int unscaledWidth = Math.max(0, (int) Math.floor(maxWidth / TEXT_SCALE));
+        if (font.width(value) <= unscaledWidth) {
             return value;
         }
-        return font.plainSubstrByWidth(value, Math.max(0, maxWidth - font.width("…"))) + "…";
+        return font.plainSubstrByWidth(value, Math.max(0, unscaledWidth - font.width("…"))) + "…";
     }
 
     private static RichChatBounds inset(RichChatBounds bounds, int amount) {

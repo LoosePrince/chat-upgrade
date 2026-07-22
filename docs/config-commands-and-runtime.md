@@ -60,7 +60,7 @@ jps -l -v
 | --- | --- | --- | --- |
 | `chatInputMode` | `TAKEOVER` / `COMPAT_TEXT_VANILLA` | `TAKEOVER` | 聊天输入/渲染模式。字段缺失时等价于 `TAKEOVER`。 |
 | `appearance` | object | 见下文 | 面板、消息、输入栏、头像、双行布局、左右分栏、非玩家消息位置、气泡、圆角与右键菜单外观。 |
-| `chatPanel` | object | `{left:4,bottomOffset:40,width:360,height:220}` | TAKEOVER 面板的左下锚点偏移与持久化尺寸；运行时会按窗口边界归一化。 |
+| `chatPanel` | object | `{left:4,bottomOffset:40,width:360,height:220,automaticHeight:true}` | TAKEOVER 面板的左侧位置、宽度与可选手动高度。默认自动使用屏幕最大可用高度；分离原版输入区时动态避让工具栏、回复预览和原版输入框。 |
 | `ciCompatibility` | boolean | `false` | 图片发送是否优先使用受支持的 `[[CICode,...]]` bracket tag；关闭时使用标准 `[[ChatUpgrade,...]]`。 |
 | `manualImageReveal` | boolean | `false` | 图片是否点击后加载。 |
 | `manualAudioReveal` | boolean | `false` | 音频是否点击后加载。 |
@@ -117,15 +117,17 @@ jps -l -v
 打开设置
   -> 深拷贝当前配置为 baseline 与 draft
   -> 编辑 draft，并通过 ChatClientConfigRuntime 实时预览
-  -> 保存：规范化并提交整份 draft，写入 JSON
-  -> 取消/关闭/异常退出：恢复 baseline
+  -> 保存：规范化整份 draft，先原子替换 JSON，成功后再提交全局配置
+  -> 保存失败/取消/关闭/异常退出：全局配置保持不变并恢复 baseline 预览
 ```
 
 `ChatAppearanceSnapshot` 是 renderer 和布局层消费的不可变帧配置。`RichChatLayoutEngine` 负责所有会改变位置的计算，包括头像 gutter、双行元信息、本人消息整体靠右、非玩家消息左/中/右对齐以及附件/命中框平移；renderer 不再二次偏移。
 
-“双行布局”固定表示第一行昵称、时间等元信息，第二行开始消息内容。关闭头像只移除头像绘制和 gutter，不会隐藏昵称。“原版风格输入栏”只控制输入栏是否与聊天面板合并，不修改附件、Emoji、清空、发送功能，也不改变 `chatInputMode` 或消息提交管线。
+“双行布局”固定表示第一行昵称、时间等元信息，第二行开始消息内容。关闭头像只移除头像绘制和 gutter，不会隐藏昵称。“原版风格输入栏”只控制输入区是否与聊天面板合并，不修改附件、Emoji、清空、发送功能，也不改变 `chatInputMode` 或消息提交管线。两种布局都直接复用 `ChatScreen.input` 的原版 `EditBox`；模组只调整其位置和尺寸，不再维护第二套输入文本、光标、选区或历史状态。
 
-面板仍支持标题拖动和边缘/角落缩放；设置弹窗同时提供 `left`、`bottomOffset`、`width`、`height` 数值编辑与当前分类恢复默认。旧配置中的 `chatTheme` 是废弃字段：加载时会删除并重写配置，不迁移该字段对应的旧样式，也不存在对应切换命令。
+新安装与恢复默认均采用原版视觉语义：面板背景和边框透明、无头像、单行、无气泡、无左右分栏、圆角为 `0`，消息行使用黑色原版背景并与 Minecraft“文本背景不透明度”选项合成。聊天打开状态与关闭后的 HUD 预览共用这套消息背景规则；外观设置中的消息背景颜色和透明度可显式覆盖默认值。
+
+面板仍支持标题拖动和边缘/角落缩放；默认开启自动高度并持续按当前窗口重算。分离输入区时，实际 composer 顶边是自动高度、手动尺寸、拖动和缩放共同遵守的几何下界，因此输入框、回复预览和工具栏出现或变化时都不会与聊天面板重叠。手动修改 `bottomOffset` 或 `height` 会关闭自动高度；重新开启后恢复最大可用高度。旧配置中的 `chatTheme` 是废弃字段：加载时会删除并重写配置，不迁移该字段对应的旧样式，也不存在对应切换命令。
 
 ## 上传模式
 
@@ -225,7 +227,7 @@ config/chat-upgrade/server-media.json
 | TAKEOVER 回复期间追加附件 | 上传批次只消费发送开始时的草稿和回复目标；期间新增的附件与新回复目标保留。 |
 | TAKEOVER 设置草稿 | 打开后实时预览；保存提交整份配置并落盘；取消、关闭或异常退出恢复打开时基线。 |
 | TAKEOVER 双行与头像 | 双行开启时每条玩家消息先显示昵称/时间元信息，再显示正文；关闭头像后昵称仍存在且不保留 gutter。 |
-| TAKEOVER 消息对齐 | 本人消息的头像、元信息、正文、附件、气泡、操作栏和命中框整体靠右；非玩家消息按左/中/右配置整体平移。 |
+| TAKEOVER 消息对齐 | 本人消息的头像、元信息、正文、附件、气泡和命中框整体靠右；非玩家消息按左/中/右配置整体平移。 |
 | TAKEOVER 原版风格输入栏 | 只把原版 `EditBox` 和同功能紧凑工具栏移到屏幕底部；发送、附件、Emoji、清空、命令与消息管线不变。 |
 | TAKEOVER 身份头像 | 可解析玩家 UUID 时绘制皮肤头部与帽层；纹理不可用时稳定回退到色块/glyph。 |
 | TAKEOVER 面板几何 | 标题拖动、边缘/角落缩放和窗口尺寸变化后保持在屏幕内，并持久化 `chatPanel`。 |

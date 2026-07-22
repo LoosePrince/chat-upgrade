@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -93,9 +94,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Unique
     private EditBox chatupgrade$emojiSearchBox;
-
-    @Unique
-    private boolean chatupgrade$inputVisibleBeforeRender;
 
     @Unique
     private boolean chatupgrade$emojiSearchVisibleBeforeRender;
@@ -291,17 +289,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
                                 ChatGestureArena.Owner.ATTACHMENT_TRAY,
                                 this::chatupgrade$cancelAttachmentDrag)) {
                     chatupgrade$draggedAttachment = chip.get();
-                    cir.setReturnValue(true);
-                    return;
-                }
-            }
-            if (event.button() == 0) {
-                java.util.Optional<ChatContextMenu.Selection> hoverSelection =
-                        RichChatInteractionRouter.hoverActionAtScreen(
-                                (int) Math.round(event.x()),
-                                (int) Math.round(event.y()));
-                if (hoverSelection.isPresent()) {
-                    chatupgrade$applyContextSelection(hoverSelection.get());
                     cir.setReturnValue(true);
                     return;
                 }
@@ -549,8 +536,26 @@ public abstract class ChatScreenRichInputMixin extends Screen
         cir.setReturnValue(true);
     }
 
+    @Redirect(
+            method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/GuiGraphicsExtractor;fill(IIIII)V",
+                    ordinal = 0))
+    private void chatupgrade$renderVanillaInputBackground(
+            GuiGraphicsExtractor graphics,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            int color) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode() || chatupgrade$usesVanillaStyleInput()) {
+            graphics.fill(left, top, right, bottom, color);
+        }
+    }
+
     @Inject(method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("HEAD"))
-    private void chatupgrade$hideVanillaInputDuringTakeoverRender(
+    private void chatupgrade$prepareComposerRender(
             GuiGraphicsExtractor graphics,
             int mouseX,
             int mouseY,
@@ -563,13 +568,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
             chatupgrade$emojiSearchVisibleBeforeRender = chatupgrade$emojiSearchBox.visible;
             chatupgrade$emojiSearchBox.visible = false;
         }
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()
-                || chatupgrade$usesVanillaStyleInput()
-                || input == null) {
-            return;
-        }
-        chatupgrade$inputVisibleBeforeRender = input.visible;
-        input.visible = false;
     }
 
     @Inject(method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("TAIL"))
@@ -580,10 +578,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
             float partialTick,
             CallbackInfo ci) {
         boolean takeover = ChatUpgradeChatPipelineGate.isTakeoverMode();
-        boolean vanillaStyleInput = chatupgrade$usesVanillaStyleInput();
-        if (takeover && !vanillaStyleInput && input != null) {
-            input.visible = chatupgrade$inputVisibleBeforeRender;
-        }
         if (chatupgrade$emojiSearchBox != null) {
             chatupgrade$emojiSearchBox.visible = chatupgrade$emojiSearchVisibleBeforeRender;
         }
@@ -595,17 +589,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
                     ChatSurfaceController.state().appearance(),
                     composer,
                     target));
-            if (!vanillaStyleInput && input != null) {
-                ChatComposerRenderer.paintInput(
-                        graphics,
-                        this.font,
-                        ChatSurfaceController.state().appearance(),
-                        composer,
-                        input.getValue(),
-                        input.isFocused(),
-                        input.getCursorPosition(),
-                        ((EditBoxHighlightAccessor) (Object) input).chatupgrade$getHighlightPos());
-            }
         }
         int y = chatupgrade$buttonRowY();
         ChatComposerToolbar.render(
@@ -912,7 +895,9 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (input == null) {
             return;
         }
-        if (ChatUpgradeChatPipelineGate.isTakeoverMode() && !chatupgrade$usesVanillaStyleInput()) {
+        boolean mergedTakeoverInput = ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && !chatupgrade$usesVanillaStyleInput();
+        if (mergedTakeoverInput) {
             RichChatBounds composer = chatupgrade$composerBounds();
             input.setBordered(false);
             input.setX(composer.left() + 6);
@@ -920,10 +905,12 @@ public abstract class ChatScreenRichInputMixin extends Screen
             input.setWidth(Math.max(40, composer.width() - 12));
             return;
         }
-        input.setBordered(true);
+        RichChatBounds detachedComposer = chatupgrade$composerBounds();
+        ChatSurfaceController.updateVanillaComposerTop(detachedComposer.top(), this.width, this.height);
+        input.setBordered(false);
         input.setX(4);
-        input.setY(Math.max(0, this.height - 14));
-        input.setWidth(Math.max(40, this.width - 8));
+        input.setY(Math.max(0, this.height - 12));
+        input.setWidth(Math.max(40, this.width - 4));
     }
 
     @Unique

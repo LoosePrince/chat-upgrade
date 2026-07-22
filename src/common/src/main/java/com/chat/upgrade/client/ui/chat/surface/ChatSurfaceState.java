@@ -27,6 +27,7 @@ public final class ChatSurfaceState {
     private boolean restricted;
     private int screenWidth = 1;
     private int screenHeight = 1;
+    private int panelBottomInset = ChatPanelGeometry.SCREEN_MARGIN;
 
     public ChatPresentationMode presentationMode() {
         return presentationMode;
@@ -60,6 +61,10 @@ public final class ChatSurfaceState {
         return screenHeight;
     }
 
+    public int panelBottomInset() {
+        return panelBottomInset;
+    }
+
     public void setPresentationMode(ChatPresentationMode nextMode) {
         presentationMode = nextMode == null ? ChatPresentationMode.CLOSED_HUD : nextMode;
         if (presentationMode == ChatPresentationMode.CLOSED_HUD) {
@@ -75,7 +80,8 @@ public final class ChatSurfaceState {
     public boolean updateScreenSize(int nextScreenWidth, int nextScreenHeight) {
         screenWidth = Math.max(1, nextScreenWidth);
         screenHeight = Math.max(1, nextScreenHeight);
-        ChatPanelGeometry normalized = panelGeometry.normalized(screenWidth, screenHeight);
+        panelBottomInset = normalizeBottomInset(panelBottomInset);
+        ChatPanelGeometry normalized = panelGeometry.normalized(screenWidth, screenHeight, panelBottomInset);
         if (normalized.equals(panelGeometry)) {
             return false;
         }
@@ -84,10 +90,22 @@ public final class ChatSurfaceState {
     }
 
     public void setPanelGeometry(ChatPanelGeometry nextGeometry) {
+        setPanelGeometry(nextGeometry, panelBottomInset);
+    }
+
+    public void setPanelGeometry(ChatPanelGeometry nextGeometry, int bottomInset) {
         if (nextGeometry == null) {
             return;
         }
-        panelGeometry = nextGeometry.normalized(screenWidth, screenHeight);
+        panelBottomInset = normalizeBottomInset(bottomInset);
+        panelGeometry = nextGeometry.normalized(screenWidth, screenHeight, panelBottomInset);
+    }
+
+    private int normalizeBottomInset(int bottomInset) {
+        return Math.clamp(
+                bottomInset,
+                ChatPanelGeometry.SCREEN_MARGIN,
+                Math.max(ChatPanelGeometry.SCREEN_MARGIN, screenHeight - 1));
     }
 
     public void setRestricted(boolean nextRestricted) {

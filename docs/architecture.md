@@ -48,7 +48,7 @@ flowchart TB
 
 `TAKEOVER` 不再把 Minecraft 原版聊天矩形当作布局来源。`ChatSurfaceController` 维护左下锚定、可拖动、可缩放并持久化的 `ChatPanelGeometry`，根据聊天打开状态生成两种 presentation：
 
-- `OPEN_PANEL`：完整交互面板，包含 header、timeline viewport 与 composer 区域。
+- `OPEN_PANEL`：完整交互面板，包含 header 与 timeline viewport；关闭“原版风格输入栏”后才包含合并 composer 区域。默认分离布局直接复用 `ChatScreen.input` 的原版 `EditBox`，并按实际输入工具区顶边限制面板最大高度。
 - `CLOSED_HUD`：复用同一 surface 状态的紧凑淡出 HUD。
 
 消息内容不以原版 `GuiMessage.Line` 为事实来源：

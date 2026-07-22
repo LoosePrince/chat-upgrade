@@ -13,7 +13,6 @@ import com.chat.upgrade.client.ui.render.UiPrimitives;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.Util;
 
 public final class ChatComposerRenderer {
     private static final int CHIP_HEIGHT = 16;
@@ -76,87 +75,6 @@ public final class ChatComposerRenderer {
         return close.contains((int) Math.round(mouseX), (int) Math.round(mouseY));
     }
 
-    public static void paintInput(
-            GuiGraphicsExtractor graphics,
-            Font font,
-            ChatAppearanceSnapshot appearance,
-            RichChatBounds composerBounds,
-            String value,
-            boolean focused,
-            int cursorPosition,
-            int highlightPosition) {
-        if (graphics == null || font == null || appearance == null || composerBounds == null) {
-            return;
-        }
-        RichChatBounds inputBounds = RichChatBounds.ofSize(
-                composerBounds.left() + 6,
-                composerBounds.bottom() - 21,
-                Math.max(1, composerBounds.width() - 12),
-                18);
-        ChatAppearanceSnapshot.Surface surface = appearance.surface();
-        UiPrimitives.paintBox(
-                graphics,
-                inputBounds,
-                Math.min(appearance.cornerRadius(), 6),
-                1,
-                surface.panelBackground(),
-                focused ? surface.title() : surface.panelBorder());
-
-        String text = value == null ? "" : value;
-        int cursor = Math.clamp(cursorPosition, 0, text.length());
-        int highlight = Math.clamp(highlightPosition, 0, text.length());
-        int selectionStart = Math.min(cursor, highlight);
-        int selectionEnd = Math.max(cursor, highlight);
-        int contentLeft = inputBounds.left() + 4;
-        int contentTop = inputBounds.top() + 5;
-        int availableWidth = Math.max(1, inputBounds.width() - 8);
-        int visibleStart = 0;
-        String beforeCursor = text.substring(0, cursor);
-        if (font.width(beforeCursor) > availableWidth) {
-            String tail = font.plainSubstrByWidth(beforeCursor, availableWidth, true);
-            visibleStart = Math.max(0, cursor - tail.length());
-        }
-        String visible = text.substring(visibleStart);
-        if (font.width(visible) > availableWidth) {
-            visible = font.plainSubstrByWidth(visible, availableWidth);
-        }
-        int visibleEnd = visibleStart + visible.length();
-        String displayed = visible;
-        int textColor = appearance.message().text();
-        if (displayed.isEmpty()) {
-            graphics.text(
-                    font,
-                    Component.translatable("chatupgrade.input.hint").getString(),
-                    contentLeft,
-                    contentTop,
-                    surface.muted(),
-                    false);
-        } else {
-            if (selectionEnd > visibleStart && selectionStart < visibleEnd) {
-                int selectedFrom = Math.max(selectionStart, visibleStart) - visibleStart;
-                int selectedTo = Math.min(selectionEnd, visibleEnd) - visibleStart;
-                int selectedLeft = contentLeft + font.width(displayed.substring(0, selectedFrom));
-                int selectedRight = contentLeft + font.width(displayed.substring(0, selectedTo));
-                graphics.fill(
-                        selectedLeft,
-                        inputBounds.top() + 2,
-                        Math.max(selectedLeft + 1, selectedRight),
-                        inputBounds.bottom() - 2,
-                        0x805A8DFF);
-            }
-            graphics.text(font, displayed, contentLeft, contentTop, textColor, false);
-        }
-        int cursorOffset = Math.clamp(cursor - visibleStart, 0, displayed.length());
-        int cursorX = contentLeft + font.width(displayed.substring(0, cursorOffset));
-        if (focused && (Util.getMillis() / 500L) % 2L == 0L) {
-            graphics.fill(
-                    cursorX,
-                    inputBounds.top() + 3,
-                    cursorX + 1,
-                    inputBounds.bottom() - 3,
-                    surface.title());
-        }
-    }
     public static void paintAttachmentChips(
             GuiGraphicsExtractor graphics,
             Font font,

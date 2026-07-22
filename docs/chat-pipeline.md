@@ -19,16 +19,16 @@
 - 附件消息优先走结构化协议。
 - bracket 协议 `[[ChatUpgrade,...]]` / `[[CICode,...]]` 作为标准文本兼容层；客户端主动 fallback 仅允许单附件且无回复，服务端仍可按接收端能力重建安全降级文本。
 - 渲染事实来源是 `RichChatStateStore`。
-- 原版 `ChatScreen` 只保留打开/关闭、焦点、命令建议、历史与发送桥接；可见面板、timeline、composer、菜单、弹层、滚动条和调整手柄由 TAKEOVER surface 接管。
+- 原版 `ChatScreen.input` 的 `EditBox` 继续负责可见文本、焦点、光标、选区、命令建议、历史与提交；TAKEOVER 只调整其布局并叠加附件、回复和工具栏能力。
 - 文本、表情、图片、音频、视频都作为 timeline 节点处理。
 - 滚动、裁切、hover、click、tooltip 和 pointer capture 都由统一交互层处理。
-- 消息右键菜单与 hover 动作条共享类型化目录，按消息事实提供回复、复制、提及、资料、本地隐藏、屏蔽/取消屏蔽、本人撤回和可配置的调试信息。
+- 消息级回复、复制、提及、资料、本地隐藏、屏蔽/取消屏蔽、本人撤回和可配置调试信息统一由右键菜单提供；悬停仅保留链接、媒体和表情 tooltip。
 
 ### TAKEOVER 输入流
 
 ```mermaid
 flowchart TD
-    A[TAKEOVER composer / 隐藏原版输入桥] --> B{是否命令}
+    A[TAKEOVER composer / 原版 EditBox] --> B{是否命令}
     B -- 是 --> C[原版命令建议/历史/发送链路]
     B -- 否 --> D[捕获正文、回复目标与附件批次]
     D --> E{是否有附件}

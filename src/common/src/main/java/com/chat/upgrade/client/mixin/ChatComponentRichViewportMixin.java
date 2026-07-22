@@ -15,6 +15,7 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatLayoutEngine;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportMetrics;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewportState;
+import com.chat.upgrade.client.ui.render.UiPrimitives;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.platform.cursor.CursorTypes;
@@ -121,23 +122,42 @@ public abstract class ChatComponentRichViewportMixin {
                         state,
                         activePose,
                         contentToLocalY,
-                        viewportBounds);
+                        viewportBounds,
+                        surfaceFrame.appearance(),
+                        surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL
+                                && surfaceFrame.appearance().vanillaStyleInput());
             } else {
                 RichChatInteractionRouter.clearActiveLayout();
             }
             if (paintsTimeline) {
-                ChatSceneRenderer.paintTimeline(
-                        graphics,
-                        extractor,
-                        font,
-                        scene,
-                        state,
-                        contentToLocalY,
-                        ticks,
-                        displayMode.foreground);
+                Runnable paintTimeline = () -> {
+                    ChatSceneRenderer.paintTimeline(
+                            graphics,
+                            extractor,
+                            font,
+                            scene,
+                            state,
+                            contentToLocalY,
+                            ticks,
+                            displayMode.foreground);
+                    if (displayMode.foreground) {
+                        ChatSceneRenderer.paintScrollbar(graphics, scene, state, newMessageSinceScroll);
+                    }
+                };
+                if (extractor != null
+                        && surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL
+                        && surfaceFrame.appearance().vanillaStyleInput()
+                        && surfaceFrame.appearance().cornerRadius() > 0) {
+                    UiPrimitives.withBottomRoundedClip(
+                            extractor,
+                            viewportBounds,
+                            surfaceFrame.appearance().cornerRadius(),
+                            paintTimeline);
+                } else {
+                    paintTimeline.run();
+                }
             }
             if (displayMode.foreground && paintsTimeline) {
-                ChatSceneRenderer.paintScrollbar(graphics, scene, state, newMessageSinceScroll);
                 chatupgrade$showRichHover(graphics, extractor, font);
             }
         } finally {
@@ -205,12 +225,6 @@ public abstract class ChatComponentRichViewportMixin {
             return;
         }
         Vector2f local = focused.chatupgrade$localMousePos();
-        RichChatInteractionRouter.renderHoverActionBar(
-                extractor,
-                font,
-                ChatSurfaceController.state().appearance(),
-                local.x,
-                local.y);
         boolean tooltip = RichChatInteractionRouter.showTooltipForLocalHover(
                 extractor,
                 font,
@@ -218,7 +232,7 @@ public abstract class ChatComponentRichViewportMixin {
                 local.y,
                 focused.chatupgrade$globalMouseX(),
                 focused.chatupgrade$globalMouseY());
-        if (tooltip || RichChatInteractionRouter.hasActionAtLocal(local.x, local.y)) {
+        if (tooltip || RichChatInteractionRouter.styleForLocalClick(local.x, local.y) != null) {
             extractor.requestCursor(CursorTypes.POINTING_HAND);
         }
     }
@@ -230,7 +244,6 @@ public abstract class ChatComponentRichViewportMixin {
             ChatSurfaceFrame surfaceFrame) {
         float textOpacity = minecraft.options.chatOpacity().get().floatValue() * 0.9F + 0.1F;
         float backgroundOpacity = minecraft.options.textBackgroundOpacity().get().floatValue();
-        double lineSpacing = minecraft.options.chatLineSpacing().get();
         if (surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL) {
             RichChatBounds viewport = surfaceFrame.messageViewportBounds();
             int contentInset = 12;
@@ -239,7 +252,7 @@ public abstract class ChatComponentRichViewportMixin {
                     Math.max(1, viewport.width() - contentInset),
                     viewport.height(),
                     viewport.bottom(),
-                    lineSpacing,
+                    0.0D,
                     textOpacity,
                     backgroundOpacity,
                     true);
@@ -249,7 +262,7 @@ public abstract class ChatComponentRichViewportMixin {
                 getScale(),
                 getWidth(),
                 getHeight(),
-                lineSpacing,
+                0.0D,
                 textOpacity,
                 backgroundOpacity,
                 displayMode.foreground);

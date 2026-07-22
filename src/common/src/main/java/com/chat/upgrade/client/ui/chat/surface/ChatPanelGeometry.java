@@ -10,6 +10,7 @@ public record ChatPanelGeometry(int x, int y, int width, int height) {
     public static final int DEFAULT_HEIGHT = 220;
     public static final int DEFAULT_LEFT = 4;
     public static final int DEFAULT_BOTTOM_OFFSET = 40;
+    public static final int MERGED_BOTTOM_OFFSET = SCREEN_MARGIN;
     public static final int HEADER_HEIGHT = 18;
     public static final int COMPOSER_HEIGHT = 62;
     public static final int RESIZE_HANDLE_SIZE = 5;
@@ -31,33 +32,63 @@ public record ChatPanelGeometry(int x, int y, int width, int height) {
             int left,
             int bottomOffset,
             int width,
-            int height) {
+            int height,
+            boolean automaticHeight,
+            int bottomInset) {
+        int reservedBottom = Math.max(MERGED_BOTTOM_OFFSET, bottomInset);
+        if (automaticHeight) {
+            int safeWidth = width <= 0 ? DEFAULT_WIDTH : width;
+            int top = Math.min(SCREEN_MARGIN, Math.max(0, screenHeight - 1));
+            int bottom = Math.max(top + 1, screenHeight - reservedBottom);
+            return new ChatPanelGeometry(Math.max(0, left), top, safeWidth, bottom - top)
+                    .normalized(screenWidth, screenHeight, reservedBottom);
+        }
         int safeWidth = width <= 0 ? DEFAULT_WIDTH : width;
         int safeHeight = height <= 0 ? DEFAULT_HEIGHT : height;
         int safeLeft = Math.max(0, left);
-        int safeBottomOffset = Math.max(0, bottomOffset);
+        int safeBottomOffset = Math.max(reservedBottom, bottomOffset);
         int top = Math.max(0, screenHeight - safeBottomOffset - safeHeight);
         return new ChatPanelGeometry(safeLeft, top, safeWidth, safeHeight)
-                .normalized(screenWidth, screenHeight);
+                .normalized(screenWidth, screenHeight, reservedBottom);
+    }
+
+    public static ChatPanelGeometry restore(
+            int screenWidth,
+            int screenHeight,
+            int left,
+            int bottomOffset,
+            int width,
+            int height) {
+        return restore(screenWidth, screenHeight, left, bottomOffset, width, height, false, MERGED_BOTTOM_OFFSET);
     }
 
     public ChatPanelGeometry normalized(int screenWidth, int screenHeight) {
+        return normalized(screenWidth, screenHeight, SCREEN_MARGIN);
+    }
+
+    public ChatPanelGeometry normalized(int screenWidth, int screenHeight, int bottomInset) {
+        int safeBottomInset = Math.clamp(bottomInset, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, screenHeight - 1));
         int availableWidth = Math.max(1, screenWidth - SCREEN_MARGIN * 2);
-        int availableHeight = Math.max(1, screenHeight - SCREEN_MARGIN * 2);
+        int availableHeight = Math.max(1, screenHeight - SCREEN_MARGIN - safeBottomInset);
         int minWidth = Math.min(MIN_WIDTH, availableWidth);
         int minHeight = Math.min(MIN_HEIGHT, availableHeight);
         int nextWidth = Math.clamp(width, minWidth, availableWidth);
         int nextHeight = Math.clamp(height, minHeight, availableHeight);
         int maxX = Math.max(SCREEN_MARGIN, screenWidth - SCREEN_MARGIN - nextWidth);
-        int maxY = Math.max(SCREEN_MARGIN, screenHeight - SCREEN_MARGIN - nextHeight);
+        int maxY = Math.max(SCREEN_MARGIN, screenHeight - safeBottomInset - nextHeight);
         int nextX = Math.clamp(x, SCREEN_MARGIN, maxX);
         int nextY = Math.clamp(y, SCREEN_MARGIN, maxY);
         return new ChatPanelGeometry(nextX, nextY, nextWidth, nextHeight);
     }
 
-    public ChatPanelGeometry moveBy(int deltaX, int deltaY, int screenWidth, int screenHeight) {
+    public ChatPanelGeometry moveBy(
+            int deltaX,
+            int deltaY,
+            int screenWidth,
+            int screenHeight,
+            int bottomInset) {
         return new ChatPanelGeometry(x + deltaX, y + deltaY, width, height)
-                .normalized(screenWidth, screenHeight);
+                .normalized(screenWidth, screenHeight, bottomInset);
     }
 
     public ChatPanelGeometry resizeFrom(
@@ -65,13 +96,18 @@ public record ChatPanelGeometry(int x, int y, int width, int height) {
             int deltaX,
             int deltaY,
             int screenWidth,
-            int screenHeight) {
+            int screenHeight,
+            int bottomInset) {
+        int safeBottomInset = Math.clamp(
+                bottomInset,
+                SCREEN_MARGIN,
+                Math.max(SCREEN_MARGIN, screenHeight - 1));
         int left = x;
         int top = y;
         int right = right();
         int bottom = bottom();
         int availableWidth = Math.max(1, screenWidth - SCREEN_MARGIN * 2);
-        int availableHeight = Math.max(1, screenHeight - SCREEN_MARGIN * 2);
+        int availableHeight = Math.max(1, screenHeight - SCREEN_MARGIN - safeBottomInset);
         int minWidth = Math.min(MIN_WIDTH, availableWidth);
         int minHeight = Math.min(MIN_HEIGHT, availableHeight);
 
@@ -85,10 +121,10 @@ public record ChatPanelGeometry(int x, int y, int width, int height) {
             top = Math.clamp(y + deltaY, SCREEN_MARGIN, bottom - minHeight);
         }
         if ((edges & EDGE_BOTTOM) != 0) {
-            bottom = Math.clamp(bottom + deltaY, top + minHeight, screenHeight - SCREEN_MARGIN);
+            bottom = Math.clamp(bottom + deltaY, top + minHeight, screenHeight - safeBottomInset);
         }
         return new ChatPanelGeometry(left, top, right - left, bottom - top)
-                .normalized(screenWidth, screenHeight);
+                .normalized(screenWidth, screenHeight, safeBottomInset);
     }
 
     public int right() {

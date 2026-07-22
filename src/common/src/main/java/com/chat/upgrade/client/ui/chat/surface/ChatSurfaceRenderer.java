@@ -18,24 +18,48 @@ public final class ChatSurfaceRenderer {
         }
         ChatAppearanceSnapshot.Surface tokens = frame.appearance().surface();
         RichChatBounds panel = frame.panelBounds();
+        int radius = frame.appearance().cornerRadius();
+        UiPrimitives.fillRounded(graphics, panel, radius, tokens.panelBackground());
+        UiPrimitives.withRoundedClip(
+                graphics,
+                panel,
+                radius,
+                () -> paintPanelContents(graphics, font, frame, tokens, panel));
+        UiPrimitives.strokeRounded(
+                graphics,
+                panel,
+                radius,
+                tokens.panelBorderWidth(),
+                tokens.panelBorder());
+    }
+
+    private static void paintPanelContents(
+            GuiGraphicsExtractor graphics,
+            Font font,
+            ChatSurfaceFrame frame,
+            ChatAppearanceSnapshot.Surface tokens,
+            RichChatBounds panel) {
         RichChatBounds timeline = frame.messageViewportBounds();
         RichChatBounds composer = frame.composerBounds();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), tokens.panelBackground());
-        graphics.fill(
-                panel.left(),
-                panel.top(),
-                panel.right(),
-                panel.top() + ChatPanelGeometry.HEADER_HEIGHT,
-                tokens.headerBackground());
-        graphics.fill(timeline.left(), timeline.top(), timeline.right(), timeline.bottom(), tokens.timelineBackground());
-        if (!frame.appearance().vanillaStyleInput()) {
+        if (tokens.headerBackground() != tokens.panelBackground()) {
+            graphics.fill(
+                    panel.left(),
+                    panel.top(),
+                    panel.right(),
+                    panel.top() + ChatPanelGeometry.HEADER_HEIGHT,
+                    tokens.headerBackground());
+        }
+        if (tokens.timelineBackground() != tokens.panelBackground()) {
+            graphics.fill(timeline.left(), timeline.top(), timeline.right(), timeline.bottom(), tokens.timelineBackground());
+        }
+        if (!frame.appearance().vanillaStyleInput()
+                && tokens.composerBackground() != tokens.panelBackground()) {
             graphics.fill(composer.left(), composer.top(), composer.right(), composer.bottom(), tokens.composerBackground());
         }
         graphics.fill(panel.left(), timeline.top(), panel.right(), timeline.top() + 1, tokens.separator());
         if (!frame.appearance().vanillaStyleInput()) {
             graphics.fill(panel.left(), composer.top(), panel.right(), composer.top() + 1, tokens.separator());
         }
-        paintPanelBorder(graphics, panel, tokens.panelBorderWidth(), tokens.panelBorder());
         RichChatBounds settingsButton = settingsButtonBounds(frame);
         UiPrimitives.fillRounded(graphics, settingsButton, 3, 0x70343D4D);
         UiTextureAtlas.drawIcon(
@@ -101,26 +125,6 @@ public final class ChatSurfaceRenderer {
         graphics.fill(x, y, x + width, y + 16, tokens.restrictedHudBackground());
         graphics.outline(x, y, width, 16, tokens.restrictedHudBorder());
         graphics.text(font, text, x + 6, y + 4, tokens.restricted(), false);
-    }
-
-    private static void paintPanelBorder(
-            GuiGraphicsExtractor graphics,
-            RichChatBounds panel,
-            int width,
-            int color) {
-        for (int inset = 0; inset < width; inset++) {
-            int outlineWidth = panel.width() - inset * 2;
-            int outlineHeight = panel.height() - inset * 2;
-            if (outlineWidth <= 0 || outlineHeight <= 0) {
-                break;
-            }
-            graphics.outline(
-                    panel.left() + inset,
-                    panel.top() + inset,
-                    outlineWidth,
-                    outlineHeight,
-                    color);
-        }
     }
 
     private static void paintResizeGrip(GuiGraphicsExtractor graphics, RichChatBounds panel, int color) {

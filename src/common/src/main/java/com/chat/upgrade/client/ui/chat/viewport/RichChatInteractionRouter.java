@@ -3,7 +3,6 @@ package com.chat.upgrade.client.ui.chat.viewport;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix3x2f;
@@ -25,17 +24,16 @@ import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.UpgradeHudInlinePaint;
 import com.chat.upgrade.client.ui.chat.interaction.ChatAction;
 import com.chat.upgrade.client.ui.chat.interaction.ChatActionStyleAdapter;
-import com.chat.upgrade.client.ui.chat.interaction.ChatContextMenu;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureTarget;
 import com.chat.upgrade.client.ui.chat.interaction.ChatHitTarget;
-import com.chat.upgrade.client.ui.chat.interaction.ChatMessageActionBar;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.layout.AudioUiLayout;
 import com.chat.upgrade.client.ui.layout.VideoUiLayout;
+import com.chat.upgrade.client.ui.render.UiPrimitives;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -57,6 +55,10 @@ public final class RichChatInteractionRouter {
     private static final int EMOJI_PREVIEW_GAP = 8;
     private static @Nullable Matrix3x2fc activePose;
     private static @Nullable RichChatBounds activeViewportBounds;
+    private static int activeCornerRadius;
+    private static int activeAvatarCornerRadius;
+    private static boolean activeMessageBubbles;
+    private static boolean activeRoundedViewportBottom;
     private static @Nullable MediaCapture mediaCapture;
 
     private RichChatInteractionRouter() {
@@ -72,6 +74,10 @@ public final class RichChatInteractionRouter {
         ACTIVE_MESSAGES.clear();
         activePose = null;
         activeViewportBounds = null;
+        activeCornerRadius = 0;
+        activeAvatarCornerRadius = 0;
+        activeMessageBubbles = false;
+        activeRoundedViewportBottom = false;
         cancelLayoutBoundPointerCapture();
     }
 
@@ -97,11 +103,19 @@ public final class RichChatInteractionRouter {
             RichChatViewportState state,
             Matrix3x2fc pose,
             int contentToLocalY,
-            RichChatBounds localViewportBounds) {
+            RichChatBounds localViewportBounds,
+            ChatAppearanceSnapshot appearance,
+            boolean roundedViewportBottom) {
         ACTIVE_HIT_BOXES.clear();
         ACTIVE_MESSAGES.clear();
         activePose = pose;
         activeViewportBounds = localViewportBounds;
+        activeCornerRadius = appearance == null ? 0 : Math.max(0, appearance.cornerRadius());
+        activeAvatarCornerRadius = appearance == null || !appearance.doubleLineLayout()
+                ? 0
+                : activeCornerRadius;
+        activeMessageBubbles = appearance != null && appearance.messageBubbles();
+        activeRoundedViewportBottom = roundedViewportBottom;
         if (layout == null) {
             return;
         }
@@ -139,7 +153,8 @@ public final class RichChatInteractionRouter {
         }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
-            if (active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+            if (active.localBounds().contains(Math.round(localX), Math.round(localY))
+                    && containsRoundedHitBox(active, localX, localY)) {
                 return active.hitBox();
             }
         }
@@ -366,7 +381,8 @@ public final class RichChatInteractionRouter {
     private static @Nullable ActiveHitBox activeHitBoxAtLocal(float localX, float localY) {
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
-            if (active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+            if (active.localBounds().contains(Math.round(localX), Math.round(localY))
+                    && containsRoundedHitBox(active, localX, localY)) {
                 return active;
             }
         }
@@ -376,7 +392,8 @@ public final class RichChatInteractionRouter {
     private static @Nullable ActiveMessage activeMessageAtLocal(float localX, float localY) {
         for (int i = ACTIVE_MESSAGES.size() - 1; i >= 0; i--) {
             ActiveMessage active = ACTIVE_MESSAGES.get(i);
-            if (active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+            if (active.localBounds().contains(Math.round(localX), Math.round(localY))
+                    && containsRoundedMessage(active, localX, localY)) {
                 return active;
             }
         }
@@ -470,73 +487,14 @@ public final class RichChatInteractionRouter {
         return inv.transformPosition(new Vector2f(screenX, screenY));
     }
 
-    public static boolean renderHoverActionBar(
-            GuiGraphicsExtractor graphics,
-            Font font,
-            ChatAppearanceSnapshot appearance,
-            float localX,
-            float localY) {
-        if (graphics == null || font == null || appearance == null || !isInsideActiveViewport(localX, localY)) {
-            return false;
-        }
-        ActiveMessage active = activeMessageAtLocal(localX, localY);
-        if (active == null) {
-            return false;
-        }
-        ChatMessageActionBar.render(
-                graphics,
-                font,
-                appearance,
-                active.layout().message(),
-                active.localBounds(),
-                localX,
-                localY);
-        return ChatMessageActionBar.tooltipAt(
-                active.layout().message(),
-                active.localBounds(),
-                font,
-                localX,
-                localY) != null;
-    }
-
-    public static Optional<ChatContextMenu.Selection> hoverActionAtScreen(int screenX, int screenY) {
-        Vector2f local = localPositionForScreen(screenX, screenY);
-        if (local == null || !isInsideActiveViewport(local.x, local.y)) {
-            return Optional.empty();
-        }
-        ActiveMessage active = activeMessageAtLocal(local.x, local.y);
-        if (active == null) {
-            return Optional.empty();
-        }
-        return ChatMessageActionBar.actionAt(
-                active.layout().message(),
-                active.localBounds(),
-                Minecraft.getInstance().font,
-                local.x,
-                local.y);
-    }
-
-    public static boolean hasActionAtLocal(float localX, float localY) {
-        if (styleForLocalClick(localX, localY) != null) {
-            return true;
-        }
-        ActiveMessage active = activeMessageAtLocal(localX, localY);
-        return active != null
-                && ChatMessageActionBar.actionAt(
-                        active.layout().message(),
-                        active.localBounds(),
-                        Minecraft.getInstance().font,
-                        localX,
-                        localY).isPresent();
-    }
-
     public static @Nullable Style styleForLocalClick(float localX, float localY) {
         if (!isInsideActiveViewport(localX, localY)) {
             return null;
         }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
-            if (!active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+            if (!active.localBounds().contains(Math.round(localX), Math.round(localY))
+                    || !containsRoundedHitBox(active, localX, localY)) {
                 continue;
             }
             Style style = ChatActionStyleAdapter.toStyle(actionForHitBox(active, localX, localY));
@@ -562,22 +520,10 @@ public final class RichChatInteractionRouter {
         if (gfx == null || font == null || !isInsideActiveViewport(localX, localY)) {
             return false;
         }
-        ActiveMessage hoveredMessage = activeMessageAtLocal(localX, localY);
-        if (hoveredMessage != null) {
-            String actionTooltip = ChatMessageActionBar.tooltipAt(
-                    hoveredMessage.layout().message(),
-                    hoveredMessage.localBounds(),
-                    font,
-                    localX,
-                    localY);
-            if (actionTooltip != null && !actionTooltip.isBlank()) {
-                gfx.setTooltipForNextFrame(font, font.split(Component.literal(actionTooltip), 210), screenX, screenY);
-                return true;
-            }
-        }
         for (int i = ACTIVE_HIT_BOXES.size() - 1; i >= 0; i--) {
             ActiveHitBox active = ACTIVE_HIT_BOXES.get(i);
-            if (!active.localBounds().contains(Math.round(localX), Math.round(localY))) {
+            if (!active.localBounds().contains(Math.round(localX), Math.round(localY))
+                    || !containsRoundedHitBox(active, localX, localY)) {
                 continue;
             }
             if (isEmojiHitBox(active.hitBox())) {
@@ -598,7 +544,53 @@ public final class RichChatInteractionRouter {
         if (activeViewportBounds == null) {
             return true;
         }
-        return activeViewportBounds.contains(Math.round(localX), Math.round(localY));
+        int x = Math.round(localX);
+        int y = Math.round(localY);
+        if (!activeViewportBounds.contains(x, y)) {
+            return false;
+        }
+        return !activeRoundedViewportBottom
+                || UiPrimitives.containsBottomRounded(activeViewportBounds, x, y, activeCornerRadius);
+    }
+
+    private static boolean containsRoundedHitBox(ActiveHitBox active, float localX, float localY) {
+        if (active == null) {
+            return false;
+        }
+        ActiveMessage message = activeMessageById(active.hitBox().messageId());
+        if (message != null && !containsRoundedMessage(message, localX, localY)) {
+            return false;
+        }
+        if (active.hitBox().attachment() == null) {
+            return true;
+        }
+        return UiPrimitives.containsRounded(
+                active.localBounds(),
+                Math.round(localX),
+                Math.round(localY),
+                activeCornerRadius);
+    }
+
+    private static boolean containsRoundedMessage(ActiveMessage active, float localX, float localY) {
+        if (active == null) {
+            return false;
+        }
+        int x = Math.round(localX);
+        int y = Math.round(localY);
+        int contentToLocalY = active.localBounds().top() - interactionBounds(active.layout()).top();
+        RichChatBounds visual = active.layout().visualBounds().translateY(contentToLocalY);
+        boolean insideVisual = activeMessageBubbles
+                ? UiPrimitives.containsRounded(visual, x, y, activeCornerRadius)
+                : visual.contains(x, y);
+        if (insideVisual) {
+            return true;
+        }
+        RichChatBounds identity = active.layout().identityBounds();
+        if (identity == null) {
+            return false;
+        }
+        RichChatBounds localIdentity = identity.translateY(contentToLocalY);
+        return UiPrimitives.containsRounded(localIdentity, x, y, activeAvatarCornerRadius);
     }
 
     private static boolean isEmojiHitBox(RichChatHitBox hitBox) {

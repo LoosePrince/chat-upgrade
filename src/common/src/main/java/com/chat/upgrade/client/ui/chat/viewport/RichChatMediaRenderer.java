@@ -94,8 +94,30 @@ public final class RichChatMediaRenderer {
         ChatAppearanceSnapshot activeAppearance = appearance == null
                 ? ChatAppearanceRuntime.current()
                 : appearance;
-        ChatAppearanceSnapshot.Media tokens = activeAppearance.media();
-        int cornerRadius = activeAppearance.cornerRadius();
+        UiPrimitives.withRoundedClip(
+                gfx,
+                bounds,
+                activeAppearance.cornerRadius(),
+                () -> paintAttachmentContents(
+                        gfx,
+                        font,
+                        kind,
+                        bounds,
+                        attachment,
+                        opacity,
+                        activeAppearance));
+    }
+
+    private static void paintAttachmentContents(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatRenderNodeKind kind,
+            RichChatBounds bounds,
+            RichAttachment attachment,
+            float opacity,
+            ChatAppearanceSnapshot appearance) {
+        ChatAppearanceSnapshot.Media tokens = appearance.media();
+        int cornerRadius = appearance.cornerRadius();
         if (attachment == null || kind == RichChatRenderNodeKind.ATTACHMENT_PENDING || !attachment.hasRenderableUrl()) {
             paintPending(gfx, font, bounds, opacity, tokens, cornerRadius);
             return;

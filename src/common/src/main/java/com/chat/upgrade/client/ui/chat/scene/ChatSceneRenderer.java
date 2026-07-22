@@ -53,35 +53,148 @@ public final class ChatSceneRenderer {
         RichChatViewportMetrics metrics = scene.viewport();
         int visibleTop = state.visibleTop();
         int visibleBottom = state.visibleBottom();
-        for (RichChatMessageLayout message : scene.timeline().messages()) {
-            if (!message.visibleIn(visibleTop, visibleBottom)) {
-                continue;
+        ChatAppearanceSnapshot appearance = scene.surface().appearance();
+
+        if (extractor != null) {
+            for (RichChatMessageLayout message : scene.timeline().messages()) {
+                float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground);
+                if (alpha <= 1.0e-5F) {
+                    continue;
+                }
+                paintMessageDecoration(
+                        extractor,
+                        message,
+                        appearance,
+                        contentToLocalY,
+                        alpha,
+                        metrics.backgroundOpacity());
             }
-            float alpha = messageAlpha(message, ticks, foreground);
+        }
+
+        for (RichChatMessageLayout message : scene.timeline().messages()) {
+            float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground);
             if (alpha <= 1.0e-5F) {
                 continue;
             }
-            if (extractor != null) {
-                paintMessageDecoration(extractor, message, scene.surface().appearance(), contentToLocalY, alpha,
-                        metrics.backgroundOpacity());
-                paintTextSelection(extractor, font, message, contentToLocalY, alpha);
-                paintIdentity(extractor, font, metrics, message, scene.surface().appearance(), contentToLocalY, alpha);
-                paintMetadata(extractor, font, metrics, message, scene.surface().appearance(), contentToLocalY, alpha);
+            Runnable paintTextContent = () -> paintMessageTextContent(
+                    graphics,
+                    extractor,
+                    font,
+                    metrics,
+                    message,
+                    appearance,
+                    contentToLocalY,
+                    alpha,
+                    visibleTop,
+                    visibleBottom);
+            if (extractor != null
+                    && appearance.messageBubbles()
+                    && appearance.cornerRadius() > 0) {
+                UiPrimitives.withRoundedClip(
+                        extractor,
+                        message.visualBounds().translateY(contentToLocalY),
+                        appearance.cornerRadius(),
+                        paintTextContent);
+            } else {
+                paintTextContent.run();
             }
-            for (RichChatRenderNode node : message.nodes()) {
-                if (!node.bounds().intersectsVerticalRange(visibleTop, visibleBottom)) {
+            paintAttachmentNodes(
+                    graphics,
+                    extractor,
+                    font,
+                    metrics,
+                    message,
+                    appearance,
+                    contentToLocalY,
+                    alpha,
+                    visibleTop,
+                    visibleBottom);
+        }
+
+        if (extractor != null) {
+            for (RichChatMessageLayout message : scene.timeline().messages()) {
+                float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground);
+                if (alpha <= 1.0e-5F) {
                     continue;
                 }
-                paintNode(
-                        graphics,
+                paintIdentity(
                         extractor,
                         font,
                         metrics,
-                        node,
-                        scene.surface().appearance(),
+                        message,
+                        appearance,
                         contentToLocalY,
                         alpha);
             }
+        }
+    }
+
+    private static float visibleMessageAlpha(
+            RichChatMessageLayout message,
+            int visibleTop,
+            int visibleBottom,
+            int ticks,
+            boolean foreground) {
+        return message.visibleIn(visibleTop, visibleBottom)
+                ? messageAlpha(message, ticks, foreground)
+                : 0.0F;
+    }
+
+    private static void paintMessageTextContent(
+            ChatComponent.ChatGraphicsAccess graphics,
+            GuiGraphicsExtractor extractor,
+            Font font,
+            RichChatViewportMetrics metrics,
+            RichChatMessageLayout message,
+            ChatAppearanceSnapshot appearance,
+            int contentToLocalY,
+            float alpha,
+            int visibleTop,
+            int visibleBottom) {
+        if (extractor != null) {
+            paintTextSelection(extractor, font, message, contentToLocalY, alpha);
+            paintMetadata(extractor, font, metrics, message, appearance, contentToLocalY, alpha);
+        }
+        for (RichChatRenderNode node : message.nodes()) {
+            if (node.text() == null || !node.bounds().intersectsVerticalRange(visibleTop, visibleBottom)) {
+                continue;
+            }
+            paintNode(
+                    graphics,
+                    extractor,
+                    font,
+                    metrics,
+                    node,
+                    appearance,
+                    contentToLocalY,
+                    alpha);
+        }
+    }
+
+    private static void paintAttachmentNodes(
+            ChatComponent.ChatGraphicsAccess graphics,
+            GuiGraphicsExtractor extractor,
+            Font font,
+            RichChatViewportMetrics metrics,
+            RichChatMessageLayout message,
+            ChatAppearanceSnapshot appearance,
+            int contentToLocalY,
+            float alpha,
+            int visibleTop,
+            int visibleBottom) {
+        for (RichChatRenderNode node : message.nodes()) {
+            if (node.text() != null || !node.bounds().intersectsVerticalRange(visibleTop, visibleBottom)) {
+                continue;
+            }
+            paintNode(
+                    graphics,
+                    extractor,
+                    font,
+                    metrics,
+                    node,
+                    appearance,
+                    contentToLocalY,
+                    alpha);
         }
     }
 
@@ -127,6 +240,7 @@ public final class ChatSceneRenderer {
             float alpha,
             float backgroundOpacity) {
         if (!appearance.messageBubbles()) {
+            paintVanillaMessageBackground(graphics, message, appearance, contentToLocalY, alpha, backgroundOpacity);
             return;
         }
         ChatAppearanceSnapshot.Message tokens = appearance.message();
@@ -153,31 +267,89 @@ public final class ChatSceneRenderer {
         paintReplyCard(graphics, message, appearance, contentToLocalY, opacity);
     }
 
+    private static void paintVanillaMessageBackground(
+            GuiGraphicsExtractor graphics,
+            RichChatMessageLayout message,
+            ChatAppearanceSnapshot appearance,
+            int contentToLocalY,
+            float alpha,
+            float backgroundOpacity) {
+        int background = UiPrimitives.withOpacity(
+                appearance.message().lineBackground(),
+                alpha * backgroundOpacity);
+        if (!UiPrimitives.visible(background)) {
+            return;
+        }
+        RichChatBounds messageBounds = message.bounds().translateY(contentToLocalY);
+        java.util.Set<Integer> paintedRows = new java.util.HashSet<>();
+        RichChatBounds metadata = message.metadataBounds();
+        if (metadata != null) {
+            RichChatBounds row = metadata.translateY(contentToLocalY);
+            if (paintedRows.add(row.top())) {
+                paintVanillaBackgroundRow(
+                        graphics,
+                        messageBounds,
+                        row,
+                        background);
+            }
+        }
+        for (RichChatRenderNode node : message.nodes()) {
+            if (node.text() == null) {
+                continue;
+            }
+            RichChatBounds row = node.bounds().translateY(contentToLocalY);
+            if (!paintedRows.add(row.top())) {
+                continue;
+            }
+            paintVanillaBackgroundRow(
+                    graphics,
+                    messageBounds,
+                    row,
+                    background);
+        }
+    }
+
+    private static void paintVanillaBackgroundRow(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds messageBounds,
+            RichChatBounds row,
+            int background) {
+        graphics.fill(
+                messageBounds.left(),
+                row.top(),
+                messageBounds.right(),
+                row.bottom(),
+                background);
+    }
+
     private static void paintReplyCard(
             GuiGraphicsExtractor graphics,
             RichChatMessageLayout message,
             ChatAppearanceSnapshot appearance,
             int contentToLocalY,
             float opacity) {
-        RichChatRenderNode firstReply = null;
-        RichChatRenderNode lastReply = null;
+        RichChatBounds visual = message.visualBounds();
+        int replyLeft = Integer.MAX_VALUE;
+        int replyTop = Integer.MAX_VALUE;
+        int replyRight = Integer.MIN_VALUE;
+        int replyBottom = Integer.MIN_VALUE;
         for (RichChatRenderNode node : message.nodes()) {
-            if (node.kind() == RichChatRenderNodeKind.REPLY) {
-                if (firstReply == null) {
-                    firstReply = node;
-                }
-                lastReply = node;
+            if (node.kind() != RichChatRenderNodeKind.REPLY) {
+                continue;
             }
+            replyLeft = Math.min(replyLeft, node.bounds().left());
+            replyTop = Math.min(replyTop, node.bounds().top());
+            replyRight = Math.max(replyRight, node.bounds().right());
+            replyBottom = Math.max(replyBottom, node.bounds().bottom());
         }
-        if (firstReply == null || lastReply == null) {
+        if (replyLeft == Integer.MAX_VALUE) {
             return;
         }
-        RichChatBounds visual = message.visualBounds();
         RichChatBounds reply = new RichChatBounds(
-                Math.max(visual.left(), firstReply.bounds().left() - 2),
-                firstReply.bounds().top(),
-                Math.min(visual.right(), Math.max(firstReply.bounds().right(), lastReply.bounds().right()) + 2),
-                lastReply.bounds().bottom()).translateY(contentToLocalY);
+                Math.max(visual.left(), replyLeft - 2),
+                replyTop,
+                Math.min(visual.right(), replyRight + 2),
+                replyBottom).translateY(contentToLocalY);
         ChatAppearanceSnapshot.Message tokens = appearance.message();
         UiPrimitives.paintBox(
                 graphics,
@@ -245,22 +417,34 @@ public final class ChatSceneRenderer {
         int foreground = ARGB.color(
                 Math.clamp(Math.round(alpha * metrics.textOpacity() * 255.0F), 0, 255),
                 message.timeline().avatar().foregroundRgb());
-        int radius = Math.max(0, avatar.width() / 2);
-        UiPrimitives.paintBox(
+        int radius = appearance.avatarCornerRadius(Math.min(avatar.width(), avatar.height()));
+        UiPrimitives.fillRounded(graphics, avatar, radius, avatarColor);
+        Runnable paintAvatar;
+        if (message.timeline().avatar().skinTexture() != null) {
+            paintAvatar = () -> paintSkinAvatar(
+                    graphics,
+                    avatar,
+                    message.timeline().avatar().skinTexture(),
+                    alpha);
+        } else {
+            paintAvatar = () -> {
+                String glyph = message.timeline().avatar().glyph();
+                int glyphX = avatar.left() + Math.max(1, (avatar.width() - font.width(glyph)) / 2);
+                int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
+                graphics.text(font, glyph, glyphX, glyphY, foreground, false);
+            };
+        }
+        if (radius > 0) {
+            UiPrimitives.withRoundedClip(graphics, avatar, radius, paintAvatar);
+        } else {
+            paintAvatar.run();
+        }
+        UiPrimitives.strokeRounded(
                 graphics,
                 avatar,
                 radius,
                 1,
-                avatarColor,
                 UiPrimitives.withOpacity(appearance.identity().avatarBorder(), alpha));
-        if (message.timeline().avatar().skinTexture() != null) {
-            paintSkinAvatar(graphics, avatar, message.timeline().avatar().skinTexture(), alpha);
-        } else {
-            String glyph = message.timeline().avatar().glyph();
-            int glyphX = avatar.left() + Math.max(1, (avatar.width() - font.width(glyph)) / 2);
-            int glyphY = avatar.top() + Math.max(1, (avatar.height() - font.lineHeight) / 2);
-            graphics.text(font, glyph, glyphX, glyphY, foreground, false);
-        }
     }
 
     private static void paintMetadata(

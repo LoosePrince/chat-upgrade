@@ -30,16 +30,11 @@ public final class UiPrimitives {
             return;
         }
         int safeBorder = Math.clamp(borderWidth, 0, Math.min(bounds.width(), bounds.height()) / 2);
-        if (safeBorder > 0 && visible(borderColor)) {
-            fillRounded(graphics, bounds, radius, borderColor);
-            RichChatBounds inner = inset(bounds, safeBorder);
-            if (visible(fillColor) && inner.width() > 0 && inner.height() > 0) {
-                fillRounded(graphics, inner, Math.max(0, radius - safeBorder), fillColor);
-            }
-            return;
-        }
         if (visible(fillColor)) {
             fillRounded(graphics, bounds, radius, fillColor);
+        }
+        if (safeBorder > 0 && visible(borderColor)) {
+            strokeRounded(graphics, bounds, radius, safeBorder, borderColor);
         }
     }
 
@@ -71,12 +66,161 @@ public final class UiPrimitives {
         }
     }
 
-    private static RichChatBounds inset(RichChatBounds bounds, int amount) {
-        return new RichChatBounds(
-                Math.min(bounds.right(), bounds.left() + amount),
-                Math.min(bounds.bottom(), bounds.top() + amount),
-                Math.max(bounds.left(), bounds.right() - amount),
-                Math.max(bounds.top(), bounds.bottom() - amount));
+    public static void withRoundedClip(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds bounds,
+            int radius,
+            Runnable draw) {
+        if (graphics == null || bounds == null || draw == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            return;
+        }
+        int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        if (safeRadius == 0) {
+            graphics.enableScissor(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
+            try {
+                draw.run();
+            } finally {
+                graphics.disableScissor();
+            }
+            return;
+        }
+        int middleTop = bounds.top() + safeRadius;
+        int middleBottom = bounds.bottom() - safeRadius;
+        if (middleBottom > middleTop) {
+            drawClippedBand(graphics, bounds.left(), middleTop, bounds.right(), middleBottom, draw);
+        }
+        for (int row = 0; row < safeRadius; row++) {
+            int inset = cornerInset(safeRadius, row);
+            int left = bounds.left() + inset;
+            int right = bounds.right() - inset;
+            drawClippedBand(graphics, left, bounds.top() + row, right, bounds.top() + row + 1, draw);
+            drawClippedBand(graphics, left, bounds.bottom() - row - 1, right, bounds.bottom() - row, draw);
+        }
+    }
+
+    public static void withBottomRoundedClip(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds bounds,
+            int radius,
+            Runnable draw) {
+        if (graphics == null || bounds == null || draw == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            return;
+        }
+        int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        if (safeRadius == 0) {
+            graphics.enableScissor(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
+            try {
+                draw.run();
+            } finally {
+                graphics.disableScissor();
+            }
+            return;
+        }
+        int squareBottom = bounds.bottom() - safeRadius;
+        if (squareBottom > bounds.top()) {
+            drawClippedBand(graphics, bounds.left(), bounds.top(), bounds.right(), squareBottom, draw);
+        }
+        for (int row = 0; row < safeRadius; row++) {
+            int inset = cornerInset(safeRadius, row);
+            drawClippedBand(
+                    graphics,
+                    bounds.left() + inset,
+                    bounds.bottom() - row - 1,
+                    bounds.right() - inset,
+                    bounds.bottom() - row,
+                    draw);
+        }
+    }
+
+    public static boolean containsRounded(RichChatBounds bounds, int x, int y, int radius) {
+        if (bounds == null || !bounds.contains(x, y)) {
+            return false;
+        }
+        int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        if (safeRadius == 0) {
+            return true;
+        }
+        int row = y - bounds.top();
+        int edgeRow = Math.min(row, bounds.height() - 1 - row);
+        int edgeInset = edgeRow >= safeRadius ? 0 : cornerInset(safeRadius, edgeRow);
+        return x >= bounds.left() + edgeInset && x < bounds.right() - edgeInset;
+    }
+
+    public static boolean containsBottomRounded(RichChatBounds bounds, int x, int y, int radius) {
+        if (bounds == null || !bounds.contains(x, y)) {
+            return false;
+        }
+        int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        int edgeRow = bounds.bottom() - 1 - y;
+        if (safeRadius == 0 || edgeRow >= safeRadius) {
+            return true;
+        }
+        int edgeInset = cornerInset(safeRadius, edgeRow);
+        return x >= bounds.left() + edgeInset && x < bounds.right() - edgeInset;
+    }
+
+    public static void strokeRounded(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds bounds,
+            int radius,
+            int width,
+            int color) {
+        if (graphics == null || bounds == null || !visible(color) || bounds.width() <= 0 || bounds.height() <= 0) {
+            return;
+        }
+        int safeWidth = Math.clamp(width, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        if (safeWidth == 0) {
+            return;
+        }
+        int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
+        if (safeRadius > 0
+                && safeWidth <= 4
+                && UiTextureAtlas.paintRoundedBorder(graphics, bounds, safeRadius, safeWidth, color)) {
+            return;
+        }
+        for (int row = 0; row < bounds.height(); row++) {
+            int outerInset = roundedInset(bounds.height(), safeRadius, row);
+            int outerLeft = bounds.left() + outerInset;
+            int outerRight = bounds.right() - outerInset;
+            int innerRow = row - safeWidth;
+            int innerHeight = bounds.height() - safeWidth * 2;
+            if (innerRow < 0 || innerRow >= innerHeight || bounds.width() <= safeWidth * 2) {
+                graphics.fill(outerLeft, bounds.top() + row, outerRight, bounds.top() + row + 1, color);
+                continue;
+            }
+            int innerRadius = Math.max(0, safeRadius - safeWidth);
+            int innerInset = roundedInset(innerHeight, innerRadius, innerRow);
+            int innerLeft = bounds.left() + safeWidth + innerInset;
+            int innerRight = bounds.right() - safeWidth - innerInset;
+            graphics.fill(outerLeft, bounds.top() + row, Math.min(outerRight, innerLeft), bounds.top() + row + 1, color);
+            graphics.fill(Math.max(outerLeft, innerRight), bounds.top() + row, outerRight, bounds.top() + row + 1, color);
+        }
+    }
+
+    private static void drawClippedBand(
+            GuiGraphicsExtractor graphics,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            Runnable draw) {
+        if (right <= left || bottom <= top) {
+            return;
+        }
+        graphics.enableScissor(left, top, right, bottom);
+        try {
+            draw.run();
+        } finally {
+            graphics.disableScissor();
+        }
+    }
+
+    private static int roundedInset(int height, int radius, int row) {
+        if (radius <= 0 || row >= radius && row < height - radius) {
+            return 0;
+        }
+        int edgeRow = Math.min(row, height - 1 - row);
+        return cornerInset(radius, edgeRow);
     }
 
     private static int cornerInset(int radius, int row) {

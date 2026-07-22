@@ -145,7 +145,7 @@ RichChatStateStore.snapshotNewestFirst()
 
 主、次按键统一解析为 `ChatGestureTarget`。叶子媒体动作转换为 `ChatAction` 后再由 `ChatActionStyleAdapter` 适配到 Minecraft 点击事件，回复、复制、撤回等消息级动作则直接由 `ChatScreen` 执行，不再污染 renderer。
 
-右键菜单与 hover 动作条共享同一动作目录，并只对当前 TAKEOVER 可见消息生成可执行项：
+右键菜单使用同一动作目录，并只对当前 TAKEOVER 可见消息生成可执行项。消息悬停不再绘制重复操作栏：
 
 - 可信 V2 消息可以设为回复目标。
 - 有可复制正文、选中文本或附件 URL 的消息可以复制。

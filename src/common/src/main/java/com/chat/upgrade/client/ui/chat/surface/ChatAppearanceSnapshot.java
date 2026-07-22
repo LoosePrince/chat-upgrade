@@ -13,6 +13,7 @@ public record ChatAppearanceSnapshot(
         Scrollbar scrollbar,
         boolean vanillaStyleInput,
         boolean showPlayerAvatars,
+        boolean avatarFirstLineOnly,
         boolean doubleLineLayout,
         boolean messageBubbles,
         boolean splitOwnMessages,
@@ -23,7 +24,7 @@ public record ChatAppearanceSnapshot(
         int messageGap,
         int identityGutter,
         int avatarSize,
-        int bubblePaddingX,
+        int bubblePadding,
         int contentWidthPercent,
         ContextMenu contextMenu) {
 
@@ -52,6 +53,10 @@ public record ChatAppearanceSnapshot(
         int panelBorder = appearance.panelBorderEnabled
                 ? opaque(appearance.panelBorderColor)
                 : 0;
+        boolean panelChromeVisible = (panelBackground >>> 24) != 0 || (panelBorder >>> 24) != 0;
+        int messageBackground = argb(
+                appearance.messageBackgroundColor,
+                appearance.messageBackgroundOpacityPercent);
         int bubbleBackground = appearance.messageBubbles
                 ? withAlpha(appearance.bubbleColor, 184)
                 : 0;
@@ -65,10 +70,10 @@ public record ChatAppearanceSnapshot(
                 new Surface(
                         panelBackground,
                         panelBorder,
-                        withAlpha(appearance.panelBackgroundColor, 240),
-                        withAlpha(appearance.panelBackgroundColor, 200),
-                        withAlpha(appearance.panelBackgroundColor, 237),
-                        0xFF343D4D,
+                        panelBackground,
+                        panelBackground,
+                        panelBackground,
+                        panelChromeVisible ? 0xFF343D4D : 0,
                         TEXT,
                         MUTED,
                         0xFFFFC76B,
@@ -77,6 +82,7 @@ public record ChatAppearanceSnapshot(
                         0xFF718097,
                         appearance.panelBorderEnabled ? appearance.panelBorderWidth : 0),
                 new Message(
+                        messageBackground,
                         bubbleBackground,
                         bubbleBorder,
                         0xA51D2530,
@@ -110,17 +116,18 @@ public record ChatAppearanceSnapshot(
                 new Scrollbar(0xAA526176, 0x60343D4D, 0xCCCB3A33),
                 appearance.vanillaStyleInput,
                 appearance.showPlayerAvatars,
+                appearance.avatarFirstLineOnly,
                 appearance.doubleLineLayout,
                 appearance.messageBubbles,
                 appearance.splitOwnMessages,
                 appearance.nonPlayerAlignment,
                 appearance.cornerRadius,
                 3,
-                6,
-                2,
+                appearance.groupGap,
+                appearance.messageGap,
                 identityGutter,
                 avatarSize,
-                appearance.messageBubbles ? 4 : 0,
+                appearance.messageBubbles ? appearance.bubblePadding : 0,
                 appearance.splitOwnMessages ? 90 : 100,
                 new ContextMenu(
                         appearance.contextMenuScalePercent,
@@ -136,7 +143,25 @@ public record ChatAppearanceSnapshot(
         return showPlayerAvatars
                 && timeline != null
                 && timeline.kind().playerAuthored()
-                && timeline.groupPosition().startsGroup();
+                && (!avatarFirstLineOnly || timeline.groupPosition().startsGroup());
+    }
+
+    public int avatarSize(int messageLineHeight) {
+        if (!showPlayerAvatars) {
+            return 0;
+        }
+        return doubleLineLayout ? avatarSize : Math.max(1, messageLineHeight);
+    }
+
+    public int identityGutter(int messageLineHeight) {
+        int resolvedAvatarSize = avatarSize(messageLineHeight);
+        return resolvedAvatarSize <= 0 ? 0 : resolvedAvatarSize + Math.max(0, identityGutter - avatarSize);
+    }
+
+    public int avatarCornerRadius(int resolvedAvatarSize) {
+        return doubleLineLayout
+                ? Math.clamp(cornerRadius, 0, Math.max(0, resolvedAvatarSize / 2))
+                : 0;
     }
 
     private static int opaque(int rgb) {
@@ -168,6 +193,7 @@ public record ChatAppearanceSnapshot(
     }
 
     public record Message(
+            int lineBackground,
             int playerBackground,
             int playerBorder,
             int systemBackground,

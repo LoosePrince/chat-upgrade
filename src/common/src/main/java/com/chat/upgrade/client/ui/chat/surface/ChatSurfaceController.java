@@ -17,11 +17,13 @@ public final class ChatSurfaceController {
     private static final ChatSurfaceState STATE = new ChatSurfaceState();
 
     private static ChatUpgradeConfig geometryConfigSource;
+    private static ChatUpgradeConfig previewGeometryConfig;
     private static PointerOperation pointerOperation = PointerOperation.NONE;
     private static ChatPanelGeometry pointerStartGeometry;
     private static int pointerStartX;
     private static int pointerStartY;
     private static int resizeEdges;
+    private static int vanillaComposerTop = -1;
 
     private ChatSurfaceController() {
     }
@@ -35,9 +37,11 @@ public final class ChatSurfaceController {
             int screenHeight,
             boolean chatOpen,
             boolean restricted) {
-        ensureGeometryLoaded(screenWidth, screenHeight);
         STATE.setAppearance(ChatAppearanceRuntime.current());
+        ChatUpgradeConfig geometryConfig = activeGeometryConfig();
+        ensureGeometryLoaded(geometryConfig, screenWidth, screenHeight);
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
+        applyGeometryConstraints(geometryConfig, screenWidth, screenHeight);
         STATE.setPresentationMode(chatOpen ? ChatPresentationMode.OPEN_PANEL : ChatPresentationMode.CLOSED_HUD);
         STATE.setRestricted(restricted);
         if (normalized && pointerOperation == PointerOperation.NONE) {
@@ -47,9 +51,11 @@ public final class ChatSurfaceController {
     }
 
     public static void onChatScreenOpened(int screenWidth, int screenHeight) {
-        ensureGeometryLoaded(screenWidth, screenHeight);
         STATE.setAppearance(ChatAppearanceRuntime.current());
+        ChatUpgradeConfig geometryConfig = activeGeometryConfig();
+        ensureGeometryLoaded(geometryConfig, screenWidth, screenHeight);
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
+        applyGeometryConstraints(geometryConfig, screenWidth, screenHeight);
         STATE.setPresentationMode(ChatPresentationMode.OPEN_PANEL);
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
         if (normalized) {
@@ -59,22 +65,35 @@ public final class ChatSurfaceController {
 
     public static void onChatScreenClosed() {
         boolean changed = pointerOperation != PointerOperation.NONE;
+        boolean resizedHeight = pointerOperation == PointerOperation.RESIZE
+                && (resizeEdges & (ChatPanelGeometry.EDGE_TOP | ChatPanelGeometry.EDGE_BOTTOM)) != 0;
         clearPointerOperation();
         ChatGestureArena.resetPointerState();
         STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.NONE);
         STATE.setPresentationMode(ChatPresentationMode.CLOSED_HUD);
+        vanillaComposerTop = -1;
         if (changed) {
-            persistGeometry();
+            persistGeometry(resizedHeight);
         }
     }
 
     public static ChatPanelGeometry panelGeometry(int screenWidth, int screenHeight) {
-        ensureGeometryLoaded(screenWidth, screenHeight);
-        if (STATE.updateScreenSize(screenWidth, screenHeight) && pointerOperation == PointerOperation.NONE) {
+        STATE.setAppearance(ChatAppearanceRuntime.current());
+        ChatUpgradeConfig geometryConfig = activeGeometryConfig();
+        ensureGeometryLoaded(geometryConfig, screenWidth, screenHeight);
+        boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
+        applyGeometryConstraints(geometryConfig, screenWidth, screenHeight);
+        if (normalized && pointerOperation == PointerOperation.NONE) {
             persistGeometry();
         }
         return STATE.panelGeometry();
+    }
+
+    public static void updateVanillaComposerTop(int composerTop, int screenWidth, int screenHeight) {
+        vanillaComposerTop = Math.clamp(composerTop, 0, Math.max(0, screenHeight));
+        STATE.updateScreenSize(screenWidth, screenHeight);
+        applyGeometryConstraints(activeGeometryConfig(), screenWidth, screenHeight);
     }
 
     public static boolean pointerPressed(double pointerX, double pointerY, int button) {
@@ -123,13 +142,15 @@ public final class ChatSurfaceController {
                     deltaX,
                     deltaY,
                     STATE.screenWidth(),
-                    STATE.screenHeight());
+                    STATE.screenHeight(),
+                    STATE.panelBottomInset());
             case RESIZE -> pointerStartGeometry.resizeFrom(
                     resizeEdges,
                     deltaX,
                     deltaY,
                     STATE.screenWidth(),
-                    STATE.screenHeight());
+                    STATE.screenHeight(),
+                    STATE.panelBottomInset());
             case NONE -> pointerStartGeometry;
         };
         STATE.setPanelGeometry(nextGeometry);
@@ -140,9 +161,11 @@ public final class ChatSurfaceController {
         if (button != 0 || pointerOperation == PointerOperation.NONE) {
             return false;
         }
+        boolean resizedHeight = pointerOperation == PointerOperation.RESIZE
+                && (resizeEdges & (ChatPanelGeometry.EDGE_TOP | ChatPanelGeometry.EDGE_BOTTOM)) != 0;
         clearPointerOperation();
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
-        persistGeometry();
+        persistGeometry(resizedHeight);
         return true;
     }
 
@@ -174,14 +197,15 @@ public final class ChatSurfaceController {
         if (config == null || config.chatPanel == null) {
             return;
         }
-        STATE.updateScreenSize(screenWidth, screenHeight);
-        STATE.setPanelGeometry(ChatPanelGeometry.restore(
-                screenWidth,
-                screenHeight,
-                config.chatPanel.left,
-                config.chatPanel.bottomOffset,
-                config.chatPanel.width,
-                config.chatPanel.height));
+        previewGeometryConfig = config;
+        geometryConfigSource = null;
+        ensureGeometryLoaded(config, screenWidth, screenHeight);
+        applyGeometryConstraints(config, screenWidth, screenHeight);
+    }
+
+    public static void finishPanelGeometryPreview() {
+        previewGeometryConfig = null;
+        geometryConfigSource = null;
     }
 
     public static void setOverlay(ChatSurfaceState.Overlay overlay) {
@@ -192,20 +216,73 @@ public final class ChatSurfaceController {
         STATE.setFocusOwner(focusOwner);
     }
 
-    private static void ensureGeometryLoaded(int screenWidth, int screenHeight) {
-        ChatUpgradeConfig config = ChatUpgradeConfig.get();
-        if (geometryConfigSource == config) {
+    private static ChatUpgradeConfig activeGeometryConfig() {
+        ChatUpgradeConfig preview = previewGeometryConfig;
+        return preview == null ? ChatUpgradeConfig.get() : preview;
+    }
+
+    private static void ensureGeometryLoaded(
+            ChatUpgradeConfig config,
+            int screenWidth,
+            int screenHeight) {
+        ChatUpgradeConfig source = config == null ? ChatUpgradeConfig.get() : config;
+        if (source.chatPanel == null || geometryConfigSource == source) {
             return;
         }
         STATE.updateScreenSize(screenWidth, screenHeight);
-        STATE.setPanelGeometry(ChatPanelGeometry.restore(
+        int bottomInset = requiredBottomInset(source, screenHeight);
+        ChatPanelGeometry restored = ChatPanelGeometry.restore(
+                screenWidth,
+                screenHeight,
+                source.chatPanel.left,
+                source.chatPanel.bottomOffset,
+                source.chatPanel.width,
+                source.chatPanel.height,
+                source.chatPanel.usesAutomaticHeight(),
+                bottomInset);
+        STATE.setPanelGeometry(restored, bottomInset);
+        geometryConfigSource = source;
+    }
+
+    private static void applyGeometryConstraints(
+            ChatUpgradeConfig config,
+            int screenWidth,
+            int screenHeight) {
+        if (config == null
+                || config.chatPanel == null
+                || pointerOperation != PointerOperation.NONE) {
+            return;
+        }
+        int bottomInset = requiredBottomInset(config, screenHeight);
+        ChatPanelGeometry restored = ChatPanelGeometry.restore(
                 screenWidth,
                 screenHeight,
                 config.chatPanel.left,
                 config.chatPanel.bottomOffset,
                 config.chatPanel.width,
-                config.chatPanel.height));
-        geometryConfigSource = config;
+                config.chatPanel.height,
+                config.chatPanel.usesAutomaticHeight(),
+                bottomInset);
+        STATE.setPanelGeometry(restored, bottomInset);
+    }
+
+    private static int requiredBottomInset(ChatUpgradeConfig config, int screenHeight) {
+        ChatUpgradeConfig.AppearanceConfig appearance = config == null || config.appearance == null
+                ? ChatUpgradeConfig.defaultAppearance()
+                : config.appearance;
+        return automaticBottomOffset(appearance.vanillaStyleInput, screenHeight);
+    }
+
+    private static int automaticBottomOffset(boolean vanillaStyleInput, int screenHeight) {
+        if (!vanillaStyleInput) {
+            return ChatPanelGeometry.MERGED_BOTTOM_OFFSET;
+        }
+        if (vanillaComposerTop < 0 || vanillaComposerTop > screenHeight) {
+            return ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET;
+        }
+        return Math.max(
+                ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET,
+                screenHeight - vanillaComposerTop + ChatPanelGeometry.SCREEN_MARGIN);
     }
 
     private static void beginPointerOperation(
@@ -225,9 +302,11 @@ public final class ChatSurfaceController {
         if (pointerOperation == PointerOperation.NONE) {
             return;
         }
+        boolean resizedHeight = pointerOperation == PointerOperation.RESIZE
+                && (resizeEdges & (ChatPanelGeometry.EDGE_TOP | ChatPanelGeometry.EDGE_BOTTOM)) != 0;
         clearPointerOperation();
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
-        persistGeometry();
+        persistGeometry(resizedHeight);
     }
 
     private static void clearPointerOperation() {
@@ -238,13 +317,25 @@ public final class ChatSurfaceController {
     }
 
     private static void persistGeometry() {
+        persistGeometry(false);
+    }
+
+    private static void persistGeometry(boolean disableAutomaticHeight) {
+        if (previewGeometryConfig != null) {
+            return;
+        }
         ChatPanelGeometry geometry = STATE.panelGeometry();
+        ChatUpgradeConfig.ChatPanelConfig panel = ChatUpgradeConfig.get().chatPanel;
+        boolean automaticHeight = panel != null
+                && panel.usesAutomaticHeight()
+                && !disableAutomaticHeight;
         try {
             ChatUpgradeConfig.setChatPanelGeometryAndSave(
                     geometry.x(),
                     geometry.bottomOffset(STATE.screenHeight()),
                     geometry.width(),
-                    geometry.height());
+                    geometry.height(),
+                    automaticHeight);
             geometryConfigSource = ChatUpgradeConfig.get();
         } catch (IOException e) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to persist chat panel geometry: {}", e.getMessage());

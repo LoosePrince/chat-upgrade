@@ -110,23 +110,31 @@ public final class RichChatLayoutEngine {
         Component textComponent = textComponent(message);
         boolean hasText = !textComponent.getString().isBlank() || message.attachments().isEmpty();
         boolean playerMessage = timeline.kind().playerAuthored();
-        boolean showIdentity = policy.showIdentity(timeline);
-        boolean showMetadata = playerMessage;
-        int identityGutter = playerMessage ? policy.identityGutter() : 0;
-        int availableWidth = Math.max(1, metrics.textWidth() - identityGutter);
-        int laneWidth = Math.max(1, availableWidth * policy.contentWidthPercent() / 100);
         boolean alignRight = playerMessage
                 && policy.splitOwnMessages()
                 && message.authoredByLocalPlayer();
-        int laneLeft = metrics.textLeft() + identityGutter;
-        int contentLeft = laneLeft + policy.bubblePaddingX();
-        int contentWidth = Math.max(1, laneWidth - policy.bubblePaddingX() * 2);
+        boolean showIdentity = policy.showIdentity(timeline);
+        boolean showMetadata = playerMessage;
+        int resolvedAvatarSize = policy.avatarSize(metrics.entryHeight());
+        int identityGutter = showIdentity
+                ? policy.identityGutter(metrics.entryHeight())
+                : 0;
+        int availableWidth = Math.max(1, metrics.textWidth() - identityGutter);
+        int laneWidth = Math.max(1, availableWidth * policy.contentWidthPercent() / 100);
+        int contentRightEdge = metrics.textLeft() + metrics.textWidth();
+        int laneLeft = alignRight
+                ? contentRightEdge - identityGutter - laneWidth
+                : metrics.textLeft() + identityGutter;
+        int laneRight = laneLeft + laneWidth;
+        int bubblePadding = policy.bubblePadding();
+        int contentLeft = laneLeft + bubblePadding;
+        int contentWidth = Math.max(1, laneWidth - bubblePadding * 2);
+        int contentRight = contentLeft + contentWidth;
+        int avatarLeft = alignRight
+                ? contentRightEdge - resolvedAvatarSize
+                : metrics.textLeft();
         RichChatBounds identityBounds = showIdentity
-                ? RichChatBounds.ofSize(
-                        metrics.textLeft(),
-                        top,
-                        policy.avatarSize(),
-                        policy.avatarSize())
+                ? RichChatBounds.ofSize(avatarLeft, top, resolvedAvatarSize, resolvedAvatarSize)
                 : null;
         String rawMetadataLabel = showMetadata ? ChatMessageMetadata.label(timeline) : "";
         String metadataLabel = showMetadata
@@ -136,30 +144,51 @@ public final class RichChatLayoutEngine {
                 || message.replyTo() != null
                 || !message.attachments().isEmpty()
                 || font.width(rawMetadataLabel) + 12 >= contentWidth);
+        int metadataTextWidth = Math.max(1, Math.min(contentWidth, font.width(metadataLabel)));
+        int metadataLeft = alignRight ? contentRight - metadataTextWidth : contentLeft;
         RichChatBounds metadataBounds = showMetadata
-                ? RichChatBounds.ofSize(contentLeft, top, contentWidth, metrics.entryHeight())
+                ? RichChatBounds.ofSize(metadataLeft, top + bubblePadding, metadataTextWidth, metrics.entryHeight())
                 : null;
-        int cursorY = top;
+        int cursorY = top + bubblePadding;
         int bodyLeft = contentLeft;
         int bodyWidth = contentWidth;
         if (metadataOnOwnLine) {
             cursorY += metrics.entryHeight();
         } else if (showMetadata) {
-            int metadataWidth = Math.min(contentWidth - 1, font.width(metadataLabel) + 6);
-            bodyLeft += Math.max(0, metadataWidth);
-            bodyWidth = Math.max(1, contentWidth - Math.max(0, metadataWidth));
+            int metadataGap = 6;
+            int metadataWidth = Math.min(contentWidth - 1, font.width(metadataLabel));
+            int metadataSlotWidth = Math.min(contentWidth - 1, metadataWidth + metadataGap);
+            if (alignRight) {
+                bodyWidth = Math.max(1, contentWidth - Math.max(0, metadataSlotWidth));
+                metadataBounds = RichChatBounds.ofSize(
+                        contentRight - Math.max(1, metadataWidth),
+                        top + bubblePadding,
+                        Math.max(1, metadataWidth),
+                        metrics.entryHeight());
+            } else {
+                bodyLeft += Math.max(0, metadataSlotWidth);
+                bodyWidth = Math.max(1, contentWidth - Math.max(0, metadataSlotWidth));
+                metadataBounds = RichChatBounds.ofSize(
+                        contentLeft,
+                        top + bubblePadding,
+                        Math.max(1, metadataWidth),
+                        metrics.entryHeight());
+            }
         }
         int order = 0;
-        int visualRight = showMetadata ? contentLeft + font.width(metadataLabel) : bodyLeft;
+        int visualLeft = metadataBounds == null ? contentLeft : metadataBounds.left();
+        int visualRight = metadataBounds == null ? contentLeft + 1 : metadataBounds.right();
         ArrayDeque<InlineEmojiSlot> emojiQueue = new ArrayDeque<>(message.inlineEmojiSlots());
 
         if (message.replyTo() != null) {
             Component replyComponent = replyComponent(message.replyTo());
             for (FormattedCharSequence line : font.split(replyComponent, bodyWidth)) {
+                int lineWidth = Math.max(1, font.width(line));
+                int lineLeft = alignRight ? bodyLeft + Math.max(0, bodyWidth - lineWidth) : bodyLeft;
                 RichChatBounds lineBounds = RichChatBounds.ofSize(
-                        bodyLeft,
+                        lineLeft,
                         cursorY,
-                        bodyWidth,
+                        lineWidth,
                         metrics.entryHeight());
                 nodes.add(RichChatRenderNode.reply(
                         message.messageId(),
@@ -167,7 +196,8 @@ public final class RichChatLayoutEngine {
                         order,
                         line,
                         replyComponent));
-                visualRight = Math.max(visualRight, bodyLeft + font.width(line));
+                visualLeft = Math.min(visualLeft, lineBounds.left());
+                visualRight = Math.max(visualRight, lineBounds.right());
                 cursorY += metrics.entryHeight();
                 order++;
             }
@@ -183,8 +213,12 @@ public final class RichChatLayoutEngine {
             }
             for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
                 FormattedCharSequence line = lines.get(lineIndex);
-                int lineLeft = lineIndex == 0 ? bodyLeft : contentLeft;
-                int lineWidth = lineIndex == 0 ? bodyWidth : contentWidth;
+                int lineAreaLeft = lineIndex == 0 ? bodyLeft : contentLeft;
+                int lineAreaWidth = lineIndex == 0 ? bodyWidth : contentWidth;
+                int lineWidth = Math.max(1, font.width(line));
+                int lineLeft = alignRight
+                        ? lineAreaLeft + Math.max(0, lineAreaWidth - lineWidth)
+                        : lineAreaLeft;
                 RichChatBounds lineBounds = RichChatBounds.ofSize(
                         lineLeft,
                         cursorY,
@@ -219,7 +253,8 @@ public final class RichChatLayoutEngine {
                 nodes.add(node);
                 hitBoxes.addAll(styledTextHitBoxes(font, message.messageId(), lineBounds, line));
                 hitBoxes.addAll(emojiHitBoxes(font, metrics, message.messageId(), lineBounds, line, lineEmojiSlots));
-                visualRight = Math.max(visualRight, lineLeft + font.width(line));
+                visualLeft = Math.min(visualLeft, lineBounds.left());
+                visualRight = Math.max(visualRight, lineBounds.right());
                 cursorY += metrics.entryHeight();
                 order++;
             }
@@ -233,8 +268,11 @@ public final class RichChatLayoutEngine {
                     contentWidth,
                     metrics.entryHeight(),
                     attachment);
+            int attachmentLeft = alignRight
+                    ? contentRight - attachmentLayout.width()
+                    : contentLeft;
             RichChatBounds attachmentBounds = RichChatBounds.ofSize(
-                    contentLeft,
+                    attachmentLeft,
                     cursorY,
                     attachmentLayout.width(),
                     attachmentLayout.height());
@@ -250,35 +288,36 @@ public final class RichChatLayoutEngine {
                     attachmentBounds,
                     new ChatHitTarget.Attachment(attachment)));
             cursorY += attachmentLayout.height();
+            visualLeft = Math.min(visualLeft, attachmentBounds.left());
             visualRight = Math.max(visualRight, attachmentBounds.right());
             order++;
         }
 
-        if (showMetadata && cursorY == top) {
+        if (showMetadata && cursorY == top + bubblePadding) {
             cursorY += metrics.entryHeight();
         }
-        if (identityBounds != null) {
-            cursorY = Math.max(cursorY, identityBounds.bottom());
-        }
-        int messageHeight = Math.max(0, cursorY - top);
+        int visualBottom = cursorY + bubblePadding;
+        int messageBottom = identityBounds == null
+                ? visualBottom
+                : Math.max(visualBottom, identityBounds.bottom());
+        int messageHeight = Math.max(0, messageBottom - top);
         RichChatBounds messageBounds = RichChatBounds.ofSize(
                 metrics.backgroundLeft(),
                 top,
                 metrics.backgroundRight() - metrics.backgroundLeft(),
                 messageHeight);
-        int visualLeft = contentLeft - policy.bubblePaddingX();
-        int maxVisualRight = metrics.textLeft() + metrics.textWidth();
+        int paddedVisualLeft = Math.max(laneLeft, visualLeft - bubblePadding);
         int paddedVisualRight = Math.min(
-                maxVisualRight,
-                Math.max(visualLeft + 1, visualRight + policy.bubblePaddingX()));
-        RichChatBounds visualBounds = RichChatBounds.ofSize(
-                visualLeft,
+                laneRight,
+                Math.max(paddedVisualLeft + 1, visualRight + bubblePadding));
+        RichChatBounds visualBounds = new RichChatBounds(
+                paddedVisualLeft,
                 top,
-                paddedVisualRight - visualLeft,
-                messageHeight);
+                paddedVisualRight,
+                Math.max(top + 1, visualBottom));
 
         int alignmentShift = alignRight
-                ? metrics.textLeft() + metrics.textWidth() - visualBounds.right()
+                ? 0
                 : nonPlayerAlignmentShift(timeline, policy, metrics, visualBounds);
         if (alignmentShift != 0) {
             visualBounds = visualBounds.translate(alignmentShift, 0);
