@@ -18,6 +18,7 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentComposerState;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraftResolver;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
+import com.chat.upgrade.client.ui.chat.input.ChatInputButton;
 import com.chat.upgrade.client.ui.chat.input.EmojiPickerPopover;
 
 import net.minecraft.ChatFormatting;
@@ -83,26 +84,35 @@ public abstract class ChatScreenRichInputMixin extends Screen {
         int y = Math.max(2, this.height - 34);
         Component attachmentLabel = Component.translatable("chatupgrade.input.button.attachment");
         chatupgrade$attachmentButtonWidth = chatupgrade$buttonWidthFor(attachmentLabel);
-        chatupgrade$attachmentButton = Button.builder(
+        chatupgrade$attachmentButton = new ChatInputButton(
+                4,
+                y,
+                chatupgrade$attachmentButtonWidth,
+                16,
                 attachmentLabel,
-                button -> chatupgrade$pickAttachment())
-                .bounds(4, y, chatupgrade$attachmentButtonWidth, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.attachment.tooltip")))
-                .build();
+                button -> chatupgrade$pickAttachment());
+        chatupgrade$attachmentButton.setTooltip(
+                Tooltip.create(Component.translatable("chatupgrade.input.button.attachment.tooltip")));
         Component emojiLabel = Component.translatable("chatupgrade.input.button.emoji");
         chatupgrade$emojiButtonWidth = chatupgrade$buttonWidthFor(emojiLabel);
-        chatupgrade$emojiButton = Button.builder(
+        chatupgrade$emojiButton = new ChatInputButton(
+                chatupgrade$emojiButtonX(),
+                y,
+                chatupgrade$emojiButtonWidth,
+                16,
                 emojiLabel,
-                button -> chatupgrade$toggleEmojiPopover())
-                .bounds(chatupgrade$emojiButtonX(), y, chatupgrade$emojiButtonWidth, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.emoji.tooltip")))
-                .build();
-        chatupgrade$clearButton = Button.builder(
+                button -> chatupgrade$toggleEmojiPopover());
+        chatupgrade$emojiButton.setTooltip(
+                Tooltip.create(Component.translatable("chatupgrade.input.button.emoji.tooltip")));
+        chatupgrade$clearButton = new ChatInputButton(
+                Math.max(4, this.width - 24),
+                y,
+                20,
+                16,
                 Component.translatable("chatupgrade.input.button.clear"),
-                button -> chatupgrade$clearDraft())
-                .bounds(Math.max(4, this.width - 24), y, 20, 16)
-                .tooltip(Tooltip.create(Component.translatable("chatupgrade.input.button.clear.tooltip")))
-                .build();
+                button -> chatupgrade$clearDraft());
+        chatupgrade$clearButton.setTooltip(
+                Tooltip.create(Component.translatable("chatupgrade.input.button.clear.tooltip")));
         this.addRenderableWidget(chatupgrade$attachmentButton);
         this.addRenderableWidget(chatupgrade$emojiButton);
         this.addRenderableWidget(chatupgrade$clearButton);
