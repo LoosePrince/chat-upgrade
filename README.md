@@ -53,6 +53,7 @@ Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / �
 | `/chatupgrade uploadaudio pick [name]` | 选择音频并上传发送。 |
 | `/chatupgrade uploadvideo pick [name]` | 选择视频并上传发送。 |
 | `/chatupgrade config uploadmode <auto/server/third>` | 切换上传路由。 |
+| `/chatupgrade config modbuttonarrownavigation <true|false>` | 设置模组聊天按钮是否参与原版方向键焦点遍历，默认 `false`。 |
 | `/chatupgrade config reload` | 重新读取客户端配置。 |
 | `/chatupgrade config plugin status` | 查看 FFmpeg / APNG 插件状态。 |
 
@@ -72,7 +73,7 @@ Chat Upgrade 是一个 Minecraft 富媒体聊天模组，采用 **多版本 / �
 config/chat-upgrade/server-media.json
 ```
 
-常用配置包括：聊天模式、上传路由、手动触发加载、平滑滚动、音频/视频音量、接收/上传上限等。
+常用配置包括：聊天模式、上传路由、模组聊天按钮方向键导航、手动触发加载、平滑滚动、音频/视频音量、接收/上传上限等。`modButtonArrowNavigation` 缺失或为 `false` 时，附件、表情和清空按钮不参与方向键焦点遍历，以保留原版输入框行为；设为 `true` 时，这三个按钮参与原版方向键焦点遍历。两种设置下均可使用鼠标和 `Tab` / `Shift+Tab`。
 
 ## 支持的媒体
 
