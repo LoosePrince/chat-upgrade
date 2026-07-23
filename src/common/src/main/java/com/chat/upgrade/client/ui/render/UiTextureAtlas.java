@@ -36,6 +36,10 @@ public final class UiTextureAtlas {
         LOOP,
         OPEN,
         POPOUT,
+        MORE,
+        IMAGE,
+        AUDIO,
+        VIDEO,
         CHECK,
         SLIDER_KNOB
     }
@@ -73,7 +77,7 @@ public final class UiTextureAtlas {
             return true;
         }
         int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
-        if (safeRadius <= 0) {
+        if (safeRadius <= 0 || safeRadius > ROUNDED_FILL_ENTRY_COUNT) {
             return false;
         }
         Atlas atlas = ensure();
@@ -140,7 +144,7 @@ public final class UiTextureAtlas {
         }
         int safeRadius = Math.clamp(radius, 0, Math.min(bounds.width(), bounds.height()) / 2);
         int safeBorder = Math.clamp(borderWidth, 0, Math.min(bounds.width(), bounds.height()) / 2);
-        if (safeRadius <= 0 || safeBorder <= 0) {
+        if (safeRadius <= 0 || safeRadius > ROUNDED_FILL_ENTRY_COUNT || safeBorder <= 0) {
             return false;
         }
         Atlas atlas = ensure();
@@ -224,6 +228,30 @@ public final class UiTextureAtlas {
                 sourceSize,
                 atlas.width(),
                 atlas.height(),
+                color);
+    }
+
+    public static void drawPlayerHead(
+            GuiGraphicsExtractor graphics,
+            Identifier texture,
+            RichChatBounds bounds,
+            int color) {
+        if (graphics == null || texture == null || bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            return;
+        }
+        graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                texture,
+                bounds.left(),
+                bounds.top(),
+                8.0F,
+                8.0F,
+                bounds.width(),
+                bounds.height(),
+                8,
+                8,
+                64,
+                64,
                 color);
     }
 
@@ -335,6 +363,10 @@ public final class UiTextureAtlas {
                 case LOOP -> paintLoop(iconGraphics);
                 case OPEN -> paintOpen(iconGraphics);
                 case POPOUT -> paintPopout(iconGraphics);
+                case MORE -> paintMore(iconGraphics);
+                case IMAGE -> paintImage(iconGraphics);
+                case AUDIO -> paintAudio(iconGraphics);
+                case VIDEO -> paintVideo(iconGraphics);
                 case CHECK -> paintCheck(iconGraphics);
                 case SLIDER_KNOB -> iconGraphics.fill(new Ellipse2D.Float(4.0F, 4.0F, 8.0F, 8.0F));
             }
@@ -426,6 +458,42 @@ public final class UiTextureAtlas {
     private static void paintPopout(Graphics2D graphics) {
         graphics.drawRect(2, 5, 9, 8);
         graphics.drawRect(6, 2, 8, 8);
+    }
+
+    private static void paintMore(Graphics2D graphics) {
+        graphics.fill(new Ellipse2D.Float(2.0F, 7.0F, 2.0F, 2.0F));
+        graphics.fill(new Ellipse2D.Float(7.0F, 7.0F, 2.0F, 2.0F));
+        graphics.fill(new Ellipse2D.Float(12.0F, 7.0F, 2.0F, 2.0F));
+    }
+
+    private static void paintImage(Graphics2D graphics) {
+        graphics.drawRect(1, 2, 14, 12);
+        graphics.fill(new Ellipse2D.Float(10.5F, 4.0F, 2.0F, 2.0F));
+        Path2D landscape = new Path2D.Float();
+        landscape.moveTo(2.5D, 12.5D);
+        landscape.lineTo(6.0D, 8.0D);
+        landscape.lineTo(8.5D, 10.5D);
+        landscape.lineTo(10.5D, 8.5D);
+        landscape.lineTo(14.0D, 12.5D);
+        graphics.draw(landscape);
+    }
+
+    private static void paintAudio(Graphics2D graphics) {
+        graphics.draw(new Line2D.Float(6.0F, 3.0F, 6.0F, 11.5F));
+        graphics.draw(new Line2D.Float(6.0F, 3.0F, 13.0F, 1.5F));
+        graphics.draw(new Line2D.Float(13.0F, 1.5F, 13.0F, 9.5F));
+        graphics.fill(new Ellipse2D.Float(2.0F, 10.0F, 4.5F, 3.5F));
+        graphics.fill(new Ellipse2D.Float(9.0F, 8.0F, 4.5F, 3.5F));
+    }
+
+    private static void paintVideo(Graphics2D graphics) {
+        graphics.drawRect(1, 3, 14, 10);
+        Path2D play = new Path2D.Float();
+        play.moveTo(6.0D, 5.0D);
+        play.lineTo(11.0D, 8.0D);
+        play.lineTo(6.0D, 11.0D);
+        play.closePath();
+        graphics.fill(play);
     }
 
     private static void paintCheck(Graphics2D graphics) {

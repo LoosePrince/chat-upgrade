@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
@@ -16,7 +17,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 public final class ChatContextMenu {
     private static final int SCREEN_MARGIN = 3;
 
-    public record Selection(RichChatMessage message, ChatAction action) {
+    public record Selection(RichChatMessage message, ChatAction action, @Nullable RichAttachment attachment) {
         public Selection {
             if (message == null || action == null) {
                 throw new IllegalArgumentException("message and action must not be null");
@@ -35,6 +36,7 @@ public final class ChatContextMenu {
     }
 
     private RichChatMessage message;
+    private @Nullable RichAttachment attachment;
     private List<ChatMessageActionCatalog.Item> items = List.of();
     private RichChatBounds bounds;
     private Density density = Density.at(100);
@@ -44,13 +46,41 @@ public final class ChatContextMenu {
     }
 
     public boolean open(
+            ChatGestureTarget target,
+            int pointerX,
+            int pointerY,
+            int screenWidth,
+            int screenHeight,
+            Font font) {
+        if (target == null) {
+            close();
+            return false;
+        }
+        RichAttachment targetAttachment = target.hitBox() == null ? null : target.hitBox().attachment();
+        return open(target.message(), targetAttachment, pointerX, pointerY, screenWidth, screenHeight, font);
+    }
+
+    public boolean open(
             RichChatMessage nextMessage,
             int pointerX,
             int pointerY,
             int screenWidth,
             int screenHeight,
             Font font) {
-        List<ChatMessageActionCatalog.Item> nextItems = ChatMessageActionCatalog.actionsFor(nextMessage);
+        return open(nextMessage, null, pointerX, pointerY, screenWidth, screenHeight, font);
+    }
+
+    private boolean open(
+            RichChatMessage nextMessage,
+            @Nullable RichAttachment nextAttachment,
+            int pointerX,
+            int pointerY,
+            int screenWidth,
+            int screenHeight,
+            Font font) {
+        List<ChatMessageActionCatalog.Item> nextItems = ChatMessageActionCatalog.actionsFor(
+                nextMessage,
+                nextAttachment);
         if (nextItems.isEmpty() || font == null) {
             close();
             return false;
@@ -59,17 +89,18 @@ public final class ChatContextMenu {
         int labelWidth = nextItems.stream()
                 .mapToInt(item -> font.width(item.label()))
                 .max()
-                .orElse(density.minimumWidth() - density.horizontalPadding() * 2);
-        int width = Math.clamp(
-                labelWidth + density.horizontalPadding() * 2,
-                density.minimumWidth(),
-                density.maximumWidth());
+                .orElse(1);
+        int availableWidth = Math.max(1, screenWidth - SCREEN_MARGIN * 2);
+        int width = Math.min(
+                availableWidth,
+                Math.max(1, labelWidth + density.horizontalPadding() * 2));
         int height = density.verticalPadding() * 2 + nextItems.size() * density.rowHeight();
         int maxX = Math.max(SCREEN_MARGIN, screenWidth - SCREEN_MARGIN - width);
         int maxY = Math.max(SCREEN_MARGIN, screenHeight - SCREEN_MARGIN - height);
         int x = Math.clamp(pointerX, SCREEN_MARGIN, maxX);
         int y = Math.clamp(pointerY, SCREEN_MARGIN, maxY);
         message = nextMessage;
+        attachment = nextAttachment;
         items = nextItems;
         bounds = RichChatBounds.ofSize(x, y, width, height);
         return true;
@@ -77,6 +108,7 @@ public final class ChatContextMenu {
 
     public void close() {
         message = null;
+        attachment = null;
         items = List.of();
         bounds = null;
         density = Density.at(100);
@@ -97,7 +129,7 @@ public final class ChatContextMenu {
             close();
             return ClickResult.consumed();
         }
-        Selection selection = new Selection(message, items.get(index).action());
+        Selection selection = new Selection(message, items.get(index).action(), attachment);
         close();
         return new ClickResult(true, selection);
     }
@@ -154,17 +186,13 @@ public final class ChatContextMenu {
     private record Density(
             int horizontalPadding,
             int verticalPadding,
-            int rowHeight,
-            int minimumWidth,
-            int maximumWidth) {
+            int rowHeight) {
         private static Density at(int scalePercent) {
             int safeScale = Math.clamp(scalePercent, 75, 150);
             return new Density(
                     scale(8, safeScale),
                     scale(2, safeScale),
-                    scale(18, safeScale),
-                    scale(92, safeScale),
-                    scale(190, safeScale));
+                    scale(18, safeScale));
         }
 
         private static int scale(int value, int percent) {

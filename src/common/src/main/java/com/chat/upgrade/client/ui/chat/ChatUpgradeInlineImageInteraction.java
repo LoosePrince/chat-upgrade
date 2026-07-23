@@ -360,6 +360,16 @@ public final class ChatUpgradeInlineImageInteraction {
                 }
             }
             case TOGGLE_FLOATING -> Style.EMPTY.withClickEvent(AudioFloatingWindowClickEvent.forToggle(p.url, p.resourceName));
+            case TOGGLE_OPTIONS -> {
+                RichChatBounds bounds = new RichChatBounds(p.localLeft, p.localTop, p.localRight, p.localBottom);
+                RichChatBounds menu = RichChatMediaLayout.audio(bounds, true).popout();
+                Vector2f anchor = p.pose.transformPosition(new Vector2f(menu.right(), menu.bottom()));
+                yield Style.EMPTY.withClickEvent(AudioOptionsClickEvent.forToggle(
+                        p.url,
+                        p.resourceName,
+                        Math.round(anchor.x),
+                        Math.round(anchor.y)));
+            }
             case SEEK -> Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(p.url, action.ratio()));
             case NONE -> null;
         };
@@ -449,6 +459,7 @@ public final class ChatUpgradeInlineImageInteraction {
                     : I18n.get("chatupgrade.inline.audio.button.loop_on");
             case OPEN_URL -> I18n.get("chatupgrade.inline.audio.button.open_url");
             case TOGGLE_FLOATING -> I18n.get("chatupgrade.inline.audio.button.floating");
+            case TOGGLE_OPTIONS -> I18n.get("chatupgrade.inline.audio.button.options");
             case SEEK -> I18n.get("chatupgrade.inline.audio.seek_to",
                     ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total))));
             case NONE ->
@@ -506,9 +517,21 @@ public final class ChatUpgradeInlineImageInteraction {
                         ? RichChatMediaLayout.COMPACT_AUDIO_HEIGHT
                         : RichChatMediaLayout.AUDIO_HEIGHT));
         if (ChatClientConfigRuntime.uiPreferences().compactMediaCards()) {
-            return bounds.contains(Math.round(localX), Math.round(localY))
-                    ? new AudioAction(AudioActionKind.TOGGLE, 0.0)
-                    : new AudioAction(AudioActionKind.NONE, 0.0);
+            RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, true);
+            if (contains(geometry.play(), localX, localY)) {
+                return new AudioAction(AudioActionKind.TOGGLE, 0.0);
+            }
+            if (contains(geometry.popout(), localX, localY)) {
+                return new AudioAction(AudioActionKind.TOGGLE_OPTIONS, 0.0);
+            }
+            if (contains(geometry.progress(), localX, localY)) {
+                double ratio = Math.clamp(
+                        (localX - geometry.progress().left()) / Math.max(1.0, geometry.progress().width()),
+                        0.0,
+                        1.0);
+                return new AudioAction(AudioActionKind.SEEK, ratio);
+            }
+            return new AudioAction(AudioActionKind.NONE, 0.0);
         }
         RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, false);
         if (contains(geometry.play(), localX, localY)) {
@@ -551,6 +574,13 @@ public final class ChatUpgradeInlineImageInteraction {
                 p.mediaRawHeight,
                 compact);
         if (compact) {
+            if (contains(geometry.progress(), localX, localY)) {
+                double ratio = Math.clamp(
+                        (localX - geometry.progress().left()) / Math.max(1.0, geometry.progress().width()),
+                        0.0,
+                        1.0);
+                return new VideoAction(VideoActionKind.SEEK, ratio);
+            }
             if (contains(geometry.open(), localX, localY)) {
                 return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0);
             }
@@ -583,7 +613,7 @@ public final class ChatUpgradeInlineImageInteraction {
     }
 
     private enum AudioActionKind {
-        TOGGLE, TOGGLE_LOOP, OPEN_URL, TOGGLE_FLOATING, SEEK, NONE
+        TOGGLE, TOGGLE_LOOP, OPEN_URL, TOGGLE_FLOATING, TOGGLE_OPTIONS, SEEK, NONE
     }
 
     private record AudioAction(AudioActionKind kind, double ratio) {

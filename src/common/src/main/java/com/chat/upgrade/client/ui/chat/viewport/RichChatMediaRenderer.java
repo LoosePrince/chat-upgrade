@@ -336,22 +336,41 @@ public final class RichChatMediaRenderer {
                 false);
         paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
                 opacity, playing, tokens, cornerRadius);
-        if (!compact) {
+        if (compact) {
+            UiTextureAtlas.drawIcon(
+                    gfx,
+                    UiTextureAtlas.Icon.MORE,
+                    geometry.popout(),
+                    UiPrimitives.withOpacity(tokens.muted(), opacity));
+        } else {
             paintButton(gfx, geometry.loop(), UiTextureAtlas.Icon.LOOP, opacity, loop, tokens, cornerRadius);
             paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
             paintButton(gfx, geometry.popout(), UiTextureAtlas.Icon.POPOUT, opacity, false, tokens, cornerRadius);
         }
 
         paintProgress(gfx, geometry.progress(), pos, total, opacity, tokens);
-        gfx.text(
-                font,
-                compact
-                        ? ChatUpgradeFormatters.formatMs(total)
-                        : ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
-                geometry.time().left(),
-                geometry.time().top(),
-                UiPrimitives.withOpacity(tokens.muted(), opacity),
-                false);
+        if (compact) {
+            String durationLabel = font.plainSubstrByWidth(
+                    ChatUpgradeFormatters.formatMs(total),
+                    Math.max(1, geometry.durationTime().width()));
+            gfx.text(
+                    font,
+                    durationLabel,
+                    Math.max(
+                            geometry.durationTime().left(),
+                            geometry.durationTime().right() - font.width(durationLabel)),
+                    geometry.durationTime().top(),
+                    UiPrimitives.withOpacity(tokens.muted(), opacity),
+                    false);
+        } else {
+            gfx.text(
+                    font,
+                    ChatUpgradeFormatters.formatMs(pos) + " / " + ChatUpgradeFormatters.formatMs(total),
+                    geometry.currentTime().left(),
+                    geometry.currentTime().top(),
+                    UiPrimitives.withOpacity(tokens.muted(), opacity),
+                    false);
+        }
     }
 
     private static void paintVideo(
@@ -435,59 +454,67 @@ public final class RichChatMediaRenderer {
                     ARGB.white(opacity));
         }
 
-        RichChatBounds titleScrim = new RichChatBounds(
-                bounds.left(),
-                bounds.top(),
-                bounds.right(),
-                Math.min(geometry.preview().bottom(), bounds.top() + (compact ? 29 : 24)));
-        gfx.fill(
-                titleScrim.left(),
-                titleScrim.top(),
-                titleScrim.right(),
-                titleScrim.bottom(),
-                UiPrimitives.withOpacity(tokens.scrim(), opacity));
-        String visibleName = font.plainSubstrByWidth(name, Math.max(1, geometry.title().width()));
-        gfx.text(
-                font,
-                visibleName,
-                geometry.title().left(),
-                geometry.title().top(),
-                UiPrimitives.withOpacity(tokens.text(), opacity),
-                false);
-        if (compact) {
+        boolean playing = VideoPlayerService.isPlaying(url);
+        boolean showTitle = !compact || !playing || hovered;
+        if (showTitle) {
+            RichChatBounds titleScrim = new RichChatBounds(
+                    bounds.left(),
+                    bounds.top(),
+                    bounds.right(),
+                    Math.min(geometry.preview().bottom(), bounds.top() + 24));
+            gfx.fill(
+                    titleScrim.left(),
+                    titleScrim.top(),
+                    titleScrim.right(),
+                    titleScrim.bottom(),
+                    UiPrimitives.withOpacity(tokens.scrim(), opacity));
+            String visibleName = font.plainSubstrByWidth(name, Math.max(1, geometry.title().width()));
             gfx.text(
                     font,
-                    ChatUpgradeFormatters.formatBytes(entry.getFetchedByteLength()),
+                    visibleName,
                     geometry.title().left(),
-                    bounds.top() + 16,
-                    UiPrimitives.withOpacity(tokens.muted(), opacity),
+                    geometry.title().top(),
+                    UiPrimitives.withOpacity(tokens.text(), opacity),
                     false);
         }
         if (!compact || hovered) {
             paintButton(gfx, geometry.open(), UiTextureAtlas.Icon.OPEN, opacity, false, tokens, cornerRadius);
         }
 
-        boolean playing = VideoPlayerService.isPlaying(url);
         if (!compact || !playing || hovered) {
             paintButton(gfx, geometry.play(), playing ? UiTextureAtlas.Icon.PAUSE : UiTextureAtlas.Icon.PLAY,
                     opacity, playing, tokens, cornerRadius);
         }
-        if (compact) {
+        if (compact && !hovered) {
             return;
         }
+        if (compact) {
+            RichChatBounds controlsScrim = new RichChatBounds(
+                    bounds.left(),
+                    Math.max(bounds.top(), bounds.bottom() - 18),
+                    bounds.right(),
+                    bounds.bottom());
+            gfx.fill(
+                    controlsScrim.left(),
+                    controlsScrim.top(),
+                    controlsScrim.right(),
+                    controlsScrim.bottom(),
+                    UiPrimitives.withOpacity(tokens.scrim(), opacity));
+        }
+        int timeColor = compact ? tokens.text() : tokens.muted();
         gfx.text(
                 font,
                 ChatUpgradeFormatters.formatMs(pos),
                 geometry.leftTime().left(),
                 geometry.leftTime().top(),
-                UiPrimitives.withOpacity(tokens.muted(), opacity),
+                UiPrimitives.withOpacity(timeColor, opacity),
                 false);
         gfx.text(
                 font,
                 ChatUpgradeFormatters.formatMs(total),
                 geometry.rightTime().left(),
                 geometry.rightTime().top(),
-                UiPrimitives.withOpacity(tokens.muted(), opacity),
+                UiPrimitives.withOpacity(timeColor, opacity),
                 false);
         paintProgress(gfx, geometry.progress(), pos, total, opacity, tokens);
     }

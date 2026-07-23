@@ -6,6 +6,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.ui.chat.AudioControlClickEvent;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindowClickEvent;
+import com.chat.upgrade.client.ui.chat.AudioOptionsClickEvent;
 import com.chat.upgrade.client.ui.chat.ImagePreviewClickEvent;
 import com.chat.upgrade.client.ui.chat.VideoControlClickEvent;
 import com.chat.upgrade.client.ui.chat.VideoPreviewClickEvent;
@@ -34,6 +35,13 @@ public final class ChatActionStyleAdapter {
         if (action instanceof ChatAction.ToggleAudioFloating floating) {
             return Style.EMPTY.withClickEvent(AudioFloatingWindowClickEvent.forToggle(
                     floating.url(), floating.displayName()));
+        }
+        if (action instanceof ChatAction.ToggleAudioOptions options) {
+            return Style.EMPTY.withClickEvent(AudioOptionsClickEvent.forToggle(
+                    options.url(),
+                    options.displayName(),
+                    options.anchorX(),
+                    options.anchorY()));
         }
         if (action instanceof ChatAction.SeekAudio seek) {
             return Style.EMPTY.withClickEvent(AudioControlClickEvent.forSeek(seek.url(), seek.ratio()));

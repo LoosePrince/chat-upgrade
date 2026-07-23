@@ -29,6 +29,7 @@ public final class ImagePreviewScreen extends Screen {
 
     private final String url;
     private final @Nullable String nameHint;
+    private final @Nullable Screen parent;
     private float scale = 1.0f;
     private float rotationDeg = 0.0f;
     private double panX = 0.0;
@@ -38,6 +39,7 @@ public final class ImagePreviewScreen extends Screen {
         super(Component.translatable("chatupgrade.screen.image_preview.title"));
         this.url = url;
         this.nameHint = nameHint;
+        this.parent = MinecraftGuiBridge.currentScreen(Minecraft.getInstance());
     }
 
     @Override
@@ -193,6 +195,11 @@ public final class ImagePreviewScreen extends Screen {
             return true;
         }
         return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public void onClose() {
+        MinecraftGuiBridge.setScreen(Minecraft.getInstance(), parent);
     }
 
     @Override

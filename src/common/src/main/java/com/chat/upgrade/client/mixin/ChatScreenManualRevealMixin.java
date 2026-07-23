@@ -17,6 +17,8 @@ import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.ui.chat.AudioControlClickEvent;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindowClickEvent;
+import com.chat.upgrade.client.ui.chat.AudioOptionsClickEvent;
+import com.chat.upgrade.client.ui.chat.CompactAudioOptionsMenu;
 import com.chat.upgrade.client.ui.chat.ImagePreviewClickEvent;
 import com.chat.upgrade.client.ui.chat.ManualRevealClickEvent;
 import com.chat.upgrade.client.ui.chat.UpgradeChatHudSync;
@@ -72,6 +74,23 @@ public abstract class ChatScreenManualRevealMixin {
         if (audioFloatingOpt.isPresent()) {
             AudioFloatingWindowClickEvent.Parsed parsed = audioFloatingOpt.get();
             AudioFloatingWindow.toggleFor(parsed.url(), parsed.name());
+            cir.setReturnValue(true);
+            return;
+        }
+        Optional<AudioOptionsClickEvent.Parsed> audioOptions = AudioOptionsClickEvent.parse(clickEvent);
+        if (audioOptions.isPresent()) {
+            AudioOptionsClickEvent.Parsed parsed = audioOptions.get();
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft != null) {
+                CompactAudioOptionsMenu.toggle(
+                        parsed.url(),
+                        parsed.name(),
+                        parsed.anchorX(),
+                        parsed.anchorY(),
+                        minecraft.font,
+                        minecraft.getWindow().getGuiScaledWidth(),
+                        minecraft.getWindow().getGuiScaledHeight());
+            }
             cir.setReturnValue(true);
             return;
         }

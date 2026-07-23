@@ -3,8 +3,10 @@ package com.chat.upgrade.client.ui.chat.interaction;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerState;
+import com.chat.upgrade.client.ui.screen.ChatDetailsScreen;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -46,9 +48,24 @@ public final class ChatMessageActionExecutor {
             return Optional.empty();
         }
         if (action instanceof ChatAction.ShowProfile) {
-            Component profile = profileMessage(selection.message());
+            ChatDetailsScreen.openProfile(minecraft, selection.message());
             ChatTextSelectionState.clear();
-            return Optional.of(profile);
+            return Optional.empty();
+        }
+        if (action instanceof ChatAction.ShowAttachmentDetails details) {
+            RichAttachment attachment = selection.attachment();
+            if (attachment == null) {
+                attachment = selection.message().attachments().stream()
+                        .filter(RichAttachment::hasRenderableUrl)
+                        .filter(candidate -> details.url().equals(candidate.requireRenderableUrl()))
+                        .findFirst()
+                        .orElse(null);
+            }
+            if (attachment != null) {
+                ChatDetailsScreen.openAttachment(minecraft, selection.message(), attachment);
+            }
+            ChatTextSelectionState.clear();
+            return Optional.empty();
         }
         if (action instanceof ChatAction.HideMessage hide) {
             ChatMessageVisibilityStore.hideMessage(hide.messageId());
@@ -101,16 +118,6 @@ public final class ChatMessageActionExecutor {
                 .withStyle(ChatFormatting.GRAY)
                 .append(" ")
                 .append(undo);
-    }
-
-    private static Component profileMessage(com.chat.upgrade.client.ui.chat.state.RichChatMessage message) {
-        String name = message.author().visibleName();
-        String key = message.author().identityKey();
-        String team = message.author().team().present()
-                ? message.author().team().teamName()
-                : Component.translatable("chatupgrade.common.na").getString();
-        return Component.translatable("chatupgrade.action.profile.details", name, key, team)
-                .withStyle(ChatFormatting.GRAY);
     }
 
     private static String debugMessage(com.chat.upgrade.client.ui.chat.state.RichChatMessage message) {

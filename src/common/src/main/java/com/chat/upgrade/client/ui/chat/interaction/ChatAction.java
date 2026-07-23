@@ -35,6 +35,13 @@ public sealed interface ChatAction {
         }
     }
 
+    record ToggleAudioOptions(String url, String displayName, int anchorX, int anchorY) implements ChatAction {
+        public ToggleAudioOptions {
+            url = safe(url);
+            displayName = safe(displayName);
+        }
+    }
+
     record SeekAudio(String url, double ratio) implements ChatAction {
         public SeekAudio {
             url = safe(url);
@@ -83,6 +90,12 @@ public sealed interface ChatAction {
     record ShowProfile(String authorKey) implements ChatAction {
         public ShowProfile {
             authorKey = safe(authorKey);
+        }
+    }
+
+    record ShowAttachmentDetails(String url) implements ChatAction {
+        public ShowAttachmentDetails {
+            url = safe(url);
         }
     }
 

@@ -67,6 +67,10 @@ public final class AudioFloatingWindow {
         return visible && url != null && !url.isBlank();
     }
 
+    public static boolean isVisibleFor(String targetUrl) {
+        return isVisible() && targetUrl != null && targetUrl.equals(url);
+    }
+
     public static boolean contains(double pointerX, double pointerY, int screenWidth, int screenHeight) {
         if (!isVisible()) {
             return false;

@@ -27,14 +27,14 @@ public final class ChatUpgradeConfig {
     public boolean ciCompatibility;
     public ChatInputMode chatInputMode = ChatInputMode.TAKEOVER;
     public String chatInputPlaceholder = "";
-    public Boolean chatScreenMaskEnabled = true;
+    public Boolean chatScreenMaskEnabled = false;
     public ChatPanelConfig chatPanel = new ChatPanelConfig();
     public AppearanceConfig appearance = new AppearanceConfig();
 
     public boolean manualImageReveal;
     public boolean manualAudioReveal;
     public boolean manualVideoReveal;
-    public boolean compactMediaCards;
+    public boolean compactMediaCards = true;
     public Boolean smoothScrollEnabled;
     public boolean debugChatActions;
 
@@ -149,7 +149,7 @@ public final class ChatUpgradeConfig {
         config.manualImageReveal = false;
         config.manualAudioReveal = false;
         config.manualVideoReveal = false;
-        config.compactMediaCards = false;
+        config.compactMediaCards = true;
         config.smoothScrollEnabled = true;
         config.debugChatActions = false;
         config.maxReceiveBytes = DEFAULT_MAX_RECEIVE_BYTES;
@@ -159,7 +159,7 @@ public final class ChatUpgradeConfig {
         config.uploadMode = UploadMode.AUTO;
         config.chatInputMode = ChatInputMode.TAKEOVER;
         config.chatInputPlaceholder = "";
-        config.chatScreenMaskEnabled = true;
+        config.chatScreenMaskEnabled = false;
         config.chatPanel = new ChatPanelConfig();
         config.appearance = new AppearanceConfig();
         config.normalizeLimits();
@@ -189,7 +189,7 @@ public final class ChatUpgradeConfig {
         uploadMode = uploadMode == null ? UploadMode.AUTO : uploadMode;
         chatInputMode = chatInputMode == null ? ChatInputMode.TAKEOVER : chatInputMode;
         chatInputPlaceholder = chatInputPlaceholder == null ? "" : chatInputPlaceholder;
-        chatScreenMaskEnabled = chatScreenMaskEnabled == null ? true : chatScreenMaskEnabled;
+        chatScreenMaskEnabled = chatScreenMaskEnabled == null ? false : chatScreenMaskEnabled;
 
         if (chatPanel == null) {
             chatPanel = new ChatPanelConfig();
@@ -288,12 +288,17 @@ public final class ChatUpgradeConfig {
                 boolean containsBubblePadding = json.contains("\"bubblePadding\"");
                 boolean containsChatInputPlaceholder = json.contains("\"chatInputPlaceholder\"");
                 boolean containsChatScreenMask = json.contains("\"chatScreenMaskEnabled\"");
+                boolean containsCompactMediaCards = json.contains("\"compactMediaCards\"");
                 ChatUpgradeConfig read = GSON.fromJson(json, ChatUpgradeConfig.class);
                 if (read == null) {
                     instance = defaults();
                     return;
                 }
                 boolean migratedLegacyDefaults = false;
+                if (!containsCompactMediaCards) {
+                    read.compactMediaCards = true;
+                    migratedLegacyDefaults = true;
+                }
                 if (!containsAutomaticHeight && read.chatPanel != null) {
                     read.chatPanel.automaticHeight = read.chatPanel.matchesLegacyDefaults();
                     migratedLegacyDefaults = true;
@@ -313,6 +318,7 @@ public final class ChatUpgradeConfig {
                         || !containsBubblePadding
                         || !containsChatInputPlaceholder
                         || !containsChatScreenMask
+                        || !containsCompactMediaCards
                         || migratedLegacyDefaults;
                 instance = read;
                 if (corrected) {
@@ -414,7 +420,7 @@ public final class ChatUpgradeConfig {
     }
 
     public boolean usesChatScreenMask() {
-        return chatScreenMaskEnabled == null || chatScreenMaskEnabled;
+        return chatScreenMaskEnabled != null && chatScreenMaskEnabled;
     }
 
     public static void setMaxReceiveBytesAndSave(int bytes) throws IOException {

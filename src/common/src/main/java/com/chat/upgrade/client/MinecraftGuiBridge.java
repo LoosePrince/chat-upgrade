@@ -50,14 +50,18 @@ public final class MinecraftGuiBridge {
         //? }
     }
 
-    public static boolean isCurrentScreen(@Nullable Minecraft minecraft, Screen screen) {
+    public static @Nullable Screen currentScreen(@Nullable Minecraft minecraft) {
         if (minecraft == null || minecraft.gui == null) {
-            return false;
+            return null;
         }
         //? if >=26.2 {
-        return minecraft.gui.screen() == screen;
+        return minecraft.gui.screen();
         //? } else {
-        /* return minecraft.screen == screen; */
+        /* return minecraft.screen; */
         //? }
+    }
+
+    public static boolean isCurrentScreen(@Nullable Minecraft minecraft, Screen screen) {
+        return currentScreen(minecraft) == screen;
     }
 }

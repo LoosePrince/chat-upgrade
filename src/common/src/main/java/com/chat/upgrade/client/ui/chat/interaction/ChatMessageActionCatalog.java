@@ -27,10 +27,20 @@ public final class ChatMessageActionCatalog {
     }
 
     public static List<Item> actionsFor(RichChatMessage message) {
+        return actionsFor(message, null);
+    }
+
+    public static List<Item> actionsFor(RichChatMessage message, RichAttachment targetAttachment) {
         if (message == null || message.status() == RichChatMessageStatus.DELETED) {
             return List.of();
         }
         List<Item> actions = new ArrayList<>();
+        if (targetAttachment != null) {
+            actions.add(new Item(
+                    Component.translatable("chatupgrade.action.file_details"),
+                    new ChatAction.ShowAttachmentDetails(targetAttachment.urlOrNull()),
+                    false));
+        }
         if (hasTrustedServerIdentity(message)) {
             actions.add(new Item(
                     Component.translatable("chatupgrade.action.reply"),
@@ -51,21 +61,21 @@ public final class ChatMessageActionCatalog {
                     Component.translatable("chatupgrade.action.mention"),
                     new ChatAction.Mention(authorName),
                     false));
-        }
-        if (message.kind().playerAuthored() && !authorKey.isBlank()) {
-            actions.add(new Item(
-                    Component.translatable("chatupgrade.action.profile"),
-                    new ChatAction.ShowProfile(authorKey),
-                    false));
-            if (!message.authoredByLocalPlayer()) {
-                boolean blocked = ChatMessageVisibilityStore.isAuthorBlocked(message.author());
+            if (targetAttachment == null) {
                 actions.add(new Item(
-                        Component.translatable(blocked
-                                ? "chatupgrade.action.unblock"
-                                : "chatupgrade.action.block"),
-                        new ChatAction.ToggleBlockAuthor(authorKey),
-                        !blocked));
+                        Component.translatable("chatupgrade.action.profile"),
+                        new ChatAction.ShowProfile(authorKey),
+                        false));
             }
+        }
+        if (message.kind().playerAuthored() && !authorKey.isBlank() && !message.authoredByLocalPlayer()) {
+            boolean blocked = ChatMessageVisibilityStore.isAuthorBlocked(message.author());
+            actions.add(new Item(
+                    Component.translatable(blocked
+                            ? "chatupgrade.action.unblock"
+                            : "chatupgrade.action.block"),
+                    new ChatAction.ToggleBlockAuthor(authorKey),
+                    !blocked));
         }
         actions.add(new Item(
                 Component.translatable("chatupgrade.action.hide"),

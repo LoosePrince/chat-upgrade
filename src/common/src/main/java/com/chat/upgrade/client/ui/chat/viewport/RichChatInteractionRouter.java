@@ -343,10 +343,7 @@ public final class RichChatInteractionRouter {
             float localY) {
         boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
         if (type == InlineResourceType.AUDIO) {
-            if (compact) {
-                return -1.0D;
-            }
-            RichChatBounds progress = RichChatMediaLayout.audio(bounds, false).progress();
+            RichChatBounds progress = RichChatMediaLayout.audio(bounds, compact).progress();
             if (inside(
                     localX,
                     localY,
@@ -362,9 +359,6 @@ public final class RichChatInteractionRouter {
             return -1.0D;
         }
         if (type == InlineResourceType.VIDEO) {
-            if (compact) {
-                return -1.0D;
-            }
             RichChatBounds progress = videoGeometry(bounds, url).progress();
             if (inside(
                     localX,
@@ -708,6 +702,11 @@ public final class RichChatInteractionRouter {
             case TOGGLE_LOOP -> new ChatAction.ToggleAudioLoop(url);
             case OPEN_URL -> new ChatAction.OpenUrl(url);
             case TOGGLE_FLOATING -> new ChatAction.ToggleAudioFloating(url, resourceName);
+            case TOGGLE_OPTIONS -> {
+                RichChatBounds menu = RichChatMediaLayout.audio(bounds, true).popout();
+                int[] anchor = screenAnchor(menu);
+                yield new ChatAction.ToggleAudioOptions(url, resourceName, anchor[0], anchor[1]);
+            }
             case SEEK -> new ChatAction.SeekAudio(url, action.ratio());
             case NONE -> null;
         };
@@ -784,6 +783,7 @@ public final class RichChatInteractionRouter {
                     : I18n.get("chatupgrade.inline.audio.button.loop_on");
             case OPEN_URL -> I18n.get("chatupgrade.inline.audio.button.open_url");
             case TOGGLE_FLOATING -> I18n.get("chatupgrade.inline.audio.button.floating");
+            case TOGGLE_OPTIONS -> I18n.get("chatupgrade.inline.audio.button.options");
             case SEEK -> I18n.get("chatupgrade.inline.audio.seek_to",
                     ChatUpgradeFormatters.formatMs((long) (action.ratio() * Math.max(0L, total))));
             case NONE -> I18n.get("chatupgrade.inline.audio.current",
@@ -816,9 +816,21 @@ public final class RichChatInteractionRouter {
     private static AudioAction resolveAudioAction(float localX, float localY, RichChatBounds bounds) {
         boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
         if (compact) {
-            return contains(bounds, localX, localY)
-                    ? new AudioAction(AudioActionKind.TOGGLE, 0.0D)
-                    : new AudioAction(AudioActionKind.NONE, 0.0D);
+            RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, true);
+            if (contains(geometry.play(), localX, localY)) {
+                return new AudioAction(AudioActionKind.TOGGLE, 0.0D);
+            }
+            if (contains(geometry.popout(), localX, localY)) {
+                return new AudioAction(AudioActionKind.TOGGLE_OPTIONS, 0.0D);
+            }
+            if (contains(geometry.progress(), localX, localY)) {
+                double ratio = Math.clamp(
+                        (localX - geometry.progress().left()) / Math.max(1.0D, geometry.progress().width()),
+                        0.0D,
+                        1.0D);
+                return new AudioAction(AudioActionKind.SEEK, ratio);
+            }
+            return new AudioAction(AudioActionKind.NONE, 0.0D);
         }
         RichChatMediaLayout.AudioGeometry geometry = RichChatMediaLayout.audio(bounds, false);
         if (contains(geometry.play(), localX, localY)) {
@@ -847,6 +859,13 @@ public final class RichChatInteractionRouter {
         RichChatMediaLayout.VideoGeometry geometry = videoGeometry(bounds, url);
         boolean compact = ChatClientConfigRuntime.uiPreferences().compactMediaCards();
         if (compact) {
+            if (contains(geometry.progress(), localX, localY)) {
+                double ratio = Math.clamp(
+                        (localX - geometry.progress().left()) / Math.max(1.0D, geometry.progress().width()),
+                        0.0D,
+                        1.0D);
+                return new VideoAction(VideoActionKind.SEEK, ratio);
+            }
             if (contains(geometry.open(), localX, localY)) {
                 return new VideoAction(VideoActionKind.OPEN_PREVIEW, 0.0D);
             }
@@ -887,6 +906,14 @@ public final class RichChatInteractionRouter {
                 ChatClientConfigRuntime.uiPreferences().compactMediaCards());
     }
 
+    private static int[] screenAnchor(RichChatBounds bounds) {
+        if (bounds == null || activePose == null) {
+            return new int[] { 0, 0 };
+        }
+        Vector2f anchor = activePose.transformPosition(new Vector2f(bounds.right(), bounds.bottom()));
+        return new int[] { Math.round(anchor.x), Math.round(anchor.y) };
+    }
+
     private static boolean contains(RichChatBounds bounds, float x, float y) {
         return bounds != null && inside(x, y, bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
     }
@@ -896,7 +923,7 @@ public final class RichChatInteractionRouter {
     }
 
     private enum AudioActionKind {
-        TOGGLE, TOGGLE_LOOP, OPEN_URL, TOGGLE_FLOATING, SEEK, NONE
+        TOGGLE, TOGGLE_LOOP, OPEN_URL, TOGGLE_FLOATING, TOGGLE_OPTIONS, SEEK, NONE
     }
 
     private record AudioAction(AudioActionKind kind, double ratio) {

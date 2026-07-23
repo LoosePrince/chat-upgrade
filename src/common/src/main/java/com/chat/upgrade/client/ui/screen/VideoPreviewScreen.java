@@ -28,11 +28,13 @@ public final class VideoPreviewScreen extends Screen {
 
     private final String url;
     private final @Nullable String nameHint;
+    private final @Nullable Screen parent;
 
     public VideoPreviewScreen(String url, @Nullable String nameHint) {
         super(Component.translatable("chatupgrade.screen.video_preview.title"));
         this.url = url;
         this.nameHint = nameHint;
+        this.parent = MinecraftGuiBridge.currentScreen(Minecraft.getInstance());
     }
 
     @Override
@@ -139,6 +141,11 @@ public final class VideoPreviewScreen extends Screen {
             return true;
         }
         return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public void onClose() {
+        MinecraftGuiBridge.setScreen(Minecraft.getInstance(), parent);
     }
 
     @Override

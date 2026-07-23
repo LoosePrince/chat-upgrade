@@ -15,6 +15,7 @@ import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
 import com.chat.upgrade.client.mixininterface.ChatSettingsOverlayAccess;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
+import com.chat.upgrade.client.ui.chat.CompactAudioOptionsMenu;
 import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerRenderer;
@@ -127,6 +128,13 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
     private void chatupgrade$closeOverlayOnEscape(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (CompactAudioOptionsMenu.isVisible()) {
+            CompactAudioOptionsMenu.close();
+            if (event.isEscape()) {
+                cir.setReturnValue(true);
+                return;
+            }
+        }
         if (chatupgrade$settingsOverlay.isOpen()) {
             boolean wasOpen = true;
             chatupgrade$settingsOverlay.keyPressed(event);
@@ -171,6 +179,10 @@ public abstract class ChatScreenRichInputMixin extends Screen
             MouseButtonEvent event,
             boolean doubleClick,
             CallbackInfoReturnable<Boolean> cir) {
+        if (CompactAudioOptionsMenu.mouseClicked(event, this.font, this.width, this.height)) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (chatupgrade$settingsOverlay.isOpen()) {
             boolean wasOpen = true;
             chatupgrade$settingsOverlay.mouseClicked(event, doubleClick, this.width, this.height);
@@ -428,6 +440,11 @@ public abstract class ChatScreenRichInputMixin extends Screen
             double scrollX,
             double scrollY,
             CallbackInfoReturnable<Boolean> cir) {
+        if (CompactAudioOptionsMenu.isVisible()) {
+            CompactAudioOptionsMenu.close();
+            cir.setReturnValue(true);
+            return;
+        }
         if (chatupgrade$settingsOverlay.isOpen()) {
             chatupgrade$settingsOverlay.mouseScrolled(
                     mouseX,
@@ -464,6 +481,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
     @Inject(method = "removed()V", at = @At("HEAD"))
     private void chatupgrade$closeOverlaysOnRemoved(CallbackInfo ci) {
         chatupgrade$settingsOverlay.cancel();
+        CompactAudioOptionsMenu.close();
         chatupgrade$emojiPopover.close();
         chatupgrade$contextMenu.close();
         RichChatInteractionRouter.cancelAllPointerCapture();
@@ -700,6 +718,13 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (chatupgrade$emojiSearchBox != null && chatupgrade$emojiSearchBox.visible) {
             chatupgrade$emojiSearchBox.extractWidgetRenderState(graphics, mouseX, mouseY, partialTick);
         }
+        CompactAudioOptionsMenu.render(
+                graphics,
+                this.font,
+                mouseX,
+                mouseY,
+                this.width,
+                this.height);
         chatupgrade$contextMenu.render(
                 graphics,
                 this.font,
@@ -1077,6 +1102,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Unique
     private void chatupgrade$openSettingsOverlay() {
+        CompactAudioOptionsMenu.close();
         chatupgrade$emojiPopover.close();
         chatupgrade$hideEmojiSearchBox();
         chatupgrade$contextMenu.close();
@@ -1091,10 +1117,11 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Unique
     private boolean chatupgrade$openContextMenu(ChatGestureTarget target, double mouseX, double mouseY) {
+        CompactAudioOptionsMenu.close();
         chatupgrade$emojiPopover.close();
         chatupgrade$hideEmojiSearchBox();
         boolean opened = chatupgrade$contextMenu.open(
-                target.message(),
+                target,
                 (int) Math.round(mouseX),
                 (int) Math.round(mouseY),
                 this.width,
