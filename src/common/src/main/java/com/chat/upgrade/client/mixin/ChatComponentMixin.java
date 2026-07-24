@@ -75,7 +75,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         return chatupgrade$processIncoming(original, com.chat.upgrade.client.ui.chat.state.ChatMessageKind.PLAYER);
     }
 
-    @ModifyVariable(method = "addServerSystemMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    @ModifyVariable(method = { "addClientSystemMessage", "addServerSystemMessage" }, at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component chatupgrade$parseSystemMessage(Component original) {
         return chatupgrade$processIncoming(original, com.chat.upgrade.client.ui.chat.state.ChatMessageKind.SYSTEM);
     }
@@ -144,7 +144,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         chatupgrade$sizeBeforeAdd = trimmedMessages.size();
     }
 
-    @Inject(method = "addServerSystemMessage", at = @At("HEAD"))
+    @Inject(method = { "addClientSystemMessage", "addServerSystemMessage" }, at = @At("HEAD"))
     private void chatupgrade$recordSizeBeforeSystem(Component message, CallbackInfo ci) {
         chatupgrade$sizeBeforeAdd = trimmedMessages.size();
     }
@@ -156,7 +156,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         chatupgrade$insertPhantoms();
     }
 
-    @Inject(method = "addServerSystemMessage", at = @At("TAIL"))
+    @Inject(method = { "addClientSystemMessage", "addServerSystemMessage" }, at = @At("TAIL"))
     private void chatupgrade$insertPhantomLinesSystem(Component message, CallbackInfo ci) {
         chatupgrade$insertPhantoms();
     }
