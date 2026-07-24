@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.UnaryOperator;
 
+import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
+
 public final class RichChatStateStore {
     private static final int MAX_MESSAGES = 500;
     private static final int MAX_DELETED_MESSAGE_IDS = 512;
@@ -31,6 +33,7 @@ public final class RichChatStateStore {
             MESSAGES.removeLast();
         }
         version++;
+        MentionNotificationService.onMessage(stored);
         return stored;
     }
 

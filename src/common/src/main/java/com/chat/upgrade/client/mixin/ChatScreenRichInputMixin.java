@@ -26,6 +26,7 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentDraft;
 import com.chat.upgrade.client.ui.chat.input.AttachmentDraftResolver;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import com.chat.upgrade.client.ui.chat.input.EmojiPickerPopover;
+import com.chat.upgrade.client.ui.chat.input.MentionCompletionPopover;
 import com.chat.upgrade.client.ui.chat.input.NativeFileDialogModal;
 import com.chat.upgrade.client.ui.chat.interaction.ChatContextMenu;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
@@ -33,6 +34,7 @@ import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureTarget;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageActionExecutor;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
+import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceFrame;
@@ -95,6 +97,9 @@ public abstract class ChatScreenRichInputMixin extends Screen
     private final EmojiPickerPopover chatupgrade$emojiPopover = new EmojiPickerPopover();
 
     @Unique
+    private final MentionCompletionPopover chatupgrade$mentionCompletion = new MentionCompletionPopover();
+
+    @Unique
     private @org.jetbrains.annotations.Nullable AttachmentDraft chatupgrade$draggedAttachment;
 
     @Unique
@@ -124,6 +129,21 @@ public abstract class ChatScreenRichInputMixin extends Screen
         this.addRenderableWidget(chatupgrade$emojiSearchBox);
         chatupgrade$refreshControls();
         chatupgrade$layoutComposerControls();
+    }
+
+    @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$completeMention(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (chatupgrade$settingsOverlay.isOpen()
+                || chatupgrade$emojiPopover.isVisible()
+                || chatupgrade$contextMenu.isOpen()
+                || input == null) {
+            chatupgrade$mentionCompletion.close();
+            return;
+        }
+        chatupgrade$mentionCompletion.refresh(this.minecraft, input);
+        if (chatupgrade$mentionCompletion.keyPressed(event, input)) {
+            cir.setReturnValue(true);
+        }
     }
 
     @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
@@ -179,6 +199,11 @@ public abstract class ChatScreenRichInputMixin extends Screen
             MouseButtonEvent event,
             boolean doubleClick,
             CallbackInfoReturnable<Boolean> cir) {
+        chatupgrade$mentionCompletion.refresh(this.minecraft, input);
+        if (chatupgrade$mentionCompletion.mouseClicked(event, input)) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (CompactAudioOptionsMenu.mouseClicked(event, this.font, this.width, this.height)) {
             cir.setReturnValue(true);
             return;
@@ -483,6 +508,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
         chatupgrade$settingsOverlay.cancel();
         CompactAudioOptionsMenu.close();
         chatupgrade$emojiPopover.close();
+        chatupgrade$mentionCompletion.close();
         chatupgrade$contextMenu.close();
         RichChatInteractionRouter.cancelAllPointerCapture();
         ChatTextSelectionState.clear();
@@ -619,6 +645,13 @@ public abstract class ChatScreenRichInputMixin extends Screen
             CallbackInfo ci) {
         chatupgrade$refreshControls();
         chatupgrade$layoutComposerControls();
+        if (chatupgrade$settingsOverlay.isOpen()
+                || chatupgrade$emojiPopover.isVisible()
+                || chatupgrade$contextMenu.isOpen()) {
+            chatupgrade$mentionCompletion.close();
+        } else {
+            chatupgrade$mentionCompletion.refresh(this.minecraft, input);
+        }
         chatupgrade$layoutEmojiSearchBox();
         if (chatupgrade$emojiSearchBox != null) {
             chatupgrade$emojiSearchVisibleBeforeRender = chatupgrade$emojiSearchBox.visible;
@@ -718,6 +751,14 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (chatupgrade$emojiSearchBox != null && chatupgrade$emojiSearchBox.visible) {
             chatupgrade$emojiSearchBox.extractWidgetRenderState(graphics, mouseX, mouseY, partialTick);
         }
+        chatupgrade$mentionCompletion.render(
+                graphics,
+                this.font,
+                input,
+                mouseX,
+                mouseY,
+                this.width,
+                this.height);
         CompactAudioOptionsMenu.render(
                 graphics,
                 this.font,
@@ -738,6 +779,19 @@ public abstract class ChatScreenRichInputMixin extends Screen
                 mouseY,
                 this.width,
                 this.height);
+        if (chatupgrade$settingsOverlay.isOpen()) {
+            MentionNotificationService.renderPassthrough(
+                    graphics,
+                    this.font,
+                    this.width,
+                    this.height);
+        } else {
+            MentionNotificationService.renderChatScreen(
+                    graphics,
+                    this.font,
+                    this.width,
+                    this.height);
+        }
     }
 
     @Unique

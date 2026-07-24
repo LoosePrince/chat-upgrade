@@ -742,6 +742,18 @@ public final class ChatSettingsOverlay {
                         "chatupgrade.settings.option.chat_screen_mask.description",
                         draft::usesChatScreenMask,
                         value -> draft.chatScreenMaskEnabled = value),
+                enumeration(
+                        "chatupgrade.settings.option.mention_notification",
+                        () -> draft.mentionNotificationMode.ordinal(),
+                        index -> draft.mentionNotificationMode = ChatUpgradeConfig.MentionNotificationMode.values()[index],
+                        "chatupgrade.settings.value.mention_none",
+                        "chatupgrade.settings.value.mention_sound",
+                        "chatupgrade.settings.value.mention_title"),
+                bool(
+                        "chatupgrade.settings.option.message_passthrough",
+                        "chatupgrade.settings.option.message_passthrough.description",
+                        () -> Boolean.TRUE.equals(draft.messagePassthroughEnabled),
+                        value -> draft.messagePassthroughEnabled = value),
                 bool("chatupgrade.settings.option.smooth_scroll", () -> Boolean.TRUE.equals(draft.smoothScrollEnabled),
                         value -> draft.smoothScrollEnabled = value),
                 bool("chatupgrade.settings.option.debug_actions", () -> draft.debugChatActions,
@@ -872,6 +884,8 @@ public final class ChatSettingsOverlay {
             case CHAT_BEHAVIOR -> {
                 draft.chatInputPlaceholder = "";
                 draft.chatScreenMaskEnabled = true;
+                draft.mentionNotificationMode = ChatUpgradeConfig.MentionNotificationMode.SOUND;
+                draft.messagePassthroughEnabled = false;
                 draft.smoothScrollEnabled = true;
                 draft.debugChatActions = false;
                 syncTextEditorValue("");

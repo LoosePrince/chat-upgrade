@@ -23,6 +23,7 @@ import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
+import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeChatHudSync;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
@@ -231,6 +232,7 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
                 && ChatUpgradeChatPipelineGate.shouldUseScrollEnhancements()) {
             ChatUpgradeChatRenderState.endRenderPass(graphics);
         }
+        MentionNotificationService.renderHud(graphics, font, graphics.guiWidth(), graphics.guiHeight());
     }
 
     @Redirect(

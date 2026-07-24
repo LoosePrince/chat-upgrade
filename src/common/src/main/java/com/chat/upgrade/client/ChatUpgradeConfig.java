@@ -28,6 +28,8 @@ public final class ChatUpgradeConfig {
     public ChatInputMode chatInputMode = ChatInputMode.TAKEOVER;
     public String chatInputPlaceholder = "";
     public Boolean chatScreenMaskEnabled = false;
+    public MentionNotificationMode mentionNotificationMode = MentionNotificationMode.SOUND;
+    public Boolean messagePassthroughEnabled = false;
     public ChatPanelConfig chatPanel = new ChatPanelConfig();
     public AppearanceConfig appearance = new AppearanceConfig();
 
@@ -143,6 +145,12 @@ public final class ChatUpgradeConfig {
         COMPAT_TEXT_VANILLA
     }
 
+    public enum MentionNotificationMode {
+        NONE,
+        SOUND,
+        TITLE
+    }
+
     private static ChatUpgradeConfig defaults() {
         ChatUpgradeConfig config = new ChatUpgradeConfig();
         config.ciCompatibility = false;
@@ -160,6 +168,8 @@ public final class ChatUpgradeConfig {
         config.chatInputMode = ChatInputMode.TAKEOVER;
         config.chatInputPlaceholder = "";
         config.chatScreenMaskEnabled = false;
+        config.mentionNotificationMode = MentionNotificationMode.SOUND;
+        config.messagePassthroughEnabled = false;
         config.chatPanel = new ChatPanelConfig();
         config.appearance = new AppearanceConfig();
         config.normalizeLimits();
@@ -176,6 +186,8 @@ public final class ChatUpgradeConfig {
         ChatInputMode beforeChatInputMode = chatInputMode;
         String beforeChatInputPlaceholder = chatInputPlaceholder;
         Boolean beforeChatScreenMaskEnabled = chatScreenMaskEnabled;
+        MentionNotificationMode beforeMentionNotificationMode = mentionNotificationMode;
+        Boolean beforeMessagePassthroughEnabled = messagePassthroughEnabled;
         ChatPanelConfig beforeChatPanel = chatPanel;
         AppearanceConfig beforeAppearance = appearance;
         String beforeChatPanelJson = chatPanel == null ? "" : GSON.toJson(chatPanel);
@@ -190,6 +202,10 @@ public final class ChatUpgradeConfig {
         chatInputMode = chatInputMode == null ? ChatInputMode.TAKEOVER : chatInputMode;
         chatInputPlaceholder = chatInputPlaceholder == null ? "" : chatInputPlaceholder;
         chatScreenMaskEnabled = chatScreenMaskEnabled == null ? false : chatScreenMaskEnabled;
+        mentionNotificationMode = mentionNotificationMode == null
+                ? MentionNotificationMode.SOUND
+                : mentionNotificationMode;
+        messagePassthroughEnabled = messagePassthroughEnabled == null ? false : messagePassthroughEnabled;
 
         if (chatPanel == null) {
             chatPanel = new ChatPanelConfig();
@@ -216,6 +232,9 @@ public final class ChatUpgradeConfig {
                 || !beforeChatInputPlaceholder.equals(chatInputPlaceholder)
                 || beforeChatScreenMaskEnabled == null
                 || beforeChatScreenMaskEnabled != chatScreenMaskEnabled
+                || beforeMentionNotificationMode != mentionNotificationMode
+                || beforeMessagePassthroughEnabled == null
+                || beforeMessagePassthroughEnabled != messagePassthroughEnabled
                 || beforeChatPanel != chatPanel
                 || !beforeChatPanelJson.equals(GSON.toJson(chatPanel))
                 || beforeAppearance != appearance
@@ -288,6 +307,8 @@ public final class ChatUpgradeConfig {
                 boolean containsBubblePadding = json.contains("\"bubblePadding\"");
                 boolean containsChatInputPlaceholder = json.contains("\"chatInputPlaceholder\"");
                 boolean containsChatScreenMask = json.contains("\"chatScreenMaskEnabled\"");
+                boolean containsMentionNotificationMode = json.contains("\"mentionNotificationMode\"");
+                boolean containsMessagePassthrough = json.contains("\"messagePassthroughEnabled\"");
                 boolean containsCompactMediaCards = json.contains("\"compactMediaCards\"");
                 ChatUpgradeConfig read = GSON.fromJson(json, ChatUpgradeConfig.class);
                 if (read == null) {
@@ -295,6 +316,14 @@ public final class ChatUpgradeConfig {
                     return;
                 }
                 boolean migratedLegacyDefaults = false;
+                if (!containsMentionNotificationMode) {
+                    read.mentionNotificationMode = MentionNotificationMode.SOUND;
+                    migratedLegacyDefaults = true;
+                }
+                if (!containsMessagePassthrough) {
+                    read.messagePassthroughEnabled = false;
+                    migratedLegacyDefaults = true;
+                }
                 if (!containsCompactMediaCards) {
                     read.compactMediaCards = true;
                     migratedLegacyDefaults = true;
@@ -318,6 +347,8 @@ public final class ChatUpgradeConfig {
                         || !containsBubblePadding
                         || !containsChatInputPlaceholder
                         || !containsChatScreenMask
+                        || !containsMentionNotificationMode
+                        || !containsMessagePassthrough
                         || !containsCompactMediaCards
                         || migratedLegacyDefaults;
                 instance = read;

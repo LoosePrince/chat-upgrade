@@ -14,6 +14,7 @@ import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
+import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
 import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
@@ -88,6 +89,7 @@ public final class ChatUpgradeClientBootstrap {
         RichChatInteractionRouter.clear();
         ChatMessageVisibilityStore.clearSession();
         ChatTextSelectionState.clear();
+        MentionNotificationService.clear();
         RichChatViewport.invalidateAll();
         RichChatViewport.state().clear();
         ChatUpgradeChatRenderState.cancelWheelOverscroll();

@@ -8,11 +8,21 @@ import net.minecraft.network.chat.Component;
 public record ChatUiPreferences(
         String inputPlaceholder,
         boolean screenMaskEnabled,
-        boolean compactMediaCards) {
+        boolean compactMediaCards,
+        ChatUpgradeConfig.MentionNotificationMode mentionNotificationMode,
+        boolean messagePassthroughEnabled) {
     public static ChatUiPreferences from(ChatUpgradeConfig config) {
         ChatUpgradeConfig source = config == null ? ChatUpgradeConfig.get() : config;
         String placeholder = source.chatInputPlaceholder == null ? "" : source.chatInputPlaceholder;
-        return new ChatUiPreferences(placeholder, source.usesChatScreenMask(), source.compactMediaCards);
+        ChatUpgradeConfig.MentionNotificationMode notificationMode = source.mentionNotificationMode == null
+                ? ChatUpgradeConfig.MentionNotificationMode.SOUND
+                : source.mentionNotificationMode;
+        return new ChatUiPreferences(
+                placeholder,
+                source.usesChatScreenMask(),
+                source.compactMediaCards,
+                notificationMode,
+                Boolean.TRUE.equals(source.messagePassthroughEnabled));
     }
 
     public Component resolvedInputPlaceholder() {
