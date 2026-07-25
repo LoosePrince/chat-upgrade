@@ -11,6 +11,7 @@ import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
+import com.chat.upgrade.client.ui.chat.InlineEmojiLayout;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
@@ -26,7 +27,6 @@ import net.minecraft.util.ARGB;
 import net.minecraft.util.Util;
 
 public final class RichChatMediaRenderer {
-    private static final int EMOJI_SIDE_GAP_PX = 1;
 
     private RichChatMediaRenderer() {
     }
@@ -197,14 +197,22 @@ public final class RichChatMediaRenderer {
         if (node.inlineEmojiSlots().isEmpty() || node.text() == null) {
             return;
         }
-        String plain = extractPlain(node.text());
-        int size = Math.max(1, metrics.entryHeight() - EMOJI_SIDE_GAP_PX * 2);
         float opacity = messageOpacity * metrics.textOpacity();
         for (InlineEmojiSlot slot : node.inlineEmojiSlots()) {
-            int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
-            int x = bounds.left() + font.width(plain.substring(0, charIndex)) + EMOJI_SIDE_GAP_PX;
-            int y = textY + EMOJI_SIDE_GAP_PX;
-            paintInlineEmoji(gfx, slot.iconUrl(), x, y, size, opacity, tokens);
+            InlineEmojiLayout.Placement placement = InlineEmojiLayout.place(
+                    font,
+                    node.text(),
+                    slot.charIndex(),
+                    bounds.left(),
+                    textY);
+            paintInlineEmoji(
+                    gfx,
+                    slot.iconUrl(),
+                    placement.x(),
+                    placement.y(),
+                    placement.size(),
+                    opacity,
+                    tokens);
         }
     }
 
@@ -244,15 +252,6 @@ public final class RichChatMediaRenderer {
                         ARGB.white(opacity));
             }
         }
-    }
-
-    private static String extractPlain(net.minecraft.util.FormattedCharSequence seq) {
-        StringBuilder sb = new StringBuilder();
-        seq.accept((index, style, codePoint) -> {
-            sb.appendCodePoint(codePoint);
-            return true;
-        });
-        return sb.toString();
     }
 
     private static void paintImage(

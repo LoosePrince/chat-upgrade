@@ -8,6 +8,7 @@ import java.util.List;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
+import com.chat.upgrade.client.ui.chat.InlineEmojiLayout;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.ui.chat.interaction.ChatHitTarget;
 import com.chat.upgrade.client.ui.chat.state.ChatMessageMetadata;
@@ -444,17 +445,17 @@ public final class RichChatLayoutEngine {
             return List.of();
         }
         List<RichChatHitBox> hitBoxes = new ArrayList<>();
-        int cursorX = lineBounds.left();
         for (StyledTextRun run : runs) {
-            int width = font.width(run.text());
+            int startX = lineBounds.left() + InlineEmojiLayout.prefixWidth(font, line, run.startIndex());
+            int endX = lineBounds.left() + InlineEmojiLayout.prefixWidth(font, line, run.endIndex());
+            int width = Math.max(0, endX - startX);
             if (width > 0 && hasInteractiveStyle(run.style())) {
                 hitBoxes.add(new RichChatHitBox(
                         RichChatHitBoxKind.TEXT,
                         messageId,
-                        RichChatBounds.ofSize(cursorX, lineBounds.top(), width, lineBounds.height()),
+                        RichChatBounds.ofSize(startX, lineBounds.top(), width, lineBounds.height()),
                         new ChatHitTarget.StyledText(run.style())));
             }
-            cursorX += width;
         }
         return hitBoxes;
     }
@@ -464,20 +465,27 @@ public final class RichChatLayoutEngine {
             return List.of();
         }
         List<StyledTextRun> runs = new ArrayList<>();
-        StringBuilder currentText = new StringBuilder();
         Style[] currentStyle = new Style[1];
+        int[] currentStartIndex = new int[] { 0 };
+        int[] logicalIndex = new int[] { 0 };
         line.accept((index, style, codePoint) -> {
             Style safeStyle = style == null ? Style.EMPTY : style;
             if (currentStyle[0] != null && !currentStyle[0].equals(safeStyle)) {
-                runs.add(new StyledTextRun(currentStyle[0], currentText.toString()));
-                currentText.setLength(0);
+                runs.add(new StyledTextRun(
+                        currentStyle[0],
+                        currentStartIndex[0],
+                        logicalIndex[0]));
+                currentStartIndex[0] = logicalIndex[0];
             }
             currentStyle[0] = safeStyle;
-            currentText.appendCodePoint(codePoint);
+            logicalIndex[0] += Character.charCount(codePoint);
             return true;
         });
-        if (currentStyle[0] != null && !currentText.isEmpty()) {
-            runs.add(new StyledTextRun(currentStyle[0], currentText.toString()));
+        if (currentStyle[0] != null && logicalIndex[0] > currentStartIndex[0]) {
+            runs.add(new StyledTextRun(
+                    currentStyle[0],
+                    currentStartIndex[0],
+                    logicalIndex[0]));
         }
         return runs;
     }
@@ -486,7 +494,7 @@ public final class RichChatLayoutEngine {
         return style != null && (style.getClickEvent() != null || style.getHoverEvent() != null);
     }
 
-    private record StyledTextRun(Style style, String text) {
+    private record StyledTextRun(Style style, int startIndex, int endIndex) {
     }
 
     private static List<RichChatHitBox> emojiHitBoxes(
@@ -499,14 +507,15 @@ public final class RichChatLayoutEngine {
         if (slots == null || slots.isEmpty()) {
             return List.of();
         }
-        String plain = extractPlain(line);
         int textY = lineBounds.bottom() - metrics.entryBottomToMessageY();
-        int size = Math.max(1, metrics.entryHeight() - 2);
         List<RichChatHitBox> hitBoxes = new ArrayList<>();
         for (InlineEmojiSlot slot : slots) {
-            int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
-            int x = lineBounds.left() + font.width(plain.substring(0, charIndex)) + 1;
-            int y = textY + 1;
+            InlineEmojiLayout.Placement placement = InlineEmojiLayout.place(
+                    font,
+                    line,
+                    slot.charIndex(),
+                    lineBounds.left(),
+                    textY);
             RichAttachment attachment = RichAttachment.structured(
                     InlineResourceType.IMAGE,
                     slot.token(),
@@ -516,19 +525,14 @@ public final class RichChatLayoutEngine {
             hitBoxes.add(new RichChatHitBox(
                     RichChatHitBoxKind.IMAGE,
                     messageId,
-                    RichChatBounds.ofSize(x, y, size, size),
+                    RichChatBounds.ofSize(
+                            placement.x(),
+                            placement.y(),
+                            placement.size(),
+                            placement.size()),
                     new ChatHitTarget.Emoji(attachment)));
         }
         return hitBoxes;
-    }
-
-    private static String extractPlain(FormattedCharSequence seq) {
-        StringBuilder sb = new StringBuilder();
-        seq.accept((index, style, codePoint) -> {
-            sb.appendCodePoint(codePoint);
-            return true;
-        });
-        return sb.toString();
     }
 
     private static Component replyComponent(ChatReplySummary reply) {

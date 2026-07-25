@@ -5,12 +5,12 @@ import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.chat.upgrade.client.ui.chat.InlineEmojiLayout;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 
 /**
@@ -50,21 +50,21 @@ public final class ChatTextSelectionState {
             StringBuilder plain = new StringBuilder();
             List<Glyph> glyphs = new ArrayList<>();
             rendered.accept((index, style, codePoint) -> {
-                plain.appendCodePoint(codePoint);
-                glyphs.add(new Glyph(plain.length(), codePoint, style == null ? Style.EMPTY : style));
+                if (InlineEmojiLayout.isSlot(codePoint, style)) {
+                    plain.append(' ');
+                } else {
+                    plain.appendCodePoint(codePoint);
+                }
+                glyphs.add(new Glyph(plain.length()));
                 return true;
             });
             List<Integer> offsets = new ArrayList<>(glyphs.size() + 1);
             List<Integer> widths = new ArrayList<>(glyphs.size() + 1);
             offsets.add(0);
             widths.add(0);
-            int width = 0;
             for (Glyph glyph : glyphs) {
-                width += font.width(FormattedCharSequence.forward(
-                        new String(Character.toChars(glyph.codePoint())),
-                        glyph.style()));
                 offsets.add(glyph.endOffset());
-                widths.add(width);
+                widths.add(InlineEmojiLayout.prefixWidth(font, rendered, glyph.endOffset()));
             }
             return new SelectableLine(order, bounds, plain.toString(), offsets, widths);
         }
@@ -300,7 +300,7 @@ public final class ChatTextSelectionState {
         return lineComparison != 0 ? lineComparison : Integer.compare(firstChar, secondChar);
     }
 
-    private record Glyph(int endOffset, int codePoint, Style style) {
+    private record Glyph(int endOffset) {
     }
 
     private record Position(int lineIndex, int charIndex) {

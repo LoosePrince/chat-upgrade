@@ -15,10 +15,6 @@ import net.minecraft.network.chat.Style;
 public final class InlineEmojiCodec {
     private static final Pattern INLINE_EMOJI = Pattern.compile("\\[:([^\\]\\r\\n]+)]");
     private static final String UNKNOWN_EMOJI_TEXT = "[未知表情]";
-    private static final String EMOJI_SLOT_INSERTION = "chatupgrade:inline-emoji-slot";
-    // Width reservation so inline emoji does not overlap following text.
-    // Two spaces are close to default line-height width in MC UI font.
-    private static final String EMOJI_RESERVED_WIDTH = "  ";
 
     private InlineEmojiCodec() {
     }
@@ -61,10 +57,10 @@ public final class InlineEmojiCodec {
                 appendStyledText(out, styleAt(runs, fullText.length(), start), UNKNOWN_EMOJI_TEXT);
                 outputCharIndex += UNKNOWN_EMOJI_TEXT.length();
             } else {
-                Style markerStyle = styleAt(runs, fullText.length(), start).withInsertion(EMOJI_SLOT_INSERTION);
-                appendStyledText(out, markerStyle, EMOJI_RESERVED_WIDTH);
+                Style markerStyle = InlineEmojiLayout.slotStyle(styleAt(runs, fullText.length(), start));
+                appendStyledText(out, markerStyle, InlineEmojiLayout.slotText());
                 slots.add(new InlineEmojiSlot(outputCharIndex, icon, token));
-                outputCharIndex += EMOJI_RESERVED_WIDTH.length();
+                outputCharIndex += InlineEmojiLayout.slotText().length();
             }
             sourceCursor = end;
         } while (matcher.find());
@@ -111,13 +107,6 @@ public final class InlineEmojiCodec {
             bit.setStyle(style);
         }
         out.append(bit);
-    }
-
-    public static boolean isEmojiSlotStyle(Style style) {
-        if (style == null) {
-            return false;
-        }
-        return EMOJI_SLOT_INSERTION.equals(style.getInsertion());
     }
 
     private static Style styleAt(List<StyledRun> runs, int fullLength, int index) {

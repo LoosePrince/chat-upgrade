@@ -50,7 +50,7 @@ public abstract class ChatComponentInnerMixin {
                 RichChatMediaHoverState.clear();
             }
             UpgradePhantomHudLayout.dispatchLinePaint(line, y, opacity);
-            InlineEmojiHudPaint.paintLineEmoji(line, y, opacity, lineHeight);
+            InlineEmojiHudPaint.paintLineEmoji(line, y, opacity);
             ChatUpgradeInlineImageInteraction.afterChatLinePaint(graphics, line, y, opacity, lineHeight);
             return original.call(graphics, y, opacity, text);
         } finally {

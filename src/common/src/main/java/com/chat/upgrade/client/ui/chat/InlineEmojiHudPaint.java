@@ -15,12 +15,11 @@ import net.minecraft.util.ARGB;
 import net.minecraft.util.Util;
 
 public final class InlineEmojiHudPaint {
-    private static final int EMOJI_SIDE_GAP_PX = 1;
 
     private InlineEmojiHudPaint() {
     }
 
-    public static void paintLineEmoji(GuiMessage.Line line, int messageY, float opacity, int lineHeight) {
+    public static void paintLineEmoji(GuiMessage.Line line, int messageY, float opacity) {
         if (!(((Object) line) instanceof com.chat.upgrade.client.mixininterface.ImageAttachable attachable)) {
             return;
         }
@@ -33,12 +32,20 @@ public final class InlineEmojiHudPaint {
             return;
         }
         Font font = Minecraft.getInstance().font;
-        String plain = extractPlain(line.content());
-        int size = Math.max(1, lineHeight - EMOJI_SIDE_GAP_PX * 2);
         for (InlineEmojiSlot slot : slots) {
-            int charIndex = Math.clamp(slot.charIndex(), 0, plain.length());
-            int x = font.width(plain.substring(0, charIndex)) + EMOJI_SIDE_GAP_PX;
-            paintSingle(gfx, slot.iconUrl(), x, messageY, size, opacity);
+            InlineEmojiLayout.Placement placement = InlineEmojiLayout.place(
+                    font,
+                    line.content(),
+                    slot.charIndex(),
+                    0,
+                    messageY);
+            paintSingle(
+                    gfx,
+                    slot.iconUrl(),
+                    placement.x(),
+                    placement.y(),
+                    placement.size(),
+                    opacity);
         }
     }
 
@@ -71,14 +78,5 @@ public final class InlineEmojiHudPaint {
     private static int argb(float opacity, int r, int g, int b) {
         int a = Math.clamp(Math.round(opacity * 255.0f), 0, 255);
         return (a << 24) | (r << 16) | (g << 8) | b;
-    }
-
-    private static String extractPlain(net.minecraft.util.FormattedCharSequence seq) {
-        StringBuilder sb = new StringBuilder();
-        seq.accept((index, style, codePoint) -> {
-            sb.appendCodePoint(codePoint);
-            return true;
-        });
-        return sb.toString();
     }
 }

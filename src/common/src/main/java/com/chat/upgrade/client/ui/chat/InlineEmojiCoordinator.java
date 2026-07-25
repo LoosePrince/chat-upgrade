@@ -49,14 +49,11 @@ public final class InlineEmojiCoordinator {
 
     private static List<Integer> findPlaceholderIndexes(FormattedCharSequence seq) {
         List<Integer> out = new ArrayList<>();
-        final boolean[] inMarkerRun = new boolean[] { false };
         final int[] logicalIndex = new int[] { 0 };
         seq.accept((index, style, codePoint) -> {
-            boolean isMarker = InlineEmojiCodec.isEmojiSlotStyle(style);
-            if (isMarker && !inMarkerRun[0]) {
+            if (InlineEmojiLayout.isSlot(codePoint, style)) {
                 out.add(logicalIndex[0]);
             }
-            inMarkerRun[0] = isMarker;
             logicalIndex[0] += Character.charCount(codePoint);
             return true;
         });
