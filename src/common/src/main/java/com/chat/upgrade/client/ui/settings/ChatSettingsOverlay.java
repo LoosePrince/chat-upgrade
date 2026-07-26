@@ -774,6 +774,11 @@ public final class ChatSettingsOverlay {
                         "chatupgrade.settings.option.message_grouping.description",
                         () -> Boolean.TRUE.equals(draft.messageGroupingEnabled),
                         value -> draft.messageGroupingEnabled = value),
+                bool(
+                        "chatupgrade.settings.option.chat_history",
+                        "chatupgrade.settings.option.chat_history.description",
+                        () -> !Boolean.FALSE.equals(draft.chatHistoryEnabled),
+                        value -> draft.chatHistoryEnabled = value),
                 enumeration(
                         "chatupgrade.settings.option.message_group_position",
                         () -> draft.messageGroupPosition.ordinal(),

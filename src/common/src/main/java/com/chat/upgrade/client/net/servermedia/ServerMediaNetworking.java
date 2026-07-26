@@ -1,5 +1,8 @@
 package com.chat.upgrade.client.net.servermedia;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
@@ -14,6 +17,9 @@ import org.jetbrains.annotations.Nullable;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeClientBootstrap;
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.history.ChatHistorySession;
+import com.chat.upgrade.client.history.ChatHistoryStore;
+import com.chat.upgrade.client.history.ChatHistoryStore.HistorySnapshot;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
@@ -56,7 +62,12 @@ public final class ServerMediaNetworking {
     private static final ConcurrentHashMap<Long, CompletableFuture<Optional<StructuredAttachment>>> ATTACHMENTS = new ConcurrentHashMap<>();
     private static final SecureRandom RNG = new SecureRandom();
     private static final AtomicBoolean SESSION_OPEN = new AtomicBoolean(false);
+    private static final DateTimeFormatter HISTORY_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static volatile boolean capabilityAnnounced = false;
+    private static volatile String historySessionKey = "";
+    private static volatile long historyAfterTimestampMs;
+    private static volatile boolean historyRecoveryPending;
+    private static volatile int historyRecoveredCount;
 
     private ServerMediaNetworking() {
     }
@@ -65,6 +76,9 @@ public final class ServerMediaNetworking {
         if (!SESSION_OPEN.compareAndSet(true, false)) {
             return;
         }
+        saveClientHistory();
+        clearHistoryRecovery();
+        historySessionKey = "";
         INCOMING.clear();
         UPLOADS.forEach((id, fut) -> fut.complete(Optional.empty()));
         UPLOADS.clear();
@@ -77,6 +91,7 @@ public final class ServerMediaNetworking {
     public static void onClientJoin() {
         ChatUpgradeClientBootstrap.clearAllRuntimeState();
         SESSION_OPEN.set(true);
+        restoreClientHistory();
     }
 
     public static void registerClientHandlers(NetworkRegistrar r) {
@@ -125,6 +140,13 @@ public final class ServerMediaNetworking {
                 }
             }));
         });
+
+        r.clientHandler(ServerMediaPayloads.S2CChatHistoryEntry.TYPE, (payload, context) -> {
+            payload.toEnvelope().ifPresent(envelope -> context.execute(() -> handleChatHistoryEntry(envelope)));
+        });
+
+        r.clientHandler(ServerMediaPayloads.S2CChatHistoryComplete.TYPE, (payload, context) ->
+                context.execute(() -> finishChatHistoryRecovery()));
 
         r.clientHandler(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) -> {
             InlineResourceType type = InlineResourceType.fromWire(payload.typeWire());
@@ -197,6 +219,120 @@ public final class ServerMediaNetworking {
             ChatUpgrade.LOGGER.warn("chat-upgrade: server attachment error attachmentId={} mediaId={} msg={}",
                     payload.attachmentId(), payload.mediaId(), payload.message());
         });
+    }
+
+    private static void handleChatHistoryEntry(StructuredChatEnvelope envelope) {
+        if (!historyRecoveryPending
+                || envelope.serverTimestampMs() <= historyAfterTimestampMs
+                || RichChatStateStore.containsMessage(envelope.messageId())) {
+            return;
+        }
+        List<RichAttachment> attachments = envelope.attachments().stream()
+                .peek(ServerMediaClient::rememberAttachment)
+                .map(RichAttachment::fromStructured)
+                .filter(RichAttachment::hasRenderableUrl)
+                .toList();
+        InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(Component.literal(envelope.plainText()));
+        RichChatMessage restored = new RichChatMessage(
+                envelope.messageId(),
+                toClientAuthor(envelope.author()),
+                toClientKind(envelope.kind()),
+                null,
+                null,
+                envelope.serverTimestampMs(),
+                toClientReply(envelope.replyTo()),
+                0,
+                emojiDecoded.modified(),
+                emojiDecoded.modified(),
+                envelope.plainText(),
+                envelope.fallbackText(),
+                attachments,
+                emojiDecoded.slots(),
+                RichChatMessageSource.STRUCTURED_PACKET,
+                null,
+                com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus.VISIBLE);
+        RichChatStateStore.restoreNewestFirst(List.of(restored));
+        projectStoredMessage(restored);
+        historyRecoveredCount++;
+    }
+
+    private static void finishChatHistoryRecovery() {
+        if (!historyRecoveryPending) {
+            return;
+        }
+        int recovered = historyRecoveredCount;
+        clearHistoryRecovery();
+        if (recovered > 0) {
+            displayHistoryMarker(Component.translatable("chatupgrade.history.server_restored", recovered));
+        }
+    }
+
+    private static void restoreClientHistory() {
+        clearHistoryRecovery();
+        historySessionKey = ChatHistorySession.resolve(Minecraft.getInstance());
+        if (Boolean.FALSE.equals(ChatUpgradeConfig.get().chatHistoryEnabled)) {
+            return;
+        }
+        HistorySnapshot snapshot = ChatHistoryStore.load(historySessionKey);
+        List<RichChatMessage> restored = snapshot.messages().stream()
+                .map(ChatHistoryStore.HistoryMessage::toMessage)
+                .toList();
+        RichChatStateStore.restoreNewestFirst(restored);
+        for (int index = restored.size() - 1; index >= 0; index--) {
+            projectStoredMessage(restored.get(index));
+        }
+        historyAfterTimestampMs = snapshot.lastExitAtMs();
+        if (!restored.isEmpty() && historyAfterTimestampMs > 0L) {
+            String leftAt = HISTORY_TIME_FORMAT.format(Instant.ofEpochMilli(historyAfterTimestampMs)
+                    .atZone(ZoneId.systemDefault()));
+            displayHistoryMarker(Component.translatable("chatupgrade.history.left_at", leftAt));
+        }
+        if (Net.canSendToServer(ServerMediaPayloads.C2SRequestChatHistory.TYPE)) {
+            historyRecoveryPending = true;
+            Net.sendToServer(new ServerMediaPayloads.C2SRequestChatHistory(
+                    historyAfterTimestampMs,
+                    ChatUpgradeConfig.get().chatHistoryMaxMessages));
+        }
+    }
+
+    private static void saveClientHistory() {
+        if (Boolean.FALSE.equals(ChatUpgradeConfig.get().chatHistoryEnabled) || historySessionKey.isBlank()) {
+            return;
+        }
+        ChatHistoryStore.save(
+                historySessionKey,
+                System.currentTimeMillis(),
+                RichChatStateStore.snapshotNewestFirst(),
+                ChatUpgradeConfig.get().chatHistoryMaxMessages);
+    }
+
+    private static void displayHistoryMarker(Component text) {
+        RichChatMessage marker = new RichChatMessage(
+                "",
+                ChatAuthor.system(),
+                ChatMessageKind.SYSTEM,
+                null,
+                null,
+                System.currentTimeMillis(),
+                null,
+                0,
+                text,
+                text,
+                text.getString(),
+                text.getString(),
+                List.of(),
+                List.of(),
+                RichChatMessageSource.LOCAL_SYSTEM,
+                null,
+                com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus.VISIBLE);
+        RichChatStateStore.restoreNewestFirst(List.of(marker));
+        projectStoredMessage(marker);
+    }
+
+    private static void clearHistoryRecovery() {
+        historyRecoveryPending = false;
+        historyRecoveredCount = 0;
+        historyAfterTimestampMs = 0L;
     }
 
     public static void sendRequest(String mediaId) {

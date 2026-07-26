@@ -2,6 +2,7 @@ package com.chat.upgrade.server;
 
 import java.net.URI;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -17,6 +18,7 @@ import com.chat.upgrade.net.StructuredChatEnvelope;
 import com.chat.upgrade.net.StructuredChatMessage;
 import com.chat.upgrade.net.StructuredChatMutation;
 import com.chat.upgrade.net.StructuredChatProtocolLimits;
+import com.chat.upgrade.net.StructuredChatSegment;
 import com.chat.upgrade.net.StructuredChatSubmission;
 import com.chat.upgrade.net.StructuredReplySummary;
 import com.chat.upgrade.server.store.StoredMedia;
@@ -45,6 +47,7 @@ public final class ServerChatRouteService {
     private static final long RETRACTED_TOMBSTONE_TTL_MS = 60L * 60L * 1000L;
     private static final Map<String, RecentMessage> RECENT_MESSAGES = new LinkedHashMap<>();
     private static final Map<String, Long> RETRACTED_MESSAGES = new LinkedHashMap<>();
+    private static final ServerChatHistoryStore CHAT_HISTORY = new ServerChatHistoryStore();
     private static MinecraftServer activeServer;
 
     private static final Pattern CHATUPGRADE_PAYLOAD = Pattern.compile(
@@ -91,8 +94,39 @@ public final class ServerChatRouteService {
         }
         StructuredChatEnvelope envelope = createEnvelope(senderPlayer, submission, reply);
         remember(envelope, senderPlayer.getUUID());
+        CHAT_HISTORY.append(server, envelope);
         broadcast(server.getPlayerList(), envelope);
         return true;
+    }
+
+    public static void rememberVanillaChat(ServerPlayer senderPlayer, String raw) {
+        if (senderPlayer == null || raw == null || raw.isBlank()) {
+            return;
+        }
+        MinecraftServer server = senderPlayer.level().getServer();
+        if (server == null) {
+            return;
+        }
+        ensureServerScope(server);
+        String text = raw.trim();
+        StructuredChatEnvelope envelope = new StructuredChatEnvelope(
+                StructuredChatEnvelope.CURRENT_SCHEMA_VERSION,
+                UUID.randomUUID().toString(),
+                "",
+                System.currentTimeMillis(),
+                authorSnapshot(senderPlayer),
+                "player",
+                text,
+                java.util.List.of(StructuredChatSegment.text(text)),
+                java.util.List.of(),
+                text,
+                StructuredChatMessage.COMPAT_VANILLA_SAFE_TEXT,
+                null);
+        if (!StructuredChatProtocolLimits.accepts(envelope)) {
+            return;
+        }
+        remember(envelope, senderPlayer.getUUID());
+        CHAT_HISTORY.append(server, envelope);
     }
 
     public static boolean retract(ServerPlayer senderPlayer, String messageId) {
@@ -117,6 +151,7 @@ public final class ServerChatRouteService {
         synchronized (RECENT_MESSAGES) {
             rememberRetraction(normalizedId, mutation.serverTimestampMs());
         }
+        CHAT_HISTORY.retract(server, normalizedId);
         for (ServerPlayer target : server.getPlayerList().getPlayers()) {
             if (Net.canSendToClient(target, ServerMediaPayloads.S2CChatMutation.TYPE)) {
                 Net.sendToClient(target, ServerMediaPayloads.S2CChatMutation.fromMutation(mutation));
@@ -141,6 +176,18 @@ public final class ServerChatRouteService {
                     Net.sendToClient(player, ServerMediaPayloads.S2CChatMutation.fromMutation(
                             StructuredChatMutation.retracted(messageId, timestampMs))));
         }
+    }
+
+    public static List<StructuredChatEnvelope> historyAfter(ServerPlayer player, long afterTimestampMs, int limit) {
+        if (player == null || !ServerMediaServerConfig.get().chatHistoryEnabled) {
+            return List.of();
+        }
+        MinecraftServer server = player.level().getServer();
+        if (server == null) {
+            return List.of();
+        }
+        ensureServerScope(server);
+        return CHAT_HISTORY.after(server, afterTimestampMs, limit);
     }
 
     private static void broadcast(PlayerList playerList, StructuredChatEnvelope envelope) {
@@ -312,6 +359,7 @@ public final class ServerChatRouteService {
             RECENT_MESSAGES.clear();
             RETRACTED_MESSAGES.clear();
             activeServer = server;
+            CHAT_HISTORY.bind(server);
         }
     }
 

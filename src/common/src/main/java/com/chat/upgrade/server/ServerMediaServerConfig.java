@@ -25,6 +25,9 @@ public final class ServerMediaServerConfig {
     public int maxChunkBytes = 32 * 1024;
     public long maxTotalBytes = 200L * 1024L * 1024L;
     public int ttlSeconds = 60 * 60;
+    public boolean chatHistoryEnabled;
+    public int chatHistoryMaxMessages = 500;
+    public int chatHistoryReplayLimit = 100;
     public String diskFolderName = "server-media-store";
 
     public enum StorageMode {
@@ -73,6 +76,9 @@ public final class ServerMediaServerConfig {
         c.maxChunkBytes = 32 * 1024;
         c.maxTotalBytes = 200L * 1024L * 1024L;
         c.ttlSeconds = 60 * 60;
+        c.chatHistoryEnabled = false;
+        c.chatHistoryMaxMessages = 500;
+        c.chatHistoryReplayLimit = 100;
         c.diskFolderName = "server-media-store";
         c.normalize();
         return c;
@@ -91,6 +97,8 @@ public final class ServerMediaServerConfig {
             maxTotalBytes = 0;
         }
         ttlSeconds = Math.max(0, ttlSeconds);
+        chatHistoryMaxMessages = Math.clamp(chatHistoryMaxMessages, 10, 2_000);
+        chatHistoryReplayLimit = Math.clamp(chatHistoryReplayLimit, 1, chatHistoryMaxMessages);
         if (storageMode == null) {
             storageMode = StorageMode.MEMORY;
         }

@@ -21,6 +21,8 @@ public abstract class ServerGamePacketListenerImplMixin {
     private void chatupgrade$routeBracketProtocol(ServerboundChatPacket packet, CallbackInfo ci) {
         if (ServerChatRouteService.routeBracketProtocol(player, packet.message())) {
             ci.cancel();
+            return;
         }
+        ServerChatRouteService.rememberVanillaChat(player, packet.message());
     }
 }

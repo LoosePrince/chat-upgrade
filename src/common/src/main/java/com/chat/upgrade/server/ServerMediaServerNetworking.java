@@ -1,5 +1,6 @@
 package com.chat.upgrade.server;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.chat.upgrade.ChatUpgrade;
@@ -47,6 +48,8 @@ public final class ServerMediaServerNetworking {
                 ServerMediaServerNetworking::handleStructuredChatV2Packet);
         r.serverHandler(ServerMediaPayloads.C2SRetractChatMessage.TYPE,
                 ServerMediaServerNetworking::handleRetractChatMessagePacket);
+        r.serverHandler(ServerMediaPayloads.C2SRequestChatHistory.TYPE,
+                ServerMediaServerNetworking::handleRequestChatHistoryPacket);
     }
 
     // --- Lifecycle hooks (wired by each loader to its native events) ---
@@ -172,6 +175,30 @@ public final class ServerMediaServerNetworking {
                                 .withStyle(net.minecraft.ChatFormatting.RED),
                         false);
             }
+        });
+    }
+
+    private static void handleRequestChatHistoryPacket(
+            ServerMediaPayloads.C2SRequestChatHistory payload,
+            ServerPlayContext context) {
+        context.execute(() -> {
+            if (!ServerMediaServerConfig.get().chatHistoryEnabled) {
+                Net.sendToClient(context.player(), new ServerMediaPayloads.S2CChatHistoryComplete(0));
+                return;
+            }
+            List<com.chat.upgrade.net.StructuredChatEnvelope> messages = ServerChatRouteService.historyAfter(
+                    context.player(),
+                    payload.afterTimestampMs(),
+                    payload.limit());
+            int sent = 0;
+            for (com.chat.upgrade.net.StructuredChatEnvelope message : messages) {
+                if (!Net.canSendToClient(context.player(), ServerMediaPayloads.S2CChatHistoryEntry.TYPE)) {
+                    break;
+                }
+                Net.sendToClient(context.player(), ServerMediaPayloads.S2CChatHistoryEntry.fromEnvelope(message));
+                sent++;
+            }
+            Net.sendToClient(context.player(), new ServerMediaPayloads.S2CChatHistoryComplete(sent));
         });
     }
 

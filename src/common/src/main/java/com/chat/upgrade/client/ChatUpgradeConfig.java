@@ -33,6 +33,8 @@ public final class ChatUpgradeConfig {
     public Boolean messagePassthroughEnabled = false;
     public Boolean messageGroupingEnabled = false;
     public MessageGroupPosition messageGroupPosition = MessageGroupPosition.LEFT;
+    public Boolean chatHistoryEnabled = true;
+    public int chatHistoryMaxMessages = 500;
     public String privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
     public ChatPanelConfig chatPanel = new ChatPanelConfig();
     public AppearanceConfig appearance = new AppearanceConfig();
@@ -185,6 +187,8 @@ public final class ChatUpgradeConfig {
         config.mentionNotificationMode = MentionNotificationMode.SOUND;
         config.messagePassthroughEnabled = false;
         config.messageGroupingEnabled = false;
+        config.chatHistoryEnabled = true;
+        config.chatHistoryMaxMessages = 500;
         config.messageGroupPosition = MessageGroupPosition.LEFT;
         config.privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
         config.chatPanel = new ChatPanelConfig();
@@ -206,6 +210,8 @@ public final class ChatUpgradeConfig {
         MentionNotificationMode beforeMentionNotificationMode = mentionNotificationMode;
         Boolean beforeMessagePassthroughEnabled = messagePassthroughEnabled;
         Boolean beforeMessageGroupingEnabled = messageGroupingEnabled;
+        Boolean beforeChatHistoryEnabled = chatHistoryEnabled;
+        int beforeChatHistoryMaxMessages = chatHistoryMaxMessages;
         MessageGroupPosition beforeMessageGroupPosition = messageGroupPosition;
         String beforePrivateMessageCommand = privateMessageCommand;
         ChatPanelConfig beforeChatPanel = chatPanel;
@@ -228,6 +234,8 @@ public final class ChatUpgradeConfig {
                 : mentionNotificationMode;
         messagePassthroughEnabled = messagePassthroughEnabled == null ? false : messagePassthroughEnabled;
         messageGroupingEnabled = messageGroupingEnabled == null ? false : messageGroupingEnabled;
+        chatHistoryEnabled = chatHistoryEnabled == null ? true : chatHistoryEnabled;
+        chatHistoryMaxMessages = Math.clamp(chatHistoryMaxMessages, 10, 500);
         messageGroupPosition = messageGroupPosition == null ? MessageGroupPosition.LEFT : messageGroupPosition;
         privateMessageCommand = normalizePrivateMessageCommand(privateMessageCommand);
 
@@ -262,6 +270,9 @@ public final class ChatUpgradeConfig {
                 || beforeMessagePassthroughEnabled != messagePassthroughEnabled
                 || beforeMessageGroupingEnabled == null
                 || beforeMessageGroupingEnabled != messageGroupingEnabled
+                || beforeChatHistoryEnabled == null
+                || beforeChatHistoryEnabled != chatHistoryEnabled
+                || beforeChatHistoryMaxMessages != chatHistoryMaxMessages
                 || beforeMessageGroupPosition != messageGroupPosition
                 || beforePrivateMessageCommand == null
                 || !beforePrivateMessageCommand.equals(privateMessageCommand)
@@ -360,6 +371,8 @@ public final class ChatUpgradeConfig {
                 boolean containsMentionNotificationMode = json.contains("\"mentionNotificationMode\"");
                 boolean containsMessagePassthrough = json.contains("\"messagePassthroughEnabled\"");
                 boolean containsMessageGrouping = json.contains("\"messageGroupingEnabled\"");
+                boolean containsChatHistory = json.contains("\"chatHistoryEnabled\"");
+                boolean containsChatHistoryMaxMessages = json.contains("\"chatHistoryMaxMessages\"");
                 boolean containsMessageGroupPosition = json.contains("\"messageGroupPosition\"");
                 boolean containsPrivateMessageCommand = json.contains("\"privateMessageCommand\"");
                 boolean containsCompactMediaCards = json.contains("\"compactMediaCards\"");
@@ -379,6 +392,14 @@ public final class ChatUpgradeConfig {
                 }
                 if (!containsMessageGrouping) {
                     read.messageGroupingEnabled = false;
+                    migratedLegacyDefaults = true;
+                }
+                if (!containsChatHistory) {
+                    read.chatHistoryEnabled = true;
+                    migratedLegacyDefaults = true;
+                }
+                if (!containsChatHistoryMaxMessages) {
+                    read.chatHistoryMaxMessages = 500;
                     migratedLegacyDefaults = true;
                 }
                 if (!containsMessageGroupPosition) {
@@ -420,6 +441,8 @@ public final class ChatUpgradeConfig {
                         || !containsMentionNotificationMode
                         || !containsMessagePassthrough
                         || !containsMessageGrouping
+                        || !containsChatHistory
+                        || !containsChatHistoryMaxMessages
                         || !containsMessageGroupPosition
                         || !containsPrivateMessageCommand
                         || !containsCompactMediaCards

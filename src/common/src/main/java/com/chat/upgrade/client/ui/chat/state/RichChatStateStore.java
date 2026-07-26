@@ -20,6 +20,29 @@ public final class RichChatStateStore {
     private RichChatStateStore() {
     }
 
+    public static synchronized void restoreNewestFirst(List<RichChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        List<RichChatMessage> restored = new ArrayList<>(messages);
+        for (int index = restored.size() - 1; index >= 0; index--) {
+            RichChatMessage message = restored.get(index);
+            if (message == null) {
+                continue;
+            }
+            RichChatMessage stored = DELETED_MESSAGE_IDS.contains(message.messageId())
+                    ? message.withStatus(RichChatMessageStatus.DELETED)
+                    : message;
+            ChatMessageGroupStore.rememberPeer(stored.privatePeerId());
+            removeById(stored.messageId());
+            MESSAGES.addFirst(stored);
+        }
+        while (MESSAGES.size() > MAX_MESSAGES) {
+            MESSAGES.removeLast();
+        }
+        version++;
+    }
+
     public static synchronized RichChatMessage append(RichChatMessage message) {
         if (message == null) {
             throw new IllegalArgumentException("message must not be null");
@@ -106,6 +129,13 @@ public final class RichChatStateStore {
         MESSAGES.addAll(next);
         version++;
         return targetFound;
+    }
+
+    public static synchronized boolean containsMessage(String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            return false;
+        }
+        return MESSAGES.stream().anyMatch(message -> messageId.equals(message.messageId()));
     }
 
     public static synchronized List<RichChatMessage> snapshotNewestFirst() {

@@ -41,6 +41,7 @@ public final class ServerMediaPayloads {
         r.registerC2SType(C2SStructuredChatMessage.TYPE, C2SStructuredChatMessage.CODEC);
         r.registerC2SType(C2SStructuredChatV2.TYPE, C2SStructuredChatV2.CODEC);
         r.registerC2SType(C2SRetractChatMessage.TYPE, C2SRetractChatMessage.CODEC);
+        r.registerC2SType(C2SRequestChatHistory.TYPE, C2SRequestChatHistory.CODEC);
 
         r.registerS2CType(S2CCapability.TYPE, S2CCapability.CODEC);
         r.registerS2CType(S2CAttachmentCapability.TYPE, S2CAttachmentCapability.CODEC);
@@ -48,6 +49,8 @@ public final class ServerMediaPayloads {
         r.registerS2CType(S2CStructuredChatMessage.TYPE, S2CStructuredChatMessage.CODEC);
         r.registerS2CType(S2CStructuredChatV2.TYPE, S2CStructuredChatV2.CODEC);
         r.registerS2CType(S2CChatMutation.TYPE, S2CChatMutation.CODEC);
+        r.registerS2CType(S2CChatHistoryEntry.TYPE, S2CChatHistoryEntry.CODEC);
+        r.registerS2CType(S2CChatHistoryComplete.TYPE, S2CChatHistoryComplete.CODEC);
         r.registerS2CType(S2CUploadAck.TYPE, S2CUploadAck.CODEC);
         r.registerS2CType(S2CAttachmentAck.TYPE, S2CAttachmentAck.CODEC);
         r.registerS2CType(S2CAttachmentMeta.TYPE, S2CAttachmentMeta.CODEC);
@@ -296,6 +299,19 @@ public final class ServerMediaPayloads {
         }
     }
 
+    public record C2SRequestChatHistory(long afterTimestampMs, int limit) implements CustomPacketPayload {
+        public static final Type<C2SRequestChatHistory> TYPE = payloadType("c2s_request_chat_history");
+        public static final StreamCodec<RegistryFriendlyByteBuf, C2SRequestChatHistory> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_LONG, C2SRequestChatHistory::afterTimestampMs,
+                ByteBufCodecs.VAR_INT, C2SRequestChatHistory::limit,
+                C2SRequestChatHistory::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     public record S2CCapability(
             boolean enabled,
             int maxSingleBytes,
@@ -488,6 +504,42 @@ public final class ServerMediaPayloads {
         public java.util.Optional<StructuredChatMutation> toMutation() {
             return StructuredChatWireCodec.decodeMutation(envelopeJson);
         }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CChatHistoryEntry(String envelopeJson) implements CustomPacketPayload {
+        public S2CChatHistoryEntry {
+            envelopeJson = safeWire(envelopeJson);
+        }
+
+        public static final Type<S2CChatHistoryEntry> TYPE = payloadType("s2c_chat_history_entry");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CChatHistoryEntry> CODEC = StreamCodec.composite(
+                STRUCTURED_JSON_CODEC, S2CChatHistoryEntry::envelopeJson,
+                S2CChatHistoryEntry::new);
+
+        public static S2CChatHistoryEntry fromEnvelope(StructuredChatEnvelope envelope) {
+            return new S2CChatHistoryEntry(StructuredChatWireCodec.encodeEnvelope(envelope));
+        }
+
+        public java.util.Optional<StructuredChatEnvelope> toEnvelope() {
+            return StructuredChatWireCodec.decodeEnvelope(envelopeJson);
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record S2CChatHistoryComplete(int announcedCount) implements CustomPacketPayload {
+        public static final Type<S2CChatHistoryComplete> TYPE = payloadType("s2c_chat_history_complete");
+        public static final StreamCodec<RegistryFriendlyByteBuf, S2CChatHistoryComplete> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, S2CChatHistoryComplete::announcedCount,
+                S2CChatHistoryComplete::new);
 
         @Override
         public Type<? extends CustomPacketPayload> type() {
