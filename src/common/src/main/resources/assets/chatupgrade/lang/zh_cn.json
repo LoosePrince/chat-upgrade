@@ -89,7 +89,6 @@
   "chatupgrade.message_group.system": "系统消息",
   "chatupgrade.message_group.chat": "聊天消息",
   "chatupgrade.message_group.unknown_player": "未知玩家",
-  "chatupgrade.private.attachments_unsupported": "私聊会话暂不支持发送附件，请先切换到普通聊天分组。",
   "chatupgrade.mention.title": "%s 艾特了你",
   "chatupgrade.mention.unknown_player": "某位玩家",
   "chatupgrade.message.deleted": "消息已撤回",

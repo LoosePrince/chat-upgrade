@@ -28,6 +28,8 @@ import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.UpgradeChatHudSync;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
+import com.chat.upgrade.client.ui.chat.state.ChatAuthor;
+import com.chat.upgrade.client.ui.chat.state.ChatPrivateMessageResolver;
 import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
@@ -87,6 +89,9 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
         if (RichChatProjectionCoordinator.hasPending()) {
             return original;
         }
+        ChatPrivateMessageResolver.Resolution privateResolution = ChatPrivateMessageResolver.resolve(
+                original,
+                ChatAuthor.legacy(""));
         InlineEmojiCodec.DecodedEmoji emojiDecoded = InlineEmojiCodec.decodeIncoming(original);
         if (emojiDecoded.hasSlots()) {
             InlineEmojiCoordinator.setPendingSlots(emojiDecoded.slots());
@@ -94,11 +99,12 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             InlineEmojiCoordinator.clearPendingSlots();
         }
         UpgradeBracketCodec.DecodedBracket decoded = UpgradeBracketCodec.decodeIncoming(emojiDecoded.modified());
-        List<RichAttachment> attachments = decoded.attachment()
+        privateResolution = chatupgrade$decodePrivateBody(privateResolution);
+        List<RichAttachment> attachments = decoded.attachments().stream()
                 .filter(RichAttachment::hasRenderableUrl)
-                .map(List::of)
-                .orElseGet(List::of);
+                .toList();
         RichChatIngress.recordLegacy(
+                "",
                 "",
                 kind,
                 decoded.modified(),
@@ -107,13 +113,29 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
                 emojiDecoded.slots(),
                 attachments.isEmpty()
                         ? RichChatMessageSource.VANILLA_TEXT
-                        : RichChatMessageSource.BRACKET_PROTOCOL);
+                        : RichChatMessageSource.BRACKET_PROTOCOL,
+                privateResolution);
         if (!attachments.isEmpty()) {
-            RichAttachment attachment = attachments.getFirst();
-            UpgradePhantomCoordinator.setPendingDecoded(attachment);
-            chatupgrade$preloadMedia(attachment);
+            for (RichAttachment attachment : attachments) {
+                chatupgrade$preloadMedia(attachment);
+            }
+            UpgradePhantomCoordinator.setPendingDecoded(attachments.getFirst());
         }
         return decoded.modified();
+    }
+
+    @Unique
+    private static @Nullable ChatPrivateMessageResolver.Resolution chatupgrade$decodePrivateBody(
+            @Nullable ChatPrivateMessageResolver.Resolution resolution) {
+        if (resolution == null || resolution.body() == null) {
+            return resolution;
+        }
+        Component decodedBody = UpgradeBracketCodec.decodeIncoming(resolution.body()).modified();
+        return new ChatPrivateMessageResolver.Resolution(
+                resolution.peerId(),
+                resolution.peerPlayerId(),
+                resolution.author(),
+                decodedBody);
     }
 
     @Unique

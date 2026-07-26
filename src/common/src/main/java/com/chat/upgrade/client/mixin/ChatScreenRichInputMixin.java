@@ -139,6 +139,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
         chatupgrade$emojiSearchBox.setVisible(false);
         chatupgrade$emojiSearchBox.setResponder(chatupgrade$emojiPopover::setSearchQuery);
         this.addRenderableWidget(chatupgrade$emojiSearchBox);
+        chatupgrade$restoreComposerFocus();
         chatupgrade$refreshControls();
         chatupgrade$layoutComposerControls();
     }
@@ -181,7 +182,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
             if (ChatUpgradeChatPipelineGate.isTakeoverMode()
                     && event.isCopy()
                     && ChatTextSelectionState.hasSelection()
-                    && (input == null || !input.isFocused())) {
+                    && ChatSurfaceController.state().focusOwner() == ChatSurfaceState.FocusOwner.TIMELINE) {
                 ChatTextSelectionState.copySelection(this.minecraft);
                 cir.setReturnValue(true);
             } else if (ChatUpgradeChatPipelineGate.isTakeoverMode()
@@ -272,6 +273,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
                     && chatupgrade$composerBounds()
                             .contains((int) Math.round(event.x()), (int) Math.round(event.y()))) {
                 ChatTextSelectionState.clear();
+                chatupgrade$restoreComposerFocus();
             }
             if (chatupgrade$emojiPopover.isVisible() && !chatupgrade$isEmojiButtonClick(event.x(), event.y())) {
                 if (event.button() != 0) {
@@ -389,10 +391,6 @@ public abstract class ChatScreenRichInputMixin extends Screen
                     && RichChatInteractionRouter.beginPointerAtScreen(
                             (int) Math.round(event.x()),
                             (int) Math.round(event.y()))) {
-                this.setFocused(null);
-                if (input != null) {
-                    input.setFocused(false);
-                }
                 ChatSurfaceController.setFocusOwner(ChatSurfaceState.FocusOwner.TIMELINE);
                 cir.setReturnValue(true);
                 return;
@@ -632,6 +630,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
         AttachmentSendController.SendStartResult result = AttachmentSendController.sendCurrentDraft(
                 chatupgrade$composerState,
                 submittedMessage,
+                chatupgrade$privateAttachmentSubmitter(),
                 (finish, message) -> {
                     message.ifPresent(this::chatupgrade$systemMessage);
                     chatupgrade$refreshControls();
@@ -833,6 +832,21 @@ public abstract class ChatScreenRichInputMixin extends Screen
     }
 
     @Unique
+    private @org.jetbrains.annotations.Nullable AttachmentSendController.PrivateAttachmentSubmitter
+            chatupgrade$privateAttachmentSubmitter() {
+        java.util.UUID peerId = PrivateMessageCommandService.activePeerId();
+        if (peerId == null) {
+            return null;
+        }
+        String peerPlayerId = PrivateMessageCommandService.activePeerPlayerId();
+        return message -> PrivateMessageCommandService.sendToPeer(
+                peerId,
+                peerPlayerId,
+                message,
+                this::chatupgrade$handlePrivateCommand);
+    }
+
+    @Unique
     private boolean chatupgrade$submitPrivateMessageIfActive(String submittedMessage) {
         if (!ChatUpgradeChatPipelineGate.isTakeoverMode()
                 || !PrivateMessageCommandService.privateConversationActive()
@@ -840,9 +854,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
             return false;
         }
         if (chatupgrade$composerState.hasDraft()) {
-            chatupgrade$systemMessage(Component.translatable("chatupgrade.private.attachments_unsupported")
-                    .withStyle(ChatFormatting.RED));
-            return true;
+            return false;
         }
         String normalizedMessage = normalizeChatMessage(submittedMessage == null ? "" : submittedMessage);
         if (normalizedMessage.isBlank()) {
@@ -910,6 +922,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
             AttachmentSendController.SendStartResult result = AttachmentSendController.sendCurrentDraft(
                     chatupgrade$composerState,
                     submittedMessage,
+                    chatupgrade$privateAttachmentSubmitter(),
                     (finish, message) -> this.minecraft.execute(() -> {
                         message.ifPresent(this::chatupgrade$systemMessage);
                         chatupgrade$refreshControls();
@@ -1166,7 +1179,12 @@ public abstract class ChatScreenRichInputMixin extends Screen
         boolean visible = chatupgrade$emojiPopover.isVisible();
         chatupgrade$emojiSearchBox.visible = visible;
         if (!visible) {
-            chatupgrade$emojiSearchBox.setFocused(false);
+            // `EditBox#setFocused(false)` updates Minecraft's process-wide text-input state.
+            // Calling it every render pass for an already hidden widget disables the active
+            // composer IME immediately after the operating system enables it.
+            if (chatupgrade$emojiSearchBox.isFocused()) {
+                chatupgrade$emojiSearchBox.setFocused(false);
+            }
             return;
         }
         RichChatBounds bounds = chatupgrade$emojiPopover.searchBounds(
@@ -1293,8 +1311,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
     @Unique
     private void chatupgrade$restoreComposerFocus() {
         if (input != null) {
-            this.setFocused(input);
-            input.setFocused(true);
+            this.setInitialFocus(input);
         }
         ChatSurfaceController.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
     }
@@ -1342,8 +1359,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
             chatupgrade$emojiSearchBox.setFocused(false);
         }
         if (input != null && !chatupgrade$emojiPopover.isVisible()) {
-            this.setFocused(input);
-            input.setFocused(true);
+            this.setInitialFocus(input);
             ChatSurfaceController.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
         }
     }

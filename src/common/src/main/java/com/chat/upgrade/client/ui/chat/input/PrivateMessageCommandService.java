@@ -36,7 +36,14 @@ public final class PrivateMessageCommandService {
 
     public static boolean sendToActivePeer(String message, Consumer<String> vanillaHandler) {
         UUID peerId = activePeerId();
-        String peerPlayerId = activePeerPlayerId();
+        return sendToPeer(peerId, activePeerPlayerId(), message, vanillaHandler);
+    }
+
+    public static boolean sendToPeer(
+            @Nullable UUID peerId,
+            String peerPlayerId,
+            String message,
+            Consumer<String> vanillaHandler) {
         String body = safe(message);
         if (peerId == null || body.isBlank() || vanillaHandler == null) {
             return false;
@@ -49,7 +56,7 @@ public final class PrivateMessageCommandService {
         }
         ChatPrivateMessageResolver.rememberOutgoing(peerId, peerPlayerId, body);
         vanillaHandler.accept(command);
-        ChatMessageGroupStore.openPrivate(peerId, peerPlayerId);
+        ChatMessageGroupStore.rememberPeer(peerId, peerPlayerId);
         return true;
     }
 

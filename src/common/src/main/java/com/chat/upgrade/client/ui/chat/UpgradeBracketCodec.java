@@ -81,47 +81,54 @@ public final class UpgradeBracketCodec {
 
     public record DecodedBracket(
             Component modified,
-            Optional<RichAttachment> attachment) {
+            List<RichAttachment> attachments) {
+        public DecodedBracket {
+            attachments = List.copyOf(attachments == null ? List.of() : attachments);
+        }
+
+        public Optional<RichAttachment> attachment() {
+            return attachments.stream().findFirst();
+        }
+
         public boolean hasUrl() {
-            return attachment.isPresent() && attachment.get().hasRenderableUrl();
+            return attachments.stream().anyMatch(RichAttachment::hasRenderableUrl);
         }
 
         public @Nullable String url() {
-            return attachment.map(RichAttachment::urlOrNull).orElse(null);
+            return attachment().map(RichAttachment::urlOrNull).orElse(null);
         }
 
         public @Nullable String name() {
-            return attachment.map(RichAttachment::displayName).orElse(null);
+            return attachment().map(RichAttachment::displayName).orElse(null);
         }
 
         public InlineResourceType resourceType() {
-            return attachment.map(RichAttachment::type).orElse(InlineResourceType.IMAGE);
+            return attachment().map(RichAttachment::type).orElse(InlineResourceType.IMAGE);
         }
     }
 
     public static DecodedBracket decodeIncoming(Component original) {
-        Matcher m = BRACKET_PAYLOAD.matcher(buildFullText(original));
-        if (!m.find()) {
-            return new DecodedBracket(original, Optional.empty());
+        Component modified = original;
+        List<RichAttachment> attachments = new ArrayList<>();
+        Matcher matcher = BRACKET_PAYLOAD.matcher(buildFullText(original));
+        while (matcher.find()) {
+            Map<String, String> attributes = parsePayloadAttributes(matcher.group(2));
+            String url = attributes.getOrDefault("url", "").trim();
+            if (url.isBlank()) {
+                continue;
+            }
+            InlineResourceType type = InlineResourceType.fromWire(attributes.get("type"));
+            String defaultName = switch (type) {
+                case IMAGE -> I18n.get("chatupgrade.type.image");
+                case AUDIO -> I18n.get("chatupgrade.type.audio");
+                case VIDEO -> I18n.get("chatupgrade.type.video");
+            };
+            String name = attributes.getOrDefault("name", defaultName).trim();
+            RichAttachment attachment = resolveIncomingAttachment(url, name, type);
+            modified = replaceMatchedPayload(modified, matcher.group(0), attachment);
+            attachments.add(attachment);
         }
-        String attrs = m.group(2);
-        Map<String, String> kv = parsePayloadAttributes(attrs);
-        String url = kv.getOrDefault("url", "").trim();
-        if (url.isBlank()) {
-            return new DecodedBracket(original, Optional.empty());
-        }
-        InlineResourceType type = InlineResourceType.fromWire(kv.get("type"));
-        String defaultName = switch (type) {
-            case IMAGE -> I18n.get("chatupgrade.type.image");
-            case AUDIO -> I18n.get("chatupgrade.type.audio");
-            case VIDEO -> I18n.get("chatupgrade.type.video");
-        };
-        String name = kv.getOrDefault("name", defaultName).trim();
-        String matched = m.group(0);
-
-        RichAttachment attachment = resolveIncomingAttachment(url, name, type);
-        Component modified = replaceMatchedPayload(original, matched, attachment);
-        return new DecodedBracket(modified, Optional.of(attachment));
+        return new DecodedBracket(modified, attachments);
     }
 
     private static RichAttachment resolveIncomingAttachment(String url, String name, InlineResourceType type) {

@@ -133,6 +133,28 @@ public final class RichChatIngress {
             List<RichAttachment> attachments,
             List<InlineEmojiSlot> inlineEmojiSlots,
             RichChatMessageSource source) {
+        return recordLegacy(
+                messageId,
+                senderName,
+                kind,
+                component,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source,
+                null);
+    }
+
+    public static RichChatMessage recordLegacy(
+            String messageId,
+            String senderName,
+            ChatMessageKind kind,
+            Component component,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source,
+            @Nullable ChatPrivateMessageResolver.Resolution resolvedPrivateMessage) {
         ChatMessageKind classified = ChatMessageClassifier.classify(component, kind, source);
         ChatLegacyMessageNormalizer.Normalized normalized = ChatLegacyMessageNormalizer.normalize(
                 component,
@@ -145,7 +167,9 @@ public final class RichChatIngress {
                 ChatAuthor.legacy(suppliedName),
                 component,
                 classified);
-        ChatPrivateMessageResolver.Resolution privateResolution = ChatPrivateMessageResolver.resolve(component, author);
+        ChatPrivateMessageResolver.Resolution privateResolution = resolvedPrivateMessage == null
+                ? ChatPrivateMessageResolver.resolve(component, author)
+                : resolvedPrivateMessage;
         if (privateResolution != null) {
             ChatMessageGroupStore.rememberPeer(privateResolution.peerId(), privateResolution.peerPlayerId());
             author = privateResolution.author();

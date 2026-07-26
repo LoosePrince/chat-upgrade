@@ -48,6 +48,11 @@ public final class AttachmentSendController {
     }
 
     @FunctionalInterface
+    public interface PrivateAttachmentSubmitter {
+        boolean submit(String message);
+    }
+
+    @FunctionalInterface
     public interface ResultSink {
         void accept(SendFinishResult result, Optional<Component> message);
     }
@@ -58,6 +63,14 @@ public final class AttachmentSendController {
     public static SendStartResult sendCurrentDraft(
             ChatComposerState state,
             String typedMessage,
+            ResultSink resultSink) {
+        return sendCurrentDraft(state, typedMessage, null, resultSink);
+    }
+
+    public static SendStartResult sendCurrentDraft(
+            ChatComposerState state,
+            String typedMessage,
+            PrivateAttachmentSubmitter privateSubmitter,
             ResultSink resultSink) {
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(resultSink, "resultSink");
@@ -116,6 +129,7 @@ public final class AttachmentSendController {
                         uploadingDrafts,
                         typedMessage,
                         replyTarget,
+                        privateSubmitter,
                         uploads,
                         resultSink)));
         return SendStartResult.STARTED;
@@ -196,6 +210,7 @@ public final class AttachmentSendController {
             List<AttachmentDraft> uploadingDrafts,
             String typedMessage,
             ChatReplySummary replyTarget,
+            PrivateAttachmentSubmitter privateSubmitter,
             List<CompletableFuture<Optional<String>>> uploads,
             ResultSink resultSink) {
         if (!state.containsAll(uploadingDrafts)) {
@@ -227,11 +242,9 @@ public final class AttachmentSendController {
             resultSink.accept(SendFinishResult.UPLOAD_FAILED, Optional.of(uploadFailedMessage()));
             return;
         }
-        SendFinishResult sendResult = sendRichMessage(
-                uploadingDrafts,
-                urls,
-                typedMessage,
-                replyMessageId(replyTarget));
+        SendFinishResult sendResult = privateSubmitter == null
+                ? sendRichMessage(uploadingDrafts, urls, typedMessage, replyMessageId(replyTarget))
+                : sendPrivateMessage(uploadingDrafts, urls, typedMessage, replyTarget, privateSubmitter);
         if (sendResult != SendFinishResult.SENT) {
             for (int i = 0; i < uploadingDrafts.size(); i++) {
                 AttachmentDraft current = uploadingDrafts.get(i);
@@ -294,6 +307,26 @@ public final class AttachmentSendController {
         } catch (Exception ex) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to request message retraction: {}", ex.getMessage());
             return false;
+        }
+    }
+
+    private static SendFinishResult sendPrivateMessage(
+            List<AttachmentDraft> drafts,
+            List<String> uploadedUrls,
+            String typedMessage,
+            ChatReplySummary replyTarget,
+            PrivateAttachmentSubmitter privateSubmitter) {
+        if (replyTarget != null || privateSubmitter == null) {
+            return SendFinishResult.UNSUPPORTED;
+        }
+        try {
+            return privateSubmitter.submit(buildBracketFallbackMessage(drafts, uploadedUrls, typedMessage))
+                    ? SendFinishResult.SENT
+                    : SendFinishResult.NOT_CONNECTED;
+        } catch (RuntimeException exception) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to submit private attachment message: {}",
+                    exception.getMessage());
+            return SendFinishResult.NOT_CONNECTED;
         }
     }
 
