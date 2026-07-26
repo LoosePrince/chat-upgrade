@@ -496,7 +496,7 @@ jobs:
 
       - name: publish to modrinth
         if: steps.modrinth_version.outputs.exists == 'false'
-        uses: Kira-NT/mc-publish@v3.3.0
+        uses: Kira-NT/mc-publish@v3.3.1
         with:
           files: dist/*.jar
           name: ${{ needs.prepare.outputs.release_version }} for ${{ matrix.mc_title }} ${{ matrix.loader_label }}
