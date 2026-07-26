@@ -103,7 +103,13 @@ public final class ChatSurfaceController {
             return false;
         }
         ChatPanelGeometry geometry = STATE.panelGeometry();
-        int edges = geometry.resizeEdgesAt(pointerX, pointerY);
+        boolean screenMarginsEnabled = usesScreenMargins();
+        int edges = !screenMarginsEnabled && isOverRightResizeHandle(geometry, pointerX, pointerY)
+                ? ChatPanelGeometry.EDGE_RIGHT
+                : geometry.resizeEdgesAt(pointerX, pointerY);
+        if (!screenMarginsEnabled) {
+            edges &= ChatPanelGeometry.EDGE_RIGHT;
+        }
         if (edges != ChatPanelGeometry.EDGE_NONE) {
             if (!ChatGestureArena.tryCapture(
                     ChatGestureArena.Owner.PANEL,
@@ -124,7 +130,8 @@ public final class ChatSurfaceController {
                         .contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
             return false;
         }
-        if (frame.headerBounds().contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
+        if (screenMarginsEnabled
+                && frame.headerBounds().contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
             if (!ChatGestureArena.tryCapture(
                     ChatGestureArena.Owner.PANEL,
                     ChatSurfaceController::cancelPointerOperation)) {
@@ -157,10 +164,11 @@ public final class ChatSurfaceController {
                     deltaY,
                     STATE.screenWidth(),
                     STATE.screenHeight(),
-                    STATE.panelBottomInset());
+                    STATE.panelBottomInset(),
+                    usesScreenMargins());
             case NONE -> pointerStartGeometry;
         };
-        STATE.setPanelGeometry(nextGeometry);
+        STATE.setPanelGeometry(nextGeometry, STATE.panelBottomInset(), usesScreenMargins());
         return true;
     }
 
@@ -283,8 +291,9 @@ public final class ChatSurfaceController {
                 source.chatPanel.width,
                 source.chatPanel.height,
                 source.chatPanel.usesAutomaticHeight(),
-                bottomInset);
-        STATE.setPanelGeometry(restored, bottomInset);
+                bottomInset,
+                source.chatPanel.usesScreenMargins());
+        STATE.setPanelGeometry(restored, bottomInset, source.chatPanel.usesScreenMargins());
         geometryConfigSource = source;
     }
 
@@ -306,27 +315,50 @@ public final class ChatSurfaceController {
                 config.chatPanel.width,
                 config.chatPanel.height,
                 config.chatPanel.usesAutomaticHeight(),
-                bottomInset);
-        STATE.setPanelGeometry(restored, bottomInset);
+                bottomInset,
+                config.chatPanel.usesScreenMargins());
+        STATE.setPanelGeometry(restored, bottomInset, config.chatPanel.usesScreenMargins());
     }
 
     private static int requiredBottomInset(ChatUpgradeConfig config, int screenHeight) {
         ChatUpgradeConfig.AppearanceConfig appearance = config == null || config.appearance == null
                 ? ChatUpgradeConfig.defaultAppearance()
                 : config.appearance;
-        return automaticBottomOffset(appearance.vanillaStyleInput, screenHeight);
+        return automaticBottomOffset(
+                appearance.vanillaStyleInput,
+                config != null && config.chatPanel != null && config.chatPanel.usesScreenMargins(),
+                screenHeight);
     }
 
-    private static int automaticBottomOffset(boolean vanillaStyleInput, int screenHeight) {
+    private static int automaticBottomOffset(
+            boolean vanillaStyleInput,
+            boolean screenMarginsEnabled,
+            int screenHeight) {
         if (!vanillaStyleInput) {
-            return ChatPanelGeometry.MERGED_BOTTOM_OFFSET;
+            return screenMarginsEnabled ? ChatPanelGeometry.MERGED_BOTTOM_OFFSET : 0;
         }
         if (vanillaComposerTop < 0 || vanillaComposerTop > screenHeight) {
             return ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET;
         }
-        return Math.max(
-                ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET,
-                screenHeight - vanillaComposerTop + ChatPanelGeometry.SCREEN_MARGIN);
+        int composerInset = screenHeight - vanillaComposerTop;
+        return screenMarginsEnabled
+                ? Math.max(ChatPanelGeometry.DEFAULT_BOTTOM_OFFSET, composerInset + ChatPanelGeometry.SCREEN_MARGIN)
+                : composerInset;
+    }
+
+    private static boolean isOverRightResizeHandle(
+            ChatPanelGeometry geometry,
+            double pointerX,
+            double pointerY) {
+        return pointerX >= geometry.right() - ChatPanelGeometry.RESIZE_HANDLE_SIZE
+                && pointerX <= geometry.right() + ChatPanelGeometry.RESIZE_HANDLE_SIZE
+                && pointerY >= geometry.y()
+                && pointerY < geometry.bottom();
+    }
+
+    private static boolean usesScreenMargins() {
+        ChatUpgradeConfig config = activeGeometryConfig();
+        return config == null || config.chatPanel == null || config.chatPanel.usesScreenMargins();
     }
 
     private static void beginPointerOperation(
@@ -374,12 +406,16 @@ public final class ChatSurfaceController {
                 && panel.usesAutomaticHeight()
                 && !disableAutomaticHeight;
         try {
-            ChatUpgradeConfig.setChatPanelGeometryAndSave(
-                    geometry.x(),
-                    geometry.bottomOffset(STATE.screenHeight()),
-                    geometry.width(),
-                    geometry.height(),
-                    automaticHeight);
+            if (panel != null && !panel.usesScreenMargins()) {
+                ChatUpgradeConfig.setChatPanelWidthAndSave(geometry.width());
+            } else {
+                ChatUpgradeConfig.setChatPanelGeometryAndSave(
+                        geometry.x(),
+                        geometry.bottomOffset(STATE.screenHeight()),
+                        geometry.width(),
+                        geometry.height(),
+                        automaticHeight);
+            }
             geometryConfigSource = ChatUpgradeConfig.get();
         } catch (IOException e) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to persist chat panel geometry: {}", e.getMessage());

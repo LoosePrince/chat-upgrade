@@ -56,9 +56,14 @@ public final class ChatUpgradeConfig {
         public int width = 360;
         public int height = 220;
         public Boolean automaticHeight = true;
+        public Boolean screenMarginsEnabled = true;
 
         public boolean usesAutomaticHeight() {
             return automaticHeight == null || automaticHeight;
+        }
+
+        public boolean usesScreenMargins() {
+            return screenMarginsEnabled == null || screenMarginsEnabled;
         }
 
         private boolean matchesLegacyDefaults() {
@@ -204,6 +209,7 @@ public final class ChatUpgradeConfig {
         MessageGroupPosition beforeMessageGroupPosition = messageGroupPosition;
         String beforePrivateMessageCommand = privateMessageCommand;
         ChatPanelConfig beforeChatPanel = chatPanel;
+        Boolean beforeScreenMarginsEnabled = chatPanel == null ? null : chatPanel.screenMarginsEnabled;
         AppearanceConfig beforeAppearance = appearance;
         String beforeChatPanelJson = chatPanel == null ? "" : GSON.toJson(chatPanel);
         String beforeAppearanceJson = appearance == null ? "" : GSON.toJson(appearance);
@@ -233,6 +239,7 @@ public final class ChatUpgradeConfig {
         chatPanel.width = Math.max(1, chatPanel.width);
         chatPanel.height = Math.max(1, chatPanel.height);
         chatPanel.automaticHeight = chatPanel.automaticHeight == null ? true : chatPanel.automaticHeight;
+        chatPanel.screenMarginsEnabled = chatPanel.screenMarginsEnabled == null ? true : chatPanel.screenMarginsEnabled;
 
         if (appearance == null) {
             appearance = new AppearanceConfig();
@@ -259,6 +266,7 @@ public final class ChatUpgradeConfig {
                 || beforePrivateMessageCommand == null
                 || !beforePrivateMessageCommand.equals(privateMessageCommand)
                 || beforeChatPanel != chatPanel
+                || beforeScreenMarginsEnabled == null
                 || !beforeChatPanelJson.equals(GSON.toJson(chatPanel))
                 || beforeAppearance != appearance
                 || !beforeAppearanceJson.equals(GSON.toJson(appearance));
@@ -343,6 +351,7 @@ public final class ChatUpgradeConfig {
                 String json = Files.readString(path);
                 boolean containsLegacyTheme = json.contains("\"chatTheme\"");
                 boolean containsAutomaticHeight = json.contains("\"automaticHeight\"");
+                boolean containsScreenMarginsEnabled = json.contains("\"screenMarginsEnabled\"");
                 boolean containsMessageBackground = json.contains("\"messageBackgroundColor\"");
                 boolean containsAvatarFirstLineOnly = json.contains("\"avatarFirstLineOnly\"");
                 boolean containsBubblePadding = json.contains("\"bubblePadding\"");
@@ -388,6 +397,10 @@ public final class ChatUpgradeConfig {
                     read.chatPanel.automaticHeight = read.chatPanel.matchesLegacyDefaults();
                     migratedLegacyDefaults = true;
                 }
+                if (!containsScreenMarginsEnabled && read.chatPanel != null) {
+                    read.chatPanel.screenMarginsEnabled = true;
+                    migratedLegacyDefaults = true;
+                }
                 if (!containsMessageBackground && read.appearance != null && read.appearance.matchesLegacyDefaults()) {
                     read.appearance = new AppearanceConfig();
                     migratedLegacyDefaults = true;
@@ -398,6 +411,7 @@ public final class ChatUpgradeConfig {
                 boolean corrected = read.normalizeLimits()
                         || containsLegacyTheme
                         || !containsAutomaticHeight
+                        || !containsScreenMarginsEnabled
                         || !containsMessageBackground
                         || !containsAvatarFirstLineOnly
                         || !containsBubblePadding
@@ -558,6 +572,15 @@ public final class ChatUpgradeConfig {
             config.chatPanel.width = width;
             config.chatPanel.height = height;
             config.chatPanel.automaticHeight = automaticHeight;
+        });
+    }
+
+    public static void setChatPanelWidthAndSave(int width) throws IOException {
+        updateAndSave(config -> {
+            if (config.chatPanel == null) {
+                config.chatPanel = new ChatPanelConfig();
+            }
+            config.chatPanel.width = width;
         });
     }
 

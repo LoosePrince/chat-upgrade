@@ -642,11 +642,12 @@ public final class ChatSettingsOverlay {
     private List<SettingsOption> appearanceOptions() {
         ChatUpgradeConfig.AppearanceConfig appearance = draft.appearance;
         ChatUpgradeConfig.ChatPanelConfig panel = draft.chatPanel;
-        int availableWidth = Math.max(1, screenWidth - ChatPanelGeometry.SCREEN_MARGIN * 2);
+        int horizontalMargins = panel.usesScreenMargins() ? ChatPanelGeometry.SCREEN_MARGIN * 2 : 0;
+        int availableWidth = Math.max(1, screenWidth - horizontalMargins);
         int availableHeight = Math.max(1, screenHeight - ChatPanelGeometry.SCREEN_MARGIN * 2);
         int minWidth = Math.min(ChatPanelGeometry.MIN_WIDTH, availableWidth);
         int minHeight = Math.min(ChatPanelGeometry.MIN_HEIGHT, availableHeight);
-        return List.of(
+        List<SettingsOption> options = new ArrayList<>(List.of(
                 heading("chatupgrade.settings.group.panel"),
                 color("chatupgrade.settings.option.panel_background", () -> appearance.panelBackgroundColor,
                         value -> appearance.panelBackgroundColor = value),
@@ -703,6 +704,8 @@ public final class ChatSettingsOverlay {
                         "chatupgrade.settings.value.center",
                         "chatupgrade.settings.value.right"),
                 heading("chatupgrade.settings.group.geometry"),
+                bool("chatupgrade.settings.option.screen_margins", panel::usesScreenMargins,
+                        value -> panel.screenMarginsEnabled = value),
                 bool("chatupgrade.settings.option.panel_auto_height", panel::usesAutomaticHeight,
                         value -> panel.automaticHeight = value),
                 integer("chatupgrade.settings.option.panel_left", () -> panel.left,
@@ -731,7 +734,14 @@ public final class ChatSettingsOverlay {
                 color("chatupgrade.settings.option.context_menu_border_color", () -> appearance.contextMenuBorderColor,
                         value -> appearance.contextMenuBorderColor = value),
                 integer("chatupgrade.settings.option.context_menu_corner_radius", () -> appearance.contextMenuCornerRadius,
-                        value -> appearance.contextMenuCornerRadius = value, 0, 12, SettingsOption.ValueFormat.PIXELS));
+                        value -> appearance.contextMenuCornerRadius = value, 0, 12, SettingsOption.ValueFormat.PIXELS)));
+        if (!panel.usesScreenMargins()) {
+            options.removeIf(option -> option.labelKey().equals("chatupgrade.settings.option.panel_auto_height")
+                    || option.labelKey().equals("chatupgrade.settings.option.panel_left")
+                    || option.labelKey().equals("chatupgrade.settings.option.panel_bottom_offset")
+                    || option.labelKey().equals("chatupgrade.settings.option.panel_height"));
+        }
+        return options;
     }
 
     private List<SettingsOption> behaviorOptions() {

@@ -32,6 +32,7 @@
   "chatupgrade.settings.option.split_own_messages": "自己的消息左右分栏",
   "chatupgrade.settings.option.non_player_alignment": "非玩家消息位置",
   "chatupgrade.settings.option.panel_auto_height": "自动使用最大高度",
+  "chatupgrade.settings.option.screen_margins": "界面外边距",
   "chatupgrade.settings.option.panel_left": "面板左侧位置",
   "chatupgrade.settings.option.panel_bottom_offset": "面板底部偏移",
   "chatupgrade.settings.option.panel_width": "面板宽度",

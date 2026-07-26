@@ -18,19 +18,24 @@ public final class ChatSurfaceRenderer {
         }
         ChatAppearanceSnapshot.Surface tokens = frame.appearance().surface();
         RichChatBounds panel = frame.panelBounds();
-        int radius = frame.appearance().cornerRadius();
+        boolean screenMarginsEnabled = frame.appearance().screenMarginsEnabled();
+        int radius = screenMarginsEnabled ? frame.appearance().cornerRadius() : 0;
         UiPrimitives.fillRounded(graphics, panel, radius, tokens.panelBackground());
         UiPrimitives.withRoundedClip(
                 graphics,
                 panel,
                 radius,
-                () -> paintPanelContents(graphics, font, frame, tokens, panel));
-        UiPrimitives.strokeRounded(
-                graphics,
-                panel,
-                radius,
-                tokens.panelBorderWidth(),
-                tokens.panelBorder());
+                () -> paintPanelContents(graphics, font, frame, tokens, panel, screenMarginsEnabled));
+        if (screenMarginsEnabled) {
+            UiPrimitives.strokeRounded(
+                    graphics,
+                    panel,
+                    radius,
+                    tokens.panelBorderWidth(),
+                    tokens.panelBorder());
+        } else {
+            paintRightBorder(graphics, panel, tokens.panelBorderWidth(), tokens.panelBorder());
+        }
     }
 
     private static void paintPanelContents(
@@ -38,7 +43,8 @@ public final class ChatSurfaceRenderer {
             Font font,
             ChatSurfaceFrame frame,
             ChatAppearanceSnapshot.Surface tokens,
-            RichChatBounds panel) {
+            RichChatBounds panel,
+            boolean screenMarginsEnabled) {
         RichChatBounds content = frame.contentBounds();
         RichChatBounds timeline = frame.messageViewportBounds();
         RichChatBounds composer = frame.composerBounds();
@@ -72,7 +78,7 @@ public final class ChatSurfaceRenderer {
                 content.top() + 5,
                 tokens.title(),
                 false);
-        paintResizeGrip(graphics, panel, tokens.resizeGrip());
+        paintResizeGrip(graphics, panel, tokens.resizeGrip(), screenMarginsEnabled);
     }
 
     public static void paintSettingsButton(
@@ -174,8 +180,28 @@ public final class ChatSurfaceRenderer {
         graphics.text(font, text, x + 6, y + 4, tokens.restricted(), false);
     }
 
-    private static void paintResizeGrip(GuiGraphicsExtractor graphics, RichChatBounds panel, int color) {
+    private static void paintRightBorder(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds panel,
+            int width,
+            int color) {
+        int safeWidth = Math.clamp(width, 0, panel.width());
+        if (safeWidth > 0 && UiPrimitives.visible(color)) {
+            graphics.fill(panel.right() - safeWidth, panel.top(), panel.right(), panel.bottom(), color);
+        }
+    }
+
+    private static void paintResizeGrip(
+            GuiGraphicsExtractor graphics,
+            RichChatBounds panel,
+            int color,
+            boolean screenMarginsEnabled) {
         int right = panel.right() - 3;
+        if (!screenMarginsEnabled) {
+            int centerY = panel.top() + panel.height() / 2;
+            graphics.fill(right - 1, centerY - 5, right, centerY + 6, color);
+            return;
+        }
         int bottom = panel.bottom() - 3;
         graphics.fill(right - 7, bottom, right, bottom + 1, color);
         graphics.fill(right - 4, bottom - 3, right, bottom - 2, color);
