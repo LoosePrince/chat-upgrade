@@ -2,6 +2,7 @@ package com.chat.upgrade.client.ui.screen;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.ui.chat.state.ChatAvatar;

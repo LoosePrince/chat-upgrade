@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.ui.chat.state.ChatMessageGroupStore;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
@@ -61,6 +62,21 @@ public final class ChatMessageActionCatalog {
                     Component.translatable("chatupgrade.action.mention"),
                     new ChatAction.Mention(authorName),
                     false));
+            java.util.UUID peerId = message.conversationPeerId();
+            String peerPlayerId = message.privateMessage()
+                    ? ChatMessageGroupStore.privatePeerPlayerId(peerId)
+                    : message.author().fallbackName().trim();
+            if (peerPlayerId.isBlank()) {
+                peerPlayerId = authorName;
+            }
+            if (targetAttachment == null
+                    && peerId != null
+                    && Boolean.TRUE.equals(ChatUpgradeConfig.get().messageGroupingEnabled)) {
+                actions.add(new Item(
+                        Component.translatable("chatupgrade.action.private_message"),
+                        new ChatAction.OpenPrivateConversation(peerId, peerPlayerId),
+                        false));
+            }
             if (targetAttachment == null) {
                 actions.add(new Item(
                         Component.translatable("chatupgrade.action.profile"),

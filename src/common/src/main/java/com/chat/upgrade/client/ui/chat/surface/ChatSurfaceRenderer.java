@@ -39,14 +39,15 @@ public final class ChatSurfaceRenderer {
             ChatSurfaceFrame frame,
             ChatAppearanceSnapshot.Surface tokens,
             RichChatBounds panel) {
+        RichChatBounds content = frame.contentBounds();
         RichChatBounds timeline = frame.messageViewportBounds();
         RichChatBounds composer = frame.composerBounds();
         if (tokens.headerBackground() != tokens.panelBackground()) {
             graphics.fill(
-                    panel.left(),
-                    panel.top(),
-                    panel.right(),
-                    panel.top() + ChatPanelGeometry.HEADER_HEIGHT,
+                    content.left(),
+                    content.top(),
+                    content.right(),
+                    content.top() + ChatPanelGeometry.HEADER_HEIGHT,
                     tokens.headerBackground());
         }
         if (tokens.timelineBackground() != tokens.panelBackground()) {
@@ -56,17 +57,19 @@ public final class ChatSurfaceRenderer {
                 && tokens.composerBackground() != tokens.panelBackground()) {
             graphics.fill(composer.left(), composer.top(), composer.right(), composer.bottom(), tokens.composerBackground());
         }
-        graphics.fill(panel.left(), timeline.top(), panel.right(), timeline.top() + 1, tokens.separator());
+        graphics.fill(content.left(), timeline.top(), content.right(), timeline.top() + 1, tokens.separator());
         if (!frame.appearance().vanillaStyleInput()) {
-            graphics.fill(panel.left(), composer.top(), panel.right(), composer.top() + 1, tokens.separator());
+            graphics.fill(content.left(), composer.top(), content.right(), composer.top() + 1, tokens.separator());
         }
+        ChatMessageGroupSidebar.paint(graphics, font, frame);
         RichChatBounds settingsButton = settingsButtonBounds(frame);
         paintSettingsButton(graphics, frame);
+        paintMessageGroupToggleButton(graphics, frame);
         graphics.text(
                 font,
                 I18n.get("chatupgrade.surface.title"),
                 settingsButton.right() + 4,
-                panel.top() + 5,
+                content.top() + 5,
                 tokens.title(),
                 false);
         paintResizeGrip(graphics, panel, tokens.resizeGrip());
@@ -99,8 +102,34 @@ public final class ChatSurfaceRenderer {
         if (frame == null) {
             return RichChatBounds.ofSize(0, 0, 0, 0);
         }
-        RichChatBounds panel = frame.panelBounds();
-        return RichChatBounds.ofSize(panel.left() + 3, panel.top() + 2, 14, 14);
+        RichChatBounds header = frame.headerBounds();
+        return RichChatBounds.ofSize(header.left() + 3, header.top() + 2, 14, 14);
+    }
+
+    private static void paintMessageGroupToggleButton(
+            GuiGraphicsExtractor graphics,
+            ChatSurfaceFrame frame) {
+        if (!frame.messageGroupingEnabled()) {
+            return;
+        }
+        ChatAppearanceSnapshot appearance = frame.appearance();
+        RichChatBounds bounds = frame.messageGroupToggleButtonBounds();
+        int radius = Math.clamp(appearance.cornerRadius(), 0, Math.min(bounds.width(), bounds.height()) / 2);
+        UiPrimitives.paintBox(
+                graphics,
+                bounds,
+                radius,
+                appearance.contextMenu().borderWidth(),
+                frame.messageGroupSidebarExpanded()
+                        ? appearance.media().controlActiveBackground()
+                        : appearance.media().controlBackground(),
+                appearance.contextMenu().border());
+        int lineLeft = bounds.left() + 3;
+        int lineRight = bounds.right() - 3;
+        int color = appearance.surface().title();
+        graphics.fill(lineLeft, bounds.top() + 4, lineRight, bounds.top() + 5, color);
+        graphics.fill(lineLeft, bounds.top() + 7, lineRight, bounds.top() + 8, color);
+        graphics.fill(lineLeft, bounds.top() + 10, lineRight, bounds.top() + 11, color);
     }
 
     public static void paintTimelineState(

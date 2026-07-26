@@ -74,9 +74,25 @@ public final class RichChatIngress {
             RichChatMessageSource source,
             @Nullable MessageSignature signature,
             RichChatMessageStatus status) {
+        ChatMessageKind classified = ChatMessageClassifier.classify(component, null, source);
+        ChatAuthor author = ChatIdentityResolver.resolve(
+                ChatAuthor.legacy(senderName),
+                component,
+                classified);
+        ChatPrivateMessageResolver.Resolution privateResolution = ChatPrivateMessageResolver.resolve(component, author);
+        if (privateResolution != null) {
+            ChatMessageGroupStore.rememberPeer(privateResolution.peerId(), privateResolution.peerPlayerId());
+            author = privateResolution.author();
+            classified = ChatMessageKind.PLAYER;
+        }
         return RichChatStateStore.append(new RichChatMessage(
                 messageId,
-                senderName,
+                author,
+                classified,
+                privateResolution == null ? null : privateResolution.peerId(),
+                privateResolution == null ? null : privateResolution.body(),
+                currentTimestampMs(),
+                null,
                 addedTime,
                 component,
                 originalComponent,
@@ -129,11 +145,19 @@ public final class RichChatIngress {
                 ChatAuthor.legacy(suppliedName),
                 component,
                 classified);
+        ChatPrivateMessageResolver.Resolution privateResolution = ChatPrivateMessageResolver.resolve(component, author);
+        if (privateResolution != null) {
+            ChatMessageGroupStore.rememberPeer(privateResolution.peerId(), privateResolution.peerPlayerId());
+            author = privateResolution.author();
+            classified = ChatMessageKind.PLAYER;
+        }
         return recordStructured(
                 messageId,
                 author,
                 classified,
-                0L,
+                privateResolution == null ? null : privateResolution.peerId(),
+                privateResolution == null ? null : privateResolution.body(),
+                currentTimestampMs(),
                 null,
                 normalized.body(),
                 normalized.body().getString(),
@@ -155,11 +179,53 @@ public final class RichChatIngress {
             List<RichAttachment> attachments,
             List<InlineEmojiSlot> inlineEmojiSlots,
             RichChatMessageSource source) {
+        return recordStructured(
+                messageId,
+                author,
+                kind,
+                null,
+                null,
+                serverTimestampMs,
+                replyTo,
+                component,
+                plainText,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source);
+    }
+
+    public static RichChatMessage recordStructured(
+            String messageId,
+            ChatAuthor author,
+            ChatMessageKind kind,
+            @Nullable java.util.UUID privatePeerId,
+            @Nullable Component privateBodyComponent,
+            long serverTimestampMs,
+            @Nullable ChatReplySummary replyTo,
+            Component component,
+            String plainText,
+            String fallbackText,
+            List<RichAttachment> attachments,
+            List<InlineEmojiSlot> inlineEmojiSlots,
+            RichChatMessageSource source) {
+        ChatPrivateMessageResolver.Resolution privateResolution = privatePeerId == null
+                ? ChatPrivateMessageResolver.resolve(component, author)
+                : null;
+        if (privateResolution != null) {
+            ChatMessageGroupStore.rememberPeer(privateResolution.peerId(), privateResolution.peerPlayerId());
+            author = privateResolution.author();
+            kind = ChatMessageKind.PLAYER;
+            privatePeerId = privateResolution.peerId();
+            privateBodyComponent = privateResolution.body();
+        }
         return RichChatStateStore.append(new RichChatMessage(
                 messageId,
                 author,
                 kind,
-                serverTimestampMs,
+                privatePeerId,
+                privateBodyComponent,
+                serverTimestampMs > 0L ? serverTimestampMs : currentTimestampMs(),
                 replyTo,
                 currentGuiTicks(),
                 component,
@@ -194,6 +260,10 @@ public final class RichChatIngress {
 
     public static void clear() {
         RichChatStateStore.clear();
+    }
+
+    private static long currentTimestampMs() {
+        return System.currentTimeMillis();
     }
 
     private static int currentGuiTicks() {

@@ -87,6 +87,19 @@ public sealed interface ChatAction {
         }
     }
 
+    record OpenPrivateConversation(java.util.UUID peerId, String peerPlayerId) implements ChatAction {
+        public OpenPrivateConversation(java.util.UUID peerId) {
+            this(peerId, "");
+        }
+
+        public OpenPrivateConversation {
+            if (peerId == null) {
+                throw new IllegalArgumentException("private conversation peer must not be null");
+            }
+            peerPlayerId = safe(peerPlayerId);
+        }
+    }
+
     record ShowProfile(String authorKey) implements ChatAction {
         public ShowProfile {
             authorKey = safe(authorKey);

@@ -21,6 +21,7 @@ public final class ChatUpgradeConfig {
     public static final int ABSOLUTE_MAX_TRANSFER_BYTES = 10 * 1024 * 1024;
     public static final int ABSOLUTE_MAX_UPLOAD_BYTES = ABSOLUTE_MAX_TRANSFER_BYTES;
     public static final int ABSOLUTE_MAX_RECEIVE_BYTES = ABSOLUTE_MAX_TRANSFER_BYTES;
+    public static final String DEFAULT_PRIVATE_MESSAGE_COMMAND = "/msg <id> <message>";
 
     private static volatile ChatUpgradeConfig instance = defaults();
 
@@ -30,6 +31,9 @@ public final class ChatUpgradeConfig {
     public Boolean chatScreenMaskEnabled = false;
     public MentionNotificationMode mentionNotificationMode = MentionNotificationMode.SOUND;
     public Boolean messagePassthroughEnabled = false;
+    public Boolean messageGroupingEnabled = false;
+    public MessageGroupPosition messageGroupPosition = MessageGroupPosition.LEFT;
+    public String privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
     public ChatPanelConfig chatPanel = new ChatPanelConfig();
     public AppearanceConfig appearance = new AppearanceConfig();
 
@@ -151,6 +155,11 @@ public final class ChatUpgradeConfig {
         TITLE
     }
 
+    public enum MessageGroupPosition {
+        LEFT,
+        RIGHT
+    }
+
     private static ChatUpgradeConfig defaults() {
         ChatUpgradeConfig config = new ChatUpgradeConfig();
         config.ciCompatibility = false;
@@ -170,6 +179,9 @@ public final class ChatUpgradeConfig {
         config.chatScreenMaskEnabled = false;
         config.mentionNotificationMode = MentionNotificationMode.SOUND;
         config.messagePassthroughEnabled = false;
+        config.messageGroupingEnabled = false;
+        config.messageGroupPosition = MessageGroupPosition.LEFT;
+        config.privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
         config.chatPanel = new ChatPanelConfig();
         config.appearance = new AppearanceConfig();
         config.normalizeLimits();
@@ -188,6 +200,9 @@ public final class ChatUpgradeConfig {
         Boolean beforeChatScreenMaskEnabled = chatScreenMaskEnabled;
         MentionNotificationMode beforeMentionNotificationMode = mentionNotificationMode;
         Boolean beforeMessagePassthroughEnabled = messagePassthroughEnabled;
+        Boolean beforeMessageGroupingEnabled = messageGroupingEnabled;
+        MessageGroupPosition beforeMessageGroupPosition = messageGroupPosition;
+        String beforePrivateMessageCommand = privateMessageCommand;
         ChatPanelConfig beforeChatPanel = chatPanel;
         AppearanceConfig beforeAppearance = appearance;
         String beforeChatPanelJson = chatPanel == null ? "" : GSON.toJson(chatPanel);
@@ -206,6 +221,9 @@ public final class ChatUpgradeConfig {
                 ? MentionNotificationMode.SOUND
                 : mentionNotificationMode;
         messagePassthroughEnabled = messagePassthroughEnabled == null ? false : messagePassthroughEnabled;
+        messageGroupingEnabled = messageGroupingEnabled == null ? false : messageGroupingEnabled;
+        messageGroupPosition = messageGroupPosition == null ? MessageGroupPosition.LEFT : messageGroupPosition;
+        privateMessageCommand = normalizePrivateMessageCommand(privateMessageCommand);
 
         if (chatPanel == null) {
             chatPanel = new ChatPanelConfig();
@@ -235,6 +253,11 @@ public final class ChatUpgradeConfig {
                 || beforeMentionNotificationMode != mentionNotificationMode
                 || beforeMessagePassthroughEnabled == null
                 || beforeMessagePassthroughEnabled != messagePassthroughEnabled
+                || beforeMessageGroupingEnabled == null
+                || beforeMessageGroupingEnabled != messageGroupingEnabled
+                || beforeMessageGroupPosition != messageGroupPosition
+                || beforePrivateMessageCommand == null
+                || !beforePrivateMessageCommand.equals(privateMessageCommand)
                 || beforeChatPanel != chatPanel
                 || !beforeChatPanelJson.equals(GSON.toJson(chatPanel))
                 || beforeAppearance != appearance
@@ -244,6 +267,24 @@ public final class ChatUpgradeConfig {
     private static int normalizeTransferLimit(int bytes, int fallback) {
         int safe = bytes <= 0 ? fallback : bytes;
         return Math.min(safe, ABSOLUTE_MAX_TRANSFER_BYTES);
+    }
+
+    public static boolean validPrivateMessageCommand(String value) {
+        String normalized = value == null ? "" : value.trim();
+        int idIndex = normalized.indexOf("<id>");
+        int uuidIndex = normalized.indexOf("<uuid>");
+        int messageIndex = normalized.indexOf("<message>");
+        boolean hasExactlyOneTarget = (idIndex >= 0) != (uuidIndex >= 0);
+        int targetIndex = idIndex >= 0 ? idIndex : uuidIndex;
+        return hasExactlyOneTarget && messageIndex > targetIndex;
+    }
+
+    private static String normalizePrivateMessageCommand(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (!validPrivateMessageCommand(normalized)) {
+            return DEFAULT_PRIVATE_MESSAGE_COMMAND;
+        }
+        return normalized.startsWith("/") ? normalized : "/" + normalized;
     }
 
     private static void normalizeAppearance(AppearanceConfig value) {
@@ -309,6 +350,9 @@ public final class ChatUpgradeConfig {
                 boolean containsChatScreenMask = json.contains("\"chatScreenMaskEnabled\"");
                 boolean containsMentionNotificationMode = json.contains("\"mentionNotificationMode\"");
                 boolean containsMessagePassthrough = json.contains("\"messagePassthroughEnabled\"");
+                boolean containsMessageGrouping = json.contains("\"messageGroupingEnabled\"");
+                boolean containsMessageGroupPosition = json.contains("\"messageGroupPosition\"");
+                boolean containsPrivateMessageCommand = json.contains("\"privateMessageCommand\"");
                 boolean containsCompactMediaCards = json.contains("\"compactMediaCards\"");
                 ChatUpgradeConfig read = GSON.fromJson(json, ChatUpgradeConfig.class);
                 if (read == null) {
@@ -322,6 +366,18 @@ public final class ChatUpgradeConfig {
                 }
                 if (!containsMessagePassthrough) {
                     read.messagePassthroughEnabled = false;
+                    migratedLegacyDefaults = true;
+                }
+                if (!containsMessageGrouping) {
+                    read.messageGroupingEnabled = false;
+                    migratedLegacyDefaults = true;
+                }
+                if (!containsMessageGroupPosition) {
+                    read.messageGroupPosition = MessageGroupPosition.LEFT;
+                    migratedLegacyDefaults = true;
+                }
+                if (!containsPrivateMessageCommand) {
+                    read.privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
                     migratedLegacyDefaults = true;
                 }
                 if (!containsCompactMediaCards) {
@@ -349,6 +405,9 @@ public final class ChatUpgradeConfig {
                         || !containsChatScreenMask
                         || !containsMentionNotificationMode
                         || !containsMessagePassthrough
+                        || !containsMessageGrouping
+                        || !containsMessageGroupPosition
+                        || !containsPrivateMessageCommand
                         || !containsCompactMediaCards
                         || migratedLegacyDefaults;
                 instance = read;

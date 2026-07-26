@@ -25,6 +25,7 @@ public final class ChatSurfaceState {
     private Overlay overlay = Overlay.NONE;
     private FocusOwner focusOwner = FocusOwner.NONE;
     private boolean restricted;
+    private boolean messageGroupSidebarExpanded = true;
     private int screenWidth = 1;
     private int screenHeight = 1;
     private int panelBottomInset = ChatPanelGeometry.SCREEN_MARGIN;
@@ -51,6 +52,10 @@ public final class ChatSurfaceState {
 
     public boolean restricted() {
         return restricted;
+    }
+
+    public boolean messageGroupSidebarExpanded() {
+        return messageGroupSidebarExpanded;
     }
 
     public int screenWidth() {
@@ -112,6 +117,10 @@ public final class ChatSurfaceState {
         restricted = nextRestricted;
     }
 
+    public void toggleMessageGroupSidebar() {
+        messageGroupSidebarExpanded = !messageGroupSidebarExpanded;
+    }
+
     public void setOverlay(Overlay nextOverlay) {
         overlay = nextOverlay == null ? Overlay.NONE : nextOverlay;
         if (overlay != Overlay.NONE) {
@@ -128,6 +137,12 @@ public final class ChatSurfaceState {
     }
 
     public ChatSurfaceFrame frame() {
-        return new ChatSurfaceFrame(presentationMode, panelGeometry, restricted, appearance);
+        return new ChatSurfaceFrame(
+                presentationMode,
+                panelGeometry,
+                restricted,
+                appearance,
+                com.chat.upgrade.client.ChatClientConfigRuntime.uiPreferences(),
+                messageGroupSidebarExpanded);
     }
 }

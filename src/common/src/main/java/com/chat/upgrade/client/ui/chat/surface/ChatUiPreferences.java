@@ -10,7 +10,10 @@ public record ChatUiPreferences(
         boolean screenMaskEnabled,
         boolean compactMediaCards,
         ChatUpgradeConfig.MentionNotificationMode mentionNotificationMode,
-        boolean messagePassthroughEnabled) {
+        boolean messagePassthroughEnabled,
+        boolean messageGroupingEnabled,
+        ChatUpgradeConfig.MessageGroupPosition messageGroupPosition,
+        String privateMessageCommand) {
     public static ChatUiPreferences from(ChatUpgradeConfig config) {
         ChatUpgradeConfig source = config == null ? ChatUpgradeConfig.get() : config;
         String placeholder = source.chatInputPlaceholder == null ? "" : source.chatInputPlaceholder;
@@ -22,7 +25,14 @@ public record ChatUiPreferences(
                 source.usesChatScreenMask(),
                 source.compactMediaCards,
                 notificationMode,
-                Boolean.TRUE.equals(source.messagePassthroughEnabled));
+                Boolean.TRUE.equals(source.messagePassthroughEnabled),
+                Boolean.TRUE.equals(source.messageGroupingEnabled),
+                source.messageGroupPosition == null
+                        ? ChatUpgradeConfig.MessageGroupPosition.LEFT
+                        : source.messageGroupPosition,
+                source.privateMessageCommand == null
+                        ? ChatUpgradeConfig.DEFAULT_PRIVATE_MESSAGE_COMMAND
+                        : source.privateMessageCommand);
     }
 
     public Component resolvedInputPlaceholder() {

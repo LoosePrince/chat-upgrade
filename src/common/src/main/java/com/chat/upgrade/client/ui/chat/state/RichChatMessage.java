@@ -18,6 +18,8 @@ public record RichChatMessage(
         String messageId,
         ChatAuthor author,
         ChatMessageKind kind,
+        @Nullable java.util.UUID privatePeerId,
+        @Nullable Component privateBodyComponent,
         long serverTimestampMs,
         @Nullable ChatReplySummary replyTo,
         int addedTime,
@@ -43,6 +45,8 @@ public record RichChatMessage(
                 messageId,
                 ChatAuthor.legacy(senderName),
                 defaultKind(source),
+                null,
+                null,
                 0L,
                 null,
                 currentGuiTicks(),
@@ -74,6 +78,8 @@ public record RichChatMessage(
                 messageId,
                 ChatAuthor.legacy(senderName),
                 defaultKind(source),
+                null,
+                null,
                 0L,
                 null,
                 addedTime,
@@ -92,6 +98,9 @@ public record RichChatMessage(
         messageId = normalizeId(messageId);
         author = author == null ? ChatAuthor.system() : author;
         kind = kind == null ? defaultKind(source) : kind;
+        if (privatePeerId == null) {
+            privateBodyComponent = null;
+        }
         serverTimestampMs = Math.max(0L, serverTimestampMs);
         component = component == null ? Component.empty() : component;
         originalComponent = originalComponent == null ? component : originalComponent;
@@ -105,6 +114,7 @@ public record RichChatMessage(
             replyTo = null;
             component = Component.empty();
             originalComponent = Component.empty();
+            privateBodyComponent = null;
             plainText = "";
             fallbackText = "";
             attachments = List.of();
@@ -119,6 +129,25 @@ public record RichChatMessage(
 
     public boolean authoredByLocalPlayer() {
         return author.playerId() != null && author.localPlayer();
+    }
+
+    public boolean privateMessage() {
+        return privatePeerId != null;
+    }
+
+    public RichChatMessage forPrivateGroupDisplay() {
+        if (privateBodyComponent == null) {
+            return this;
+        }
+        String bodyText = privateBodyComponent.getString();
+        return withComponent(privateBodyComponent, bodyText, bodyText);
+    }
+
+    public @Nullable java.util.UUID conversationPeerId() {
+        if (privatePeerId != null) {
+            return privatePeerId;
+        }
+        return author.playerId() != null && !author.localPlayer() ? author.playerId() : null;
     }
 
     public boolean hasRenderableAttachment() {
@@ -137,6 +166,29 @@ public record RichChatMessage(
                 messageId,
                 nextAuthor,
                 nextKind,
+                privatePeerId,
+                privateBodyComponent,
+                serverTimestampMs,
+                replyTo,
+                addedTime,
+                component,
+                originalComponent,
+                plainText,
+                fallbackText,
+                attachments,
+                inlineEmojiSlots,
+                source,
+                signature,
+                status);
+    }
+
+    public RichChatMessage withPrivatePeerId(@Nullable java.util.UUID nextPrivatePeerId) {
+        return new RichChatMessage(
+                messageId,
+                author,
+                kind,
+                nextPrivatePeerId,
+                privateBodyComponent,
                 serverTimestampMs,
                 replyTo,
                 addedTime,
@@ -156,6 +208,8 @@ public record RichChatMessage(
                 messageId,
                 author,
                 kind,
+                privatePeerId,
+                privateBodyComponent,
                 serverTimestampMs,
                 nextReplyTo,
                 addedTime,
@@ -175,6 +229,8 @@ public record RichChatMessage(
                 messageId,
                 author,
                 kind,
+                privatePeerId,
+                privateBodyComponent,
                 serverTimestampMs,
                 replyTo,
                 addedTime,
@@ -195,6 +251,8 @@ public record RichChatMessage(
                 messageId,
                 author,
                 kind,
+                privatePeerId,
+                privateBodyComponent,
                 serverTimestampMs,
                 replyTo,
                 addedTime,

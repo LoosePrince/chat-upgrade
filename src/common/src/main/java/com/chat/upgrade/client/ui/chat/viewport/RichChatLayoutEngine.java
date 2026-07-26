@@ -11,6 +11,7 @@ import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
 import com.chat.upgrade.client.ui.chat.InlineEmojiLayout;
 import com.chat.upgrade.client.ui.chat.InlineEmojiSlot;
 import com.chat.upgrade.client.ui.chat.interaction.ChatHitTarget;
+import com.chat.upgrade.client.ui.chat.state.ChatMessageGroupStore;
 import com.chat.upgrade.client.ui.chat.state.ChatMessageMetadata;
 import com.chat.upgrade.client.ui.chat.state.ChatReplySummary;
 import com.chat.upgrade.client.ui.chat.state.ChatTimelineProjection;
@@ -47,14 +48,18 @@ public final class RichChatLayoutEngine {
         return layout(
                 font,
                 metrics,
-                RichChatStateStore.snapshotNewestFirst(),
-                RichChatStateStore.version(),
+                ChatMessageGroupStore.filterNewestFirst(RichChatStateStore.snapshotNewestFirst()),
+                combinedStoreVersion(),
                 appearance,
                 presentationMode);
     }
 
     public RichChatLayout layoutFromStore(Font font, RichChatViewportMetrics metrics) {
         return layoutFromStore(font, metrics, ChatAppearanceRuntime.current());
+    }
+
+    private static long combinedStoreVersion() {
+        return (RichChatStateStore.version() << 32) ^ ChatMessageGroupStore.version();
     }
 
     public RichChatLayout layout(
@@ -178,14 +183,12 @@ public final class RichChatLayoutEngine {
                 ? RichChatBounds.ofSize(avatarLeft, top, resolvedAvatarSize, resolvedAvatarSize)
                 : null;
         String rawMetadataLabel = showMetadata ? ChatMessageMetadata.label(timeline) : "";
-        String metadataLabel = showMetadata
-                ? font.plainSubstrByWidth(rawMetadataLabel, contentWidth)
-                : "";
+        String metadataLabel = rawMetadataLabel;
         boolean metadataOnOwnLine = showMetadata && (policy.doubleLineLayout()
                 || message.replyTo() != null
                 || !message.attachments().isEmpty()
                 || font.width(rawMetadataLabel) + 12 >= contentWidth);
-        int metadataTextWidth = Math.max(1, Math.min(contentWidth, font.width(metadataLabel)));
+        int metadataTextWidth = Math.max(1, font.width(metadataLabel));
         int metadataLeft = alignRight ? contentRight - metadataTextWidth : contentLeft;
         RichChatBounds metadataBounds = showMetadata
                 ? RichChatBounds.ofSize(metadataLeft, top + bubblePadding, metadataTextWidth, metrics.entryHeight())

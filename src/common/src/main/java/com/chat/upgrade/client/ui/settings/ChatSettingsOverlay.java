@@ -41,6 +41,7 @@ public final class ChatSettingsOverlay {
     private static final int HEADING_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 18;
     private static final int PLACEHOLDER_MAX_LENGTH = 256;
+    private static final int COMMAND_TEMPLATE_MAX_LENGTH = 512;
     private static final float TEXT_SCALE = 0.75F;
 
     private static final int DIM = 0xA0000000;
@@ -101,6 +102,10 @@ public final class ChatSettingsOverlay {
 
     public boolean save() {
         if (!open || draft == null) {
+            return false;
+        }
+        if (!ChatUpgradeConfig.validPrivateMessageCommand(draft.privateMessageCommand)) {
+            errorMessage = I18n.get("chatupgrade.settings.error.private_message_command");
             return false;
         }
         try {
@@ -754,6 +759,17 @@ public final class ChatSettingsOverlay {
                         "chatupgrade.settings.option.message_passthrough.description",
                         () -> Boolean.TRUE.equals(draft.messagePassthroughEnabled),
                         value -> draft.messagePassthroughEnabled = value),
+                bool(
+                        "chatupgrade.settings.option.message_grouping",
+                        "chatupgrade.settings.option.message_grouping.description",
+                        () -> Boolean.TRUE.equals(draft.messageGroupingEnabled),
+                        value -> draft.messageGroupingEnabled = value),
+                enumeration(
+                        "chatupgrade.settings.option.message_group_position",
+                        () -> draft.messageGroupPosition.ordinal(),
+                        index -> draft.messageGroupPosition = ChatUpgradeConfig.MessageGroupPosition.values()[index],
+                        "chatupgrade.settings.value.left",
+                        "chatupgrade.settings.value.right"),
                 bool("chatupgrade.settings.option.smooth_scroll", () -> Boolean.TRUE.equals(draft.smoothScrollEnabled),
                         value -> draft.smoothScrollEnabled = value),
                 bool("chatupgrade.settings.option.debug_actions", () -> draft.debugChatActions,
@@ -791,6 +807,12 @@ public final class ChatSettingsOverlay {
                         value -> draft.maxUploadBytes = fromMebibytes(value), 1, 10, SettingsOption.ValueFormat.MEBIBYTES),
                 bool("chatupgrade.settings.option.ci_compatibility", () -> draft.ciCompatibility,
                         value -> draft.ciCompatibility = value),
+                text(
+                        "chatupgrade.settings.option.private_message_command",
+                        "chatupgrade.settings.option.private_message_command.description",
+                        () -> draft.privateMessageCommand,
+                        value -> draft.privateMessageCommand = value,
+                        COMMAND_TEMPLATE_MAX_LENGTH),
                 enumeration(
                         "chatupgrade.settings.option.chat_input_mode",
                         () -> draft.chatInputMode.ordinal(),
@@ -819,6 +841,10 @@ public final class ChatSettingsOverlay {
                 return;
             }
             visibleTextOption.setter().accept(value);
+            if ("chatupgrade.settings.option.private_message_command".equals(visibleTextOption.labelKey())) {
+                errorMessage = null;
+                return;
+            }
             previewDraft();
         });
         syncTextEditorValue(draft.chatInputPlaceholder);
@@ -886,6 +912,8 @@ public final class ChatSettingsOverlay {
                 draft.chatScreenMaskEnabled = true;
                 draft.mentionNotificationMode = ChatUpgradeConfig.MentionNotificationMode.SOUND;
                 draft.messagePassthroughEnabled = false;
+                draft.messageGroupingEnabled = false;
+                draft.messageGroupPosition = ChatUpgradeConfig.MessageGroupPosition.LEFT;
                 draft.smoothScrollEnabled = true;
                 draft.debugChatActions = false;
                 syncTextEditorValue("");
@@ -903,6 +931,7 @@ public final class ChatSettingsOverlay {
                 draft.uploadMode = ChatUpgradeConfig.UploadMode.AUTO;
                 draft.maxUploadBytes = ChatUpgradeConfig.DEFAULT_MAX_UPLOAD_BYTES;
                 draft.ciCompatibility = false;
+                draft.privateMessageCommand = ChatUpgradeConfig.DEFAULT_PRIVATE_MESSAGE_COMMAND;
                 draft.chatInputMode = ChatUpgradeConfig.ChatInputMode.TAKEOVER;
             }
         }

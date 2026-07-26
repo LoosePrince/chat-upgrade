@@ -6,6 +6,7 @@ import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
+import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
 public final class ChatSurfaceController {
     private enum PointerOperation {
@@ -117,7 +118,13 @@ public final class ChatSurfaceController {
         if (isOverTimelineScrollbar(pointerX, pointerY)) {
             return false;
         }
-        if (geometry.headerBounds().contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
+        ChatSurfaceFrame frame = STATE.frame();
+        if (frame.messageGroupingEnabled()
+                && frame.messageGroupToggleButtonBounds()
+                        .contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
+            return false;
+        }
+        if (frame.headerBounds().contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
             if (!ChatGestureArena.tryCapture(
                     ChatGestureArena.Owner.PANEL,
                     ChatSurfaceController::cancelPointerOperation)) {
@@ -188,6 +195,43 @@ public final class ChatSurfaceController {
 
     public static RichChatBounds messageViewportBounds() {
         return STATE.frame().messageViewportBounds();
+    }
+
+    public static boolean toggleMessageGroupSidebarAt(double pointerX, double pointerY, int button) {
+        if (button != 0 || STATE.presentationMode() != ChatPresentationMode.OPEN_PANEL) {
+            return false;
+        }
+        ChatSurfaceFrame frame = STATE.frame();
+        if (!frame.messageGroupingEnabled()
+                || !frame.messageGroupToggleButtonBounds()
+                        .contains((int) Math.round(pointerX), (int) Math.round(pointerY))) {
+            return false;
+        }
+        STATE.toggleMessageGroupSidebar();
+        STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
+        STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
+        RichChatViewport.invalidateAll();
+        return true;
+    }
+
+    public static boolean selectMessageGroupAt(double pointerX, double pointerY, int button) {
+        if (STATE.presentationMode() != ChatPresentationMode.OPEN_PANEL) {
+            return false;
+        }
+        boolean handled = ChatMessageGroupSidebar.selectAt(STATE.frame(), pointerX, pointerY, button);
+        if (handled) {
+            STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
+            STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
+        }
+        return handled;
+    }
+
+    public static boolean scrollMessageGroupsAt(
+            double pointerX,
+            double pointerY,
+            double scrollAmount) {
+        return STATE.presentationMode() == ChatPresentationMode.OPEN_PANEL
+                && ChatMessageGroupSidebar.scrollAt(STATE.frame(), pointerX, pointerY, scrollAmount);
     }
 
     public static void previewPanelGeometry(

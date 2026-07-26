@@ -28,6 +28,7 @@ import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import com.chat.upgrade.client.ui.chat.input.EmojiPickerPopover;
 import com.chat.upgrade.client.ui.chat.input.MentionCompletionPopover;
 import com.chat.upgrade.client.ui.chat.input.NativeFileDialogModal;
+import com.chat.upgrade.client.ui.chat.input.PrivateMessageCommandService;
 import com.chat.upgrade.client.ui.chat.interaction.ChatContextMenu;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGesture;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
@@ -80,6 +81,17 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Shadow
     protected abstract void handleChatInput(String message, boolean addToHistory);
+
+    @Unique
+    private void chatupgrade$handleVanillaChatInput(String message) {
+        PrivateMessageCommandService.observeSubmittedCommand(message);
+        handleChatInput(message, true);
+    }
+
+    @Unique
+    private void chatupgrade$handlePrivateCommand(String command) {
+        handleChatInput(command, true);
+    }
 
     @Unique
     private final ChatComposerState chatupgrade$composerState = new ChatComposerState();
@@ -218,10 +230,27 @@ public abstract class ChatScreenRichInputMixin extends Screen
             cir.setReturnValue(true);
             return;
         }
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.toggleMessageGroupSidebarAt(event.x(), event.y(), event.button())) {
+            RichChatInteractionRouter.cancelAllPointerCapture();
+            chatupgrade$closeContextMenu();
+            chatupgrade$restoreComposerFocus();
+            chatupgrade$refreshControls();
+            cir.setReturnValue(true);
+            return;
+        }
         if (event.button() == 0
                 && ChatSurfaceRenderer.settingsButtonBounds(chatupgrade$settingsButtonFrame())
                         .contains((int) Math.round(event.x()), (int) Math.round(event.y()))) {
             chatupgrade$openSettingsOverlay();
+            cir.setReturnValue(true);
+            return;
+        }
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.selectMessageGroupAt(event.x(), event.y(), event.button())) {
+            chatupgrade$closeContextMenu();
+            chatupgrade$restoreComposerFocus();
+            chatupgrade$refreshControls();
             cir.setReturnValue(true);
             return;
         }
@@ -480,6 +509,11 @@ public abstract class ChatScreenRichInputMixin extends Screen
             cir.setReturnValue(true);
             return;
         }
+        if (ChatUpgradeChatPipelineGate.isTakeoverMode()
+                && ChatSurfaceController.scrollMessageGroupsAt(mouseX, mouseY, scrollY)) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (ChatUpgradeChatPipelineGate.isTakeoverMode() && chatupgrade$contextMenu.isOpen()) {
             cir.setReturnValue(true);
             return;
@@ -565,6 +599,10 @@ public abstract class ChatScreenRichInputMixin extends Screen
         if (ChatUpgradeChatPipelineGate.isTakeoverMode()
                 && ChatCommandBridge.isCommand(input == null ? "" : input.getValue())
                 && (input == null || input.getValue().trim().length() <= 1)) {
+            cir.setReturnValue(true);
+            return;
+        }
+        if (chatupgrade$submitPrivateMessageIfActive(input == null ? "" : input.getValue())) {
             cir.setReturnValue(true);
             return;
         }
@@ -795,6 +833,32 @@ public abstract class ChatScreenRichInputMixin extends Screen
     }
 
     @Unique
+    private boolean chatupgrade$submitPrivateMessageIfActive(String submittedMessage) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()
+                || !PrivateMessageCommandService.privateConversationActive()
+                || ChatCommandBridge.isCommand(submittedMessage)) {
+            return false;
+        }
+        if (chatupgrade$composerState.hasDraft()) {
+            chatupgrade$systemMessage(Component.translatable("chatupgrade.private.attachments_unsupported")
+                    .withStyle(ChatFormatting.RED));
+            return true;
+        }
+        String normalizedMessage = normalizeChatMessage(submittedMessage == null ? "" : submittedMessage);
+        if (normalizedMessage.isBlank()) {
+            return true;
+        }
+        if (!PrivateMessageCommandService.sendToActivePeer(
+                normalizedMessage,
+                this::chatupgrade$handlePrivateCommand)) {
+            return true;
+        }
+        chatupgrade$composerState.clearReplyTarget();
+        chatupgrade$finishSuccessfulSubmit(submittedMessage);
+        return true;
+    }
+
+    @Unique
     private boolean chatupgrade$shouldSendPlainTextTakeover() {
         if (chatupgrade$composerState.hasDraft()) {
             return false;
@@ -817,19 +881,29 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Unique
     private void chatupgrade$submitFromOwnedButton() {
-        if (!ChatUpgradeChatPipelineGate.isTakeoverMode() || input == null || commandSuggestions == null
-                || !commandSuggestions.hasAllowedInput() || chatupgrade$composerState.isUploading()) {
+        if (!ChatUpgradeChatPipelineGate.isTakeoverMode()
+                || input == null
+                || chatupgrade$composerState.isUploading()) {
             return;
         }
         String submittedMessage = input.getValue();
+        boolean privatePlainText = PrivateMessageCommandService.privateConversationActive()
+                && !ChatCommandBridge.isCommand(submittedMessage);
+        if (!privatePlainText
+                && (commandSuggestions == null || !commandSuggestions.hasAllowedInput())) {
+            return;
+        }
         if (submittedMessage.trim().isEmpty() && !chatupgrade$composerState.hasDraft()) {
             return;
         }
         ChatTextSelectionState.clear();
         if (ChatCommandBridge.isCommand(submittedMessage)) {
-            if (ChatCommandBridge.execute(submittedMessage, value -> handleChatInput(value, true))) {
+            if (ChatCommandBridge.execute(submittedMessage, this::chatupgrade$handleVanillaChatInput)) {
                 chatupgrade$finishSuccessfulCommandSubmit();
             }
+            return;
+        }
+        if (chatupgrade$submitPrivateMessageIfActive(submittedMessage)) {
             return;
         }
         if (chatupgrade$composerState.hasDraft()) {

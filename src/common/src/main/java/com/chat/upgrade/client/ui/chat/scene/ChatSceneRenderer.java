@@ -476,20 +476,13 @@ public final class ChatSceneRenderer {
         int nameColor = ARGB.color(textAlpha, nameRgb);
         int mutedColor = ARGB.color(textAlpha, appearance.surface().muted() & 0x00FFFFFF);
         int cursorX = bounds.left();
-        int remainingWidth = bounds.width();
-        boolean fullAuthorVisible = author.isBlank();
         if (!author.isBlank()) {
-            String visibleAuthor = font.plainSubstrByWidth(author, remainingWidth);
-            graphics.text(font, visibleAuthor, cursorX, bounds.top(), nameColor, false);
-            int authorWidth = font.width(visibleAuthor);
-            cursorX += authorWidth;
-            remainingWidth = Math.max(0, remainingWidth - authorWidth);
-            fullAuthorVisible = visibleAuthor.equals(author);
+            graphics.text(font, author, cursorX, bounds.top(), nameColor, false);
+            cursorX += font.width(author);
         }
-        if (!timestamp.isBlank() && fullAuthorVisible && remainingWidth > 0) {
+        if (!timestamp.isBlank()) {
             String timestampLabel = author.isBlank() ? timestamp : " · " + timestamp;
-            String visibleTimestamp = font.plainSubstrByWidth(timestampLabel, remainingWidth);
-            graphics.text(font, visibleTimestamp, cursorX, bounds.top(), mutedColor, false);
+            graphics.text(font, timestampLabel, cursorX, bounds.top(), mutedColor, false);
         }
     }
 

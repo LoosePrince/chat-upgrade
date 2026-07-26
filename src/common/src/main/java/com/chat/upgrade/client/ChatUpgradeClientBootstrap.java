@@ -15,8 +15,11 @@ import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
 import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
+import com.chat.upgrade.client.ui.chat.state.ChatMessageGroupStore;
+import com.chat.upgrade.client.ui.chat.state.ChatPrivateMessageResolver;
 import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
+import com.chat.upgrade.client.ui.chat.surface.ChatMessageGroupSidebar;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
@@ -86,6 +89,9 @@ public final class ChatUpgradeClientBootstrap {
     public static void clearAllChatRuntimeState() {
         RichChatIngress.clear();
         RichChatProjectionCoordinator.clear();
+        ChatMessageGroupStore.clearSession();
+        ChatMessageGroupSidebar.clearSession();
+        ChatPrivateMessageResolver.clearSession();
         RichChatInteractionRouter.clear();
         ChatMessageVisibilityStore.clearSession();
         ChatTextSelectionState.clear();

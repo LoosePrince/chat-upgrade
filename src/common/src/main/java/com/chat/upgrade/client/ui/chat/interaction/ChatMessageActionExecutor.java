@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.input.AttachmentSendController;
 import com.chat.upgrade.client.ui.chat.input.ChatComposerState;
+import com.chat.upgrade.client.ui.chat.state.ChatMessageGroupStore;
 import com.chat.upgrade.client.ui.screen.ChatDetailsScreen;
 
 import net.minecraft.ChatFormatting;
@@ -44,6 +45,14 @@ public final class ChatMessageActionExecutor {
             if (!mention.authorName().isBlank()) {
                 insertText.accept("@" + mention.authorName() + " ");
             }
+            ChatTextSelectionState.clear();
+            return Optional.empty();
+        }
+        if (action instanceof ChatAction.OpenPrivateConversation privateConversation) {
+            ChatMessageGroupStore.openPrivate(
+                    privateConversation.peerId(),
+                    privateConversation.peerPlayerId());
+            composerState.clearReplyTarget();
             ChatTextSelectionState.clear();
             return Optional.empty();
         }

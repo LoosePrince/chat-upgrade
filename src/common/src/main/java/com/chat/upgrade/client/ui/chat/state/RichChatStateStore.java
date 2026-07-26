@@ -27,6 +27,7 @@ public final class RichChatStateStore {
         RichChatMessage stored = DELETED_MESSAGE_IDS.contains(message.messageId())
                 ? message.withStatus(RichChatMessageStatus.DELETED)
                 : message;
+        ChatMessageGroupStore.rememberPeer(stored.privatePeerId());
         removeById(stored.messageId());
         MESSAGES.addFirst(stored);
         while (MESSAGES.size() > MAX_MESSAGES) {
@@ -57,6 +58,7 @@ public final class RichChatStateStore {
             if (!changed && messageId.equals(current.messageId())) {
                 RichChatMessage updated = updater.apply(current);
                 if (updated != null) {
+                    ChatMessageGroupStore.rememberPeer(updated.privatePeerId());
                     next.addLast(updated);
                 }
                 changed = true;
