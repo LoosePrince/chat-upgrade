@@ -14,6 +14,7 @@ import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 
@@ -132,11 +133,13 @@ public final class EmojiPickerPopover {
 
     public void open() {
         visible = true;
+        UiMotion.begin(UiMotion.EMOJI_PICKER);
         TwikooOwoRegistry.refreshIfExpired();
     }
 
     public void close() {
         visible = false;
+        UiMotion.end(UiMotion.EMOJI_PICKER);
         hoveredItem = null;
     }
 
@@ -157,6 +160,9 @@ public final class EmojiPickerPopover {
         Layout layout = layout(screenWidth, screenHeight, anchorX, anchorY, anchorWidth);
         ChatAppearanceSnapshot appearance = layout.appearance();
         Density density = layout.density();
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(0, UiMotion.enterFromBottom(UiMotion.EMOJI_PICKER, 12));
         hoveredItem = null;
 
         UiPrimitives.paintBox(
@@ -181,6 +187,7 @@ public final class EmojiPickerPopover {
                     layout.panelBounds().left() + layout.panelBounds().width() / 2,
                     layout.panelBounds().top() + layout.panelBounds().height() / 2 - font.lineHeight / 2,
                     appearance.surface().muted());
+            pose.popMatrix();
             return;
         }
 
@@ -191,6 +198,7 @@ public final class EmojiPickerPopover {
         if (hoveredItem != null && layout.previewBounds().width() > 0) {
             renderPreview(graphics, font, hoveredItem, layout);
         }
+        pose.popMatrix();
     }
 
     public ClickResult mouseClicked(
@@ -202,6 +210,9 @@ public final class EmojiPickerPopover {
             int anchorWidth) {
         if (!visible || event.button() != 0) {
             return ClickResult.unhandled();
+        }
+        if (UiMotion.isEntering(UiMotion.EMOJI_PICKER)) {
+            return ClickResult.consumed();
         }
         Layout layout = layout(screenWidth, screenHeight, anchorX, anchorY, anchorWidth);
         if (!UiPrimitives.containsRounded(

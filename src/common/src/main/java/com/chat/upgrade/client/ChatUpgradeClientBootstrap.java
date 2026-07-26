@@ -22,6 +22,7 @@ import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
 import com.chat.upgrade.client.ui.chat.surface.ChatMessageGroupSidebar;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
@@ -103,6 +104,7 @@ public final class ChatUpgradeClientBootstrap {
         RichChatViewport.state().clear();
         ChatUpgradeChatRenderState.cancelWheelOverscroll();
         UpgradePhantomCoordinator.clear();
+        UiMotion.clear();
         ChatSurfaceController.onChatScreenClosed();
         ChatGestureArena.resetPointerState();
     }

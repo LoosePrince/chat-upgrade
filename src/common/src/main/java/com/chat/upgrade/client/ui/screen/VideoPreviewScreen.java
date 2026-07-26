@@ -9,6 +9,7 @@ import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.media.video.VideoPlayerService;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaLayout;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
@@ -35,6 +36,7 @@ public final class VideoPreviewScreen extends Screen {
         this.url = url;
         this.nameHint = nameHint;
         this.parent = MinecraftGuiBridge.currentScreen(Minecraft.getInstance());
+        UiMotion.begin(UiMotion.VIDEO_PREVIEW);
     }
 
     @Override
@@ -56,6 +58,9 @@ public final class VideoPreviewScreen extends Screen {
                 "chatupgrade.screen.preview.metadata",
                 ChatUpgradeFormatters.formatBytes(entry.getFetchedByteLength()),
                 url);
+        var motionPose = guiGraphics.pose();
+        motionPose.pushMatrix();
+        motionPose.translate(0, UiMotion.enterFromBottom(UiMotion.VIDEO_PREVIEW, 16));
         MediaPreviewChrome.paintFrame(guiGraphics, font, frame, name, metadata, tokens, cornerRadius);
 
         if (entry.getState() == VideoEntry.State.LOADING) {
@@ -66,6 +71,7 @@ public final class VideoPreviewScreen extends Screen {
                     I18n.get("chatupgrade.screen.video_preview.loading"),
                     tokens.muted());
             renderControls(guiGraphics, frame, tokens, cornerRadius, entry);
+            motionPose.popMatrix();
             return;
         }
         if (entry.getState() == VideoEntry.State.FAILED) {
@@ -76,6 +82,7 @@ public final class VideoPreviewScreen extends Screen {
                     I18n.get("chatupgrade.screen.video_preview.failed"),
                     tokens.failureText());
             renderControls(guiGraphics, frame, tokens, cornerRadius, entry);
+            motionPose.popMatrix();
             return;
         }
 
@@ -109,6 +116,7 @@ public final class VideoPreviewScreen extends Screen {
         }
 
         renderControls(guiGraphics, frame, tokens, cornerRadius, entry);
+        motionPose.popMatrix();
     }
 
     @Override
@@ -145,6 +153,7 @@ public final class VideoPreviewScreen extends Screen {
 
     @Override
     public void onClose() {
+        UiMotion.end(UiMotion.VIDEO_PREVIEW);
         MinecraftGuiBridge.setScreen(Minecraft.getInstance(), parent);
     }
 

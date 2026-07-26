@@ -13,6 +13,7 @@ import com.chat.upgrade.client.media.audio.VoiceShortcutKey;
 import com.chat.upgrade.client.ui.chat.surface.ChatPanelGeometry;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
@@ -87,6 +88,7 @@ public final class ChatSettingsOverlay {
         scrollY = 0.0D;
         activeSlider = null;
         errorMessage = null;
+        UiMotion.begin(UiMotion.SETTINGS);
         open = true;
         createTextEditor(font);
         ChatSurfaceController.setOverlay(ChatSurfaceState.Overlay.SETTINGS);
@@ -178,6 +180,9 @@ public final class ChatSettingsOverlay {
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick, int width, int height) {
         if (!open) {
             return false;
+        }
+        if (UiMotion.isEntering(UiMotion.SETTINGS)) {
+            return true;
         }
         updateScreenSize(width, height);
         if (event.button() != 0) {
@@ -282,6 +287,10 @@ public final class ChatSettingsOverlay {
         }
         updateScreenSize(width, height);
         Layout layout = layout();
+        int motionOffsetY = UiMotion.enterFromBottom(UiMotion.SETTINGS, 18);
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(0, motionOffsetY);
         layoutTextEditor(layout);
         graphics.fill(0, 0, screenWidth, screenHeight, DIM);
         UiPrimitives.paintBox(graphics, layout.panel(), 7, 1, PANEL, PANEL_BORDER);
@@ -302,6 +311,7 @@ public final class ChatSettingsOverlay {
         paintCategories(graphics, font, layout, mouseX, mouseY);
         paintOptions(graphics, font, layout, mouseX, mouseY);
         paintFooter(graphics, font, layout, mouseX, mouseY);
+        pose.popMatrix();
     }
 
     private void paintCloseButton(
@@ -714,6 +724,12 @@ public final class ChatSettingsOverlay {
                         value -> appearance.panelBorderColor = value),
                 integer("chatupgrade.settings.option.corner_radius", () -> appearance.cornerRadius,
                         value -> appearance.cornerRadius = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
+                heading("chatupgrade.settings.group.animation"),
+                bool(
+                        "chatupgrade.settings.option.animations",
+                        "chatupgrade.settings.option.animations.description",
+                        () -> appearance.animationsEnabled,
+                        value -> appearance.animationsEnabled = value),
                 heading("chatupgrade.settings.group.messages"),
                 color("chatupgrade.settings.option.message_background", () -> appearance.messageBackgroundColor,
                         value -> appearance.messageBackgroundColor = value),
@@ -1029,6 +1045,7 @@ public final class ChatSettingsOverlay {
 
     private void finishClose() {
         open = false;
+        UiMotion.end(UiMotion.SETTINGS);
         baseline = null;
         draft = null;
         activeSlider = null;

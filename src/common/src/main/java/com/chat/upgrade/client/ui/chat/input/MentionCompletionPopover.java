@@ -11,6 +11,7 @@ import org.lwjgl.glfw.GLFW;
 
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 
@@ -45,6 +46,7 @@ public final class MentionCompletionPopover {
     }
 
     public void close() {
+        UiMotion.end(UiMotion.MENTION_COMPLETION);
         query = null;
         candidates = List.of();
         selectedIndex = 0;
@@ -62,6 +64,7 @@ public final class MentionCompletionPopover {
             return;
         }
         String selectedName = selectedCandidate();
+        boolean wasVisible = isVisible();
         List<String> nextCandidates = candidates(minecraft, nextQuery.fragment());
         query = nextQuery;
         candidates = nextCandidates;
@@ -74,6 +77,9 @@ public final class MentionCompletionPopover {
         selectedIndex = retainedIndex >= 0
                 ? retainedIndex
                 : Math.clamp(selectedIndex, 0, candidates.size() - 1);
+        if (!wasVisible) {
+            UiMotion.begin(UiMotion.MENTION_COMPLETION);
+        }
     }
 
     public boolean keyPressed(KeyEvent event, EditBox input) {
@@ -146,6 +152,9 @@ public final class MentionCompletionPopover {
         panelBounds = RichChatBounds.ofSize(left, top, width, height);
 
         ChatAppearanceSnapshot appearance = ChatSurfaceController.state().appearance();
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(0, UiMotion.enterFromBottom(UiMotion.MENTION_COMPLETION, 8));
         UiPrimitives.paintBox(
                 graphics,
                 panelBounds,
@@ -176,6 +185,7 @@ public final class MentionCompletionPopover {
                     index == selectedIndex ? appearance.surface().title() : appearance.message().text(),
                     false);
         }
+        pose.popMatrix();
     }
 
     private void applySelection(EditBox input, int index) {

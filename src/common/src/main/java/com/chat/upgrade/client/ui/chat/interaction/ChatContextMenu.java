@@ -6,6 +6,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
@@ -103,11 +104,13 @@ public final class ChatContextMenu {
         attachment = nextAttachment;
         items = nextItems;
         bounds = RichChatBounds.ofSize(x, y, width, height);
+        UiMotion.begin(UiMotion.CONTEXT_MENU);
         return true;
     }
 
     public void close() {
         message = null;
+        UiMotion.end(UiMotion.CONTEXT_MENU);
         attachment = null;
         items = List.of();
         bounds = null;
@@ -117,6 +120,9 @@ public final class ChatContextMenu {
     public ClickResult mouseClicked(double mouseX, double mouseY, int button) {
         if (!isOpen() || button != 0) {
             return ClickResult.ignored();
+        }
+        if (UiMotion.isEntering(UiMotion.CONTEXT_MENU)) {
+            return ClickResult.consumed();
         }
         int x = (int) Math.round(mouseX);
         int y = (int) Math.round(mouseY);
@@ -144,6 +150,9 @@ public final class ChatContextMenu {
             return;
         }
         ChatAppearanceSnapshot.ContextMenu style = appearance.contextMenu();
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(0, UiMotion.enterFromBottom(UiMotion.CONTEXT_MENU, 10));
         UiPrimitives.paintBox(
                 graphics,
                 bounds,
@@ -181,6 +190,7 @@ public final class ChatContextMenu {
                     color,
                     false);
         }
+        pose.popMatrix();
     }
 
     private record Density(

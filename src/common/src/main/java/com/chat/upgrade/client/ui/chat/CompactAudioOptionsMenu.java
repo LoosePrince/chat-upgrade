@@ -3,6 +3,7 @@ package com.chat.upgrade.client.ui.chat;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
@@ -53,6 +54,7 @@ public final class CompactAudioOptionsMenu {
         CompactAudioOptionsMenu.anchorX = anchorX;
         CompactAudioOptionsMenu.anchorY = anchorY;
         visible = true;
+        UiMotion.begin(UiMotion.AUDIO_OPTIONS);
         updateGeometry(font, screenWidth, screenHeight);
     }
 
@@ -62,6 +64,7 @@ public final class CompactAudioOptionsMenu {
 
     public static void close() {
         visible = false;
+        UiMotion.end(UiMotion.AUDIO_OPTIONS);
         url = null;
         displayName = null;
     }
@@ -69,6 +72,9 @@ public final class CompactAudioOptionsMenu {
     public static boolean mouseClicked(MouseButtonEvent event, Font font, int screenWidth, int screenHeight) {
         if (!isVisible() || font == null) {
             return false;
+        }
+        if (UiMotion.isEntering(UiMotion.AUDIO_OPTIONS)) {
+            return true;
         }
         updateGeometry(font, screenWidth, screenHeight);
         if (event.button() != 0) {
@@ -99,6 +105,9 @@ public final class CompactAudioOptionsMenu {
         ChatAppearanceSnapshot appearance = ChatAppearanceRuntime.current();
         ChatAppearanceSnapshot.ContextMenu style = appearance.contextMenu();
         RichChatBounds panel = panelBounds();
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(0, UiMotion.enterFromBottom(UiMotion.AUDIO_OPTIONS, 10));
         UiPrimitives.paintBox(
                 graphics,
                 panel,
@@ -131,6 +140,7 @@ public final class CompactAudioOptionsMenu {
                         : "chatupgrade.audio.options.floating.enable"),
                 mouseX,
                 mouseY);
+        pose.popMatrix();
     }
 
     private static void paintRow(

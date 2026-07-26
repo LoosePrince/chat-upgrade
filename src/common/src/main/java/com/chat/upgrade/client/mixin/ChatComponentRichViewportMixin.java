@@ -3,6 +3,7 @@ package com.chat.upgrade.client.mixin;
 import com.chat.upgrade.client.ui.chat.ChatGraphicsAccessBridge;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.scene.ChatScene;
 import com.chat.upgrade.client.ui.chat.scene.ChatSceneRenderer;
 import com.chat.upgrade.client.ui.chat.surface.ChatPresentationMode;
@@ -113,7 +114,7 @@ public abstract class ChatComponentRichViewportMixin {
         }
 
         int surfaceTranslateX = surfaceFrame.presentationMode() == ChatPresentationMode.OPEN_PANEL
-                ? surfaceFrame.messageViewportBounds().left() + 4
+                ? surfaceFrame.messageViewportBounds().left() + 4 + UiMotion.enterFromLeft(UiMotion.CHAT_PANEL, 28)
                 : 4;
         graphics.updatePose(pose -> {
             pose.scale((float) metrics.scale(), (float) metrics.scale());

@@ -9,6 +9,7 @@ import com.chat.upgrade.client.ui.chat.state.ChatAvatar;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessage;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
@@ -43,6 +44,7 @@ public final class ChatDetailsScreen extends Screen {
         super(Component.translatable("chatupgrade.details.screen.title"));
         this.parent = parent;
         this.model = model;
+        UiMotion.begin(UiMotion.CHAT_DETAILS);
     }
 
     public static void openProfile(Minecraft minecraft, RichChatMessage message) {
@@ -76,6 +78,9 @@ public final class ChatDetailsScreen extends Screen {
         ChatAppearanceSnapshot.Media tokens = appearance.media();
         Layout layout = layout();
         scrollOffset = Math.clamp(scrollOffset, 0, maxScroll(layout));
+        var motionPose = graphics.pose();
+        motionPose.pushMatrix();
+        motionPose.translate(0, UiMotion.enterFromBottom(UiMotion.CHAT_DETAILS, 16));
 
         UiPrimitives.paintBox(
                 graphics,
@@ -87,6 +92,7 @@ public final class ChatDetailsScreen extends Screen {
         paintHero(graphics, layout, appearance);
         paintSections(graphics, layout, appearance, mouseX, mouseY);
         paintFooter(graphics, layout, appearance, mouseX, mouseY);
+        motionPose.popMatrix();
     }
 
     @Override
@@ -131,6 +137,7 @@ public final class ChatDetailsScreen extends Screen {
 
     @Override
     public void onClose() {
+        UiMotion.end(UiMotion.CHAT_DETAILS);
         MinecraftGuiBridge.setScreen(Minecraft.getInstance(), parent);
     }
 

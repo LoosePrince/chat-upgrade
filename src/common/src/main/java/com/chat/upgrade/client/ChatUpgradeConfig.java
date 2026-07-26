@@ -85,6 +85,7 @@ public final class ChatUpgradeConfig {
         public int panelBorderColor = 0x526176;
 
         public boolean vanillaStyleInput = true;
+        public boolean animationsEnabled;
         public boolean showPlayerAvatars;
         public boolean avatarFirstLineOnly;
         public boolean doubleLineLayout;
@@ -122,6 +123,7 @@ public final class ChatUpgradeConfig {
                     && panelBorderWidth == 1
                     && panelBorderColor == 0x526176
                     && !vanillaStyleInput
+                    && !animationsEnabled
                     && showPlayerAvatars
                     && !avatarFirstLineOnly
                     && doubleLineLayout

@@ -9,6 +9,7 @@ import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaLayout;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
@@ -53,6 +54,7 @@ public final class AudioFloatingWindow {
         url = targetUrl;
         displayName = targetName == null ? "" : targetName;
         visible = true;
+        UiMotion.begin(UiMotion.FLOATING_AUDIO);
         dragging = false;
         AudioLoader.getOrLoad(targetUrl);
         Minecraft minecraft = Minecraft.getInstance();
@@ -82,6 +84,7 @@ public final class AudioFloatingWindow {
     public static void clear() {
         ChatGestureArena.cancel(ChatGestureArena.Owner.FLOATING_AUDIO);
         visible = false;
+        UiMotion.end(UiMotion.FLOATING_AUDIO);
         url = null;
         displayName = null;
     }
@@ -96,6 +99,9 @@ public final class AudioFloatingWindow {
         ChatAppearanceSnapshot.Media tokens = appearance.media();
         int cornerRadius = Math.max(3, appearance.cornerRadius());
         RichChatBounds window = windowBounds();
+        var pose = gfx.pose();
+        pose.pushMatrix();
+        pose.translate(0, UiMotion.enterFromBottom(UiMotion.FLOATING_AUDIO, 16));
 
         UiPrimitives.paintBox(
                 gfx,
@@ -147,11 +153,15 @@ public final class AudioFloatingWindow {
         paintProgress(gfx, controls.progress(), position, total, tokens, cornerRadius);
         String time = ChatUpgradeFormatters.formatMs(position) + " / " + ChatUpgradeFormatters.formatMs(total);
         gfx.text(font, time, controls.time().left(), controls.time().top(), tokens.muted(), false);
+        pose.popMatrix();
     }
 
     public static boolean mouseClicked(MouseButtonEvent event, int screenWidth, int screenHeight) {
         if (!isVisible() || event.button() != 0) {
             return false;
+        }
+        if (UiMotion.isEntering(UiMotion.FLOATING_AUDIO)) {
+            return true;
         }
         clampToScreen(screenWidth, screenHeight);
         RichChatBounds window = windowBounds();

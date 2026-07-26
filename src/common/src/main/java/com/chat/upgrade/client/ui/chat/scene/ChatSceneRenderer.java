@@ -1,10 +1,12 @@
 package com.chat.upgrade.client.ui.chat.scene;
 
 import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.state.ChatMessageMetadata;
 import com.chat.upgrade.client.ui.chat.state.RichChatMessageStatus;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceRenderer;
+import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceFrame;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatLayout;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaRenderer;
@@ -30,12 +32,19 @@ public final class ChatSceneRenderer {
         if (scene == null) {
             return;
         }
-        ChatSurfaceRenderer.paintPanel(graphics, font, scene.surface());
-        ChatSurfaceRenderer.paintTimelineState(
+        ChatSurfaceFrame surface = scene.surface();
+        UiMotion.withTranslation(
                 graphics,
-                font,
-                scene.surface(),
-                scene.timeline().totalHeight() <= 0);
+                surface.isOpenPanel() ? UiMotion.enterFromLeft(UiMotion.CHAT_PANEL, 28) : 0,
+                0,
+                () -> {
+                    ChatSurfaceRenderer.paintPanel(graphics, font, surface);
+                    ChatSurfaceRenderer.paintTimelineState(
+                            graphics,
+                            font,
+                            surface,
+                            scene.timeline().totalHeight() <= 0);
+                });
     }
 
     public static void paintTimeline(
@@ -57,7 +66,9 @@ public final class ChatSceneRenderer {
 
         if (extractor != null) {
             for (RichChatMessageLayout message : scene.timeline().messages()) {
-                float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground);
+                float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground)
+                        * UiMotion.messageOpacity(message.message(), ticks);
+                int messageOffsetY = UiMotion.messageEnterOffsetY(message.message(), ticks);
                 if (alpha <= 1.0e-5F) {
                     continue;
                 }
@@ -65,14 +76,16 @@ public final class ChatSceneRenderer {
                         extractor,
                         message,
                         appearance,
-                        contentToLocalY,
+                        contentToLocalY + messageOffsetY,
                         alpha,
                         metrics.backgroundOpacity());
             }
         }
 
         for (RichChatMessageLayout message : scene.timeline().messages()) {
-            float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground);
+            float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground)
+                    * UiMotion.messageOpacity(message.message(), ticks);
+            int messageOffsetY = UiMotion.messageEnterOffsetY(message.message(), ticks);
             if (alpha <= 1.0e-5F) {
                 continue;
             }
@@ -83,7 +96,7 @@ public final class ChatSceneRenderer {
                     metrics,
                     message,
                     appearance,
-                    contentToLocalY,
+                    contentToLocalY + messageOffsetY,
                     alpha,
                     visibleTop,
                     visibleBottom);
@@ -92,7 +105,7 @@ public final class ChatSceneRenderer {
                     && appearance.cornerRadius() > 0) {
                 UiPrimitives.withRoundedClip(
                         extractor,
-                        message.visualBounds().translateY(contentToLocalY),
+                        message.visualBounds().translateY(contentToLocalY + messageOffsetY),
                         appearance.cornerRadius(),
                         paintTextContent);
             } else {
@@ -105,7 +118,7 @@ public final class ChatSceneRenderer {
                     metrics,
                     message,
                     appearance,
-                    contentToLocalY,
+                    contentToLocalY + messageOffsetY,
                     alpha,
                     visibleTop,
                     visibleBottom);
@@ -113,7 +126,9 @@ public final class ChatSceneRenderer {
 
         if (extractor != null) {
             for (RichChatMessageLayout message : scene.timeline().messages()) {
-                float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground);
+                float alpha = visibleMessageAlpha(message, visibleTop, visibleBottom, ticks, foreground)
+                        * UiMotion.messageOpacity(message.message(), ticks);
+                int messageOffsetY = UiMotion.messageEnterOffsetY(message.message(), ticks);
                 if (alpha <= 1.0e-5F) {
                     continue;
                 }
@@ -123,7 +138,7 @@ public final class ChatSceneRenderer {
                         metrics,
                         message,
                         appearance,
-                        contentToLocalY,
+                        contentToLocalY + messageOffsetY,
                         alpha);
             }
         }

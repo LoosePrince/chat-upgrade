@@ -5,6 +5,7 @@ import java.io.IOException;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
@@ -58,6 +59,7 @@ public final class ChatSurfaceController {
         boolean normalized = STATE.updateScreenSize(screenWidth, screenHeight);
         applyGeometryConstraints(geometryConfig, screenWidth, screenHeight);
         STATE.setPresentationMode(ChatPresentationMode.OPEN_PANEL);
+        UiMotion.begin(UiMotion.CHAT_PANEL);
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.COMPOSER);
         if (normalized) {
             persistGeometry();
@@ -70,6 +72,7 @@ public final class ChatSurfaceController {
                 && (resizeEdges & (ChatPanelGeometry.EDGE_TOP | ChatPanelGeometry.EDGE_BOTTOM)) != 0;
         clearPointerOperation();
         ChatGestureArena.resetPointerState();
+        UiMotion.end(UiMotion.CHAT_PANEL);
         STATE.setOverlay(ChatSurfaceState.Overlay.NONE);
         STATE.setFocusOwner(ChatSurfaceState.FocusOwner.NONE);
         STATE.setPresentationMode(ChatPresentationMode.CLOSED_HUD);

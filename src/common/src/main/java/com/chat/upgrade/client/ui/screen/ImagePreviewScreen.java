@@ -8,6 +8,7 @@ import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceRuntime;
 import com.chat.upgrade.client.ui.chat.surface.ChatAppearanceSnapshot;
+import com.chat.upgrade.client.ui.animation.UiMotion;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatMediaLayout;
 
@@ -40,6 +41,7 @@ public final class ImagePreviewScreen extends Screen {
         this.url = url;
         this.nameHint = nameHint;
         this.parent = MinecraftGuiBridge.currentScreen(Minecraft.getInstance());
+        UiMotion.begin(UiMotion.IMAGE_PREVIEW);
     }
 
     @Override
@@ -52,6 +54,9 @@ public final class ImagePreviewScreen extends Screen {
         int cornerRadius = Math.max(2, appearance.cornerRadius());
         MediaPreviewLayout.Frame frame = MediaPreviewLayout.frame(width, height);
         String name = RichChatMediaLayout.displayName(nameHint, url);
+        var motionPose = guiGraphics.pose();
+        motionPose.pushMatrix();
+        motionPose.translate(0, UiMotion.enterFromBottom(UiMotion.IMAGE_PREVIEW, 16));
         paintChrome(guiGraphics, frame, name, entry, tokens, cornerRadius);
 
         if (entry.getState() != ImageEntry.State.LOADED) {
@@ -62,6 +67,7 @@ public final class ImagePreviewScreen extends Screen {
                     I18n.get("chatupgrade.screen.image_preview.loading"),
                     tokens.muted());
             renderControls(guiGraphics, frame, tokens, cornerRadius);
+            motionPose.popMatrix();
             return;
         }
 
@@ -79,6 +85,7 @@ public final class ImagePreviewScreen extends Screen {
                     I18n.get("chatupgrade.screen.image_preview.texture_unavailable"),
                     tokens.failureText());
             renderControls(guiGraphics, frame, tokens, cornerRadius);
+            motionPose.popMatrix();
             return;
         }
 
@@ -96,6 +103,7 @@ public final class ImagePreviewScreen extends Screen {
                     I18n.get("chatupgrade.screen.image_preview.invalid_size"),
                     tokens.failureText());
             renderControls(guiGraphics, frame, tokens, cornerRadius);
+            motionPose.popMatrix();
             return;
         }
 
@@ -137,6 +145,7 @@ public final class ImagePreviewScreen extends Screen {
             guiGraphics.disableScissor();
         }
         renderControls(guiGraphics, frame, tokens, cornerRadius);
+        motionPose.popMatrix();
     }
 
     @Override
@@ -199,6 +208,7 @@ public final class ImagePreviewScreen extends Screen {
 
     @Override
     public void onClose() {
+        UiMotion.end(UiMotion.IMAGE_PREVIEW);
         MinecraftGuiBridge.setScreen(Minecraft.getInstance(), parent);
     }
 
