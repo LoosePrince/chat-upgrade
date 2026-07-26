@@ -3,6 +3,7 @@ package com.chat.upgrade.client;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.emoji.TwikooOwoRegistry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
+import com.chat.upgrade.client.media.audio.VoiceShortcutService;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
@@ -62,6 +63,7 @@ public final class ChatUpgradeClientBootstrap {
 
     /** Invalidate cached HUD textures when the window / GUI scale changes. */
     public static void onClientTick(Minecraft client) {
+        VoiceShortcutService.tick();
         var w = client.getWindow();
         int sw = w.getGuiScaledWidth();
         int sh = w.getGuiScaledHeight();
@@ -82,6 +84,7 @@ public final class ChatUpgradeClientBootstrap {
     }
 
     public static void clearAllRuntimeState() {
+        VoiceShortcutService.clear();
         clearAllChatRuntimeState();
         clearAllMediaRuntimeState();
     }

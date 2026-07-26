@@ -12,7 +12,8 @@ public final class AttachmentDraft {
     public enum Source {
         CLIPBOARD,
         FILE_PICKER,
-        LOCAL_PATH
+        LOCAL_PATH,
+        RECORDING
     }
 
     public enum Status {

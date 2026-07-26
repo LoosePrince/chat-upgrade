@@ -1,6 +1,7 @@
 package com.chat.upgrade.client.mixin;
 
 import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
+import com.chat.upgrade.client.media.audio.VoiceShortcutService;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -28,6 +29,7 @@ public abstract class ScreenGlobalChatOverlayMixin {
         if ((Object) this instanceof ChatScreen || minecraft == null || minecraft.font == null) {
             return;
         }
+        VoiceShortcutService.renderPrompt(graphics, minecraft.font, graphics.guiWidth(), graphics.guiHeight());
         MentionNotificationService.renderPassthrough(
                 graphics,
                 minecraft.font,

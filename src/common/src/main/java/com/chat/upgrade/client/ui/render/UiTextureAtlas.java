@@ -41,7 +41,8 @@ public final class UiTextureAtlas {
         AUDIO,
         VIDEO,
         CHECK,
-        SLIDER_KNOB
+        SLIDER_KNOB,
+        MICROPHONE
     }
 
     private static final int TILE_LOGICAL_SIZE = 32;
@@ -369,6 +370,7 @@ public final class UiTextureAtlas {
                 case VIDEO -> paintVideo(iconGraphics);
                 case CHECK -> paintCheck(iconGraphics);
                 case SLIDER_KNOB -> iconGraphics.fill(new Ellipse2D.Float(4.0F, 4.0F, 8.0F, 8.0F));
+                case MICROPHONE -> paintMicrophone(iconGraphics);
             }
         } finally {
             iconGraphics.dispose();
@@ -494,6 +496,13 @@ public final class UiTextureAtlas {
         play.lineTo(6.0D, 11.0D);
         play.closePath();
         graphics.fill(play);
+    }
+
+    private static void paintMicrophone(Graphics2D graphics) {
+        graphics.drawRoundRect(5, 1, 6, 9, 4, 4);
+        graphics.draw(new Arc2D.Float(3.0F, 5.0F, 10.0F, 8.0F, 0.0F, -180.0F, Arc2D.OPEN));
+        graphics.draw(new Line2D.Float(8.0F, 13.0F, 8.0F, 15.0F));
+        graphics.draw(new Line2D.Float(5.0F, 15.0F, 11.0F, 15.0F));
     }
 
     private static void paintCheck(Graphics2D graphics) {

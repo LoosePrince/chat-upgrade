@@ -2,11 +2,15 @@ package com.chat.upgrade.client.media.audio;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
+
+import net.minecraft.client.Minecraft;
 
 public final class AudioPlayerService {
     private static final ConcurrentHashMap<String, AudioSession> SESSIONS = new ConcurrentHashMap<>();
@@ -16,26 +20,66 @@ public final class AudioPlayerService {
     private AudioPlayerService() {
     }
 
-    public static long prepare(String url, byte[] audioBytes) throws Exception {
-        AudioSession prev = SESSIONS.remove(url);
-        if (prev != null) {
-            prev.close();
-        }
+    /** Decodes on a worker, then creates OpenAL objects on Minecraft's client thread. */
+    public static CompletableFuture<Long> prepareAsync(String url, byte[] audioBytes) {
+        return CompletableFuture.supplyAsync(() -> decode(audioBytes))
+                .thenCompose(decoded -> installOnClientThread(url, decoded));
+    }
+
+    private static FfmpegAudioDecoder.DecodedAudio decode(byte[] audioBytes) {
         if (!FfmpegNativeBootstrap.ensureReady()) {
-            throw new IllegalStateException("FFmpeg natives not ready");
+            throw new CompletionException(new IllegalStateException("FFmpeg natives not ready"));
         }
-        Path temp = writeTempAudioFile(audioBytes);
-        FfmpegAudioDecoder.DecodedAudio decoded = FfmpegAudioDecoder.decodeToS16Le(temp);
+        Path temp = null;
         try {
-            Files.deleteIfExists(temp);
-        } catch (Exception ignored) {
+            temp = writeTempAudioFile(audioBytes);
+            return FfmpegAudioDecoder.decodeToS16Le(temp);
+        } catch (Exception exception) {
+            throw new CompletionException(exception);
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (Exception ignored) {
+                    // The operating system may keep a failed decoder input file briefly locked.
+                }
+            }
         }
-        OpenAlPcmPlayer player = new OpenAlPcmPlayer(decoded.pcmS16Le(), decoded.sampleRate(), decoded.channels());
-        player.setVolumePercent(ChatUpgradeConfig.get().audioVolumePercent);
-        boolean loop = isLoopEnabled(url);
-        player.setLooping(loop);
-        SESSIONS.put(url, new AudioSession(player));
-        return player.durationMs();
+    }
+
+    private static CompletableFuture<Long> installOnClientThread(
+            String url,
+            FfmpegAudioDecoder.DecodedAudio decoded) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft client unavailable"));
+        }
+        CompletableFuture<Long> result = new CompletableFuture<>();
+        minecraft.execute(() -> {
+            try {
+                AudioSession previous = SESSIONS.remove(url);
+                if (previous != null) {
+                    previous.close();
+                }
+                OpenAlPcmPlayer player = new OpenAlPcmPlayer(
+                        decoded.pcmS16Le(),
+                        decoded.sampleRate(),
+                        decoded.channels());
+                player.setVolumePercent(ChatUpgradeConfig.get().audioVolumePercent);
+                player.setLooping(isLoopEnabled(url));
+                SESSIONS.put(url, new AudioSession(player));
+                ChatUpgrade.LOGGER.info(
+                        "chat-upgrade: audio playback prepared url={} duration={}ms rate={}Hz channels={}",
+                        url,
+                        player.durationMs(),
+                        decoded.sampleRate(),
+                        decoded.channels());
+                result.complete(player.durationMs());
+            } catch (RuntimeException exception) {
+                result.completeExceptionally(exception);
+            }
+        });
+        return result;
     }
 
     private static Path writeTempAudioFile(byte[] bytes) throws Exception {
@@ -98,7 +142,13 @@ public final class AudioPlayerService {
                 pos = 0L;
             }
             s.player.playFrom(pos);
-            return true;
+            boolean playing = s.player.isPlaying();
+            ChatUpgrade.LOGGER.info(
+                    "chat-upgrade: audio playback requested url={} position={}ms started={}",
+                    url,
+                    pos,
+                    playing);
+            return playing;
         }
     }
 

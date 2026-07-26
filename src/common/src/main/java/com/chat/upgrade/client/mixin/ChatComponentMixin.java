@@ -14,7 +14,9 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.media.audio.AudioLoader;
+import com.chat.upgrade.client.media.audio.VoiceShortcutService;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
@@ -36,6 +38,7 @@ import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.client.multiplayer.chat.GuiMessageTag;
@@ -255,6 +258,9 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
             ChatUpgradeChatRenderState.endRenderPass(graphics);
         }
         MentionNotificationService.renderHud(graphics, font, graphics.guiWidth(), graphics.guiHeight());
+        if (MinecraftGuiBridge.currentScreen(Minecraft.getInstance()) == null) {
+            VoiceShortcutService.renderPrompt(graphics, font, graphics.guiWidth(), graphics.guiHeight());
+        }
     }
 
     @Redirect(

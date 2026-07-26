@@ -59,9 +59,9 @@ public final class AudioLoader {
             }
             long durationMs;
             try {
-                durationMs = AudioPlayerService.prepare(url, body);
+                durationMs = AudioPlayerService.prepareAsync(url, body).join();
             } catch (Exception ex) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, ex.getMessage());
+                ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, rootCauseMessage(ex));
                 markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
                 return;
             }
@@ -128,9 +128,9 @@ public final class AudioLoader {
                 }
                 long durationMs;
                 try {
-                    durationMs = AudioPlayerService.prepare(url, body);
+                    durationMs = AudioPlayerService.prepareAsync(url, body).join();
                 } catch (Exception ex) {
-                    ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, ex.getMessage());
+                    ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, rootCauseMessage(ex));
                     markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
                     return;
                 }
@@ -152,6 +152,15 @@ public final class AudioLoader {
             markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
             return null;
         });
+    }
+
+    private static String rootCauseMessage(Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
     }
 
     private static void markFailed(String url, AudioEntry entry, AudioEntry.FailureKind kind) {

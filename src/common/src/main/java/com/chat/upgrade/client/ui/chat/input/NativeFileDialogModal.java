@@ -4,7 +4,6 @@ import java.awt.Dialog;
 import java.awt.FileDialog;
 import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
-import java.awt.Toolkit;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Optional;
@@ -16,17 +15,8 @@ import java.util.function.Function;
 
 import javax.swing.SwingUtilities;
 
-import org.lwjgl.glfw.GLFWNativeWin32;
-
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.mixin.MouseHandlerActiveButtonAccessor;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-import com.sun.jna.platform.win32.User32;
-import com.sun.jna.platform.win32.WinDef.HWND;
-import com.sun.jna.platform.win32.WinDef.RECT;
-import com.sun.jna.platform.win32.WinUser;
-import com.sun.jna.win32.W32APIOptions;
 
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -46,7 +36,7 @@ public final class NativeFileDialogModal {
             return Optional.empty();
         }
         releaseGameInputState();
-        return Optional.of(new Session(glfwWindowHandle, resolveNativeGameWindow(glfwWindowHandle)));
+        return Optional.of(new Session(glfwWindowHandle));
     }
 
     public static <T> Optional<CompletableFuture<T>> supplyAsync(
@@ -98,44 +88,37 @@ public final class NativeFileDialogModal {
             Set<String> extensions) {
         Frame owner = new Frame();
         FileDialog dialog = null;
-        WindowsOwnerBinding binding = WindowsOwnerBinding.none();
         try {
+            // FileDialog already creates a native modal child for this AWT owner. Reparenting
+            // the owner to Minecraft's GLFW window and disabling that window causes Windows to
+            // dismiss the common dialog before it becomes visible on some drivers.
             owner.setUndecorated(true);
             owner.setType(java.awt.Window.Type.UTILITY);
             owner.setBounds(0, 0, 1, 1);
             owner.addNotify();
-            binding = WindowsOwnerBinding.attach(owner, session.nativeGameWindow());
-            WindowsOwnerBinding currentBinding = binding;
 
             dialog = new FileDialog(owner, title, FileDialog.LOAD);
             dialog.setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
             dialog.setMultipleMode(false);
-            dialog.setAlwaysOnTop(true);
             dialog.setFilenameFilter((directory, name) -> hasExtension(name, extensions));
-            FileDialog currentDialog = dialog;
-            dialog.addWindowListener(new java.awt.event.WindowAdapter() {
-                @Override
-                public void windowOpened(java.awt.event.WindowEvent event) {
-                    currentDialog.toFront();
-                    currentBinding.bringDialogToFront(currentDialog);
-                }
-            });
             dialog.setVisible(true);
 
             String directory = dialog.getDirectory();
             String file = dialog.getFile();
             if (directory == null || file == null || file.isBlank()) {
+                ChatUpgrade.LOGGER.info("chat-upgrade: native file dialog closed without a selection");
                 return null;
             }
-            return Path.of(directory, file);
+            Path path = Path.of(directory, file);
+            ChatUpgrade.LOGGER.info("chat-upgrade: native file dialog selected {}", path);
+            return path;
         } catch (Throwable throwable) {
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: FileDialog error: {}", throwable.toString());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: native file dialog failed", throwable);
             return null;
         } finally {
             if (dialog != null) {
                 dialog.dispose();
             }
-            binding.close();
             owner.dispose();
         }
     }
@@ -149,22 +132,6 @@ public final class NativeFileDialogModal {
             return false;
         }
         return extensions.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT));
-    }
-
-    private static long resolveNativeGameWindow(long glfwWindowHandle) {
-        if (!isWindows() || glfwWindowHandle == 0L) {
-            return 0L;
-        }
-        try {
-            return GLFWNativeWin32.glfwGetWin32Window(glfwWindowHandle);
-        } catch (Throwable throwable) {
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: failed to resolve Win32 game window: {}", throwable.toString());
-            return 0L;
-        }
-    }
-
-    private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
     }
 
     private static void releaseGameInputState() {
@@ -195,20 +162,14 @@ public final class NativeFileDialogModal {
 
     public static final class Session implements AutoCloseable {
         private final long glfwWindowHandle;
-        private final long nativeGameWindow;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private Session(long glfwWindowHandle, long nativeGameWindow) {
+        private Session(long glfwWindowHandle) {
             this.glfwWindowHandle = glfwWindowHandle;
-            this.nativeGameWindow = nativeGameWindow;
         }
 
         public long glfwWindowHandle() {
             return glfwWindowHandle;
-        }
-
-        private long nativeGameWindow() {
-            return nativeGameWindow;
         }
 
         @Override
@@ -218,73 +179,5 @@ public final class NativeFileDialogModal {
             }
             restoreGameInputState();
         }
-    }
-
-    private record WindowsOwnerBinding(HWND gameWindow, boolean gameWindowWasEnabled) implements AutoCloseable {
-        private static WindowsOwnerBinding none() {
-            return new WindowsOwnerBinding(null, false);
-        }
-
-        private static WindowsOwnerBinding attach(Frame owner, long nativeGameWindow) {
-            if (nativeGameWindow == 0L) {
-                return none();
-            }
-            try {
-                HWND gameWindow = new HWND(Pointer.createConstant(nativeGameWindow));
-                HWND ownerWindow = new HWND(Native.getWindowPointer(owner));
-                RECT gameBounds = new RECT();
-                if (ModalUser32.INSTANCE.GetWindowRect(gameWindow, gameBounds)) {
-                    int centerX = gameBounds.left + Math.max(0, gameBounds.right - gameBounds.left) / 2;
-                    int centerY = gameBounds.top + Math.max(0, gameBounds.bottom - gameBounds.top) / 2;
-                    owner.setLocation(centerX, centerY);
-                }
-                ModalUser32.INSTANCE.SetWindowLongPtr(
-                        ownerWindow,
-                        WinUser.GWL_HWNDPARENT,
-                        gameWindow.getPointer());
-                boolean wasEnabled = ModalUser32.INSTANCE.IsWindowEnabled(gameWindow);
-                if (wasEnabled) {
-                    ModalUser32.INSTANCE.EnableWindow(gameWindow, false);
-                }
-                return new WindowsOwnerBinding(gameWindow, wasEnabled);
-            } catch (Throwable throwable) {
-                ChatUpgrade.LOGGER.warn("ChatUpgrade: failed to bind FileDialog owner: {}", throwable.toString());
-                return none();
-            }
-        }
-
-        private void bringDialogToFront(FileDialog dialog) {
-            if (gameWindow == null) {
-                return;
-            }
-            try {
-                HWND dialogWindow = new HWND(Native.getWindowPointer(dialog));
-                ModalUser32.INSTANCE.SetForegroundWindow(dialogWindow);
-                ModalUser32.INSTANCE.BringWindowToTop(dialogWindow);
-            } catch (Throwable throwable) {
-                ChatUpgrade.LOGGER.debug("ChatUpgrade: failed to focus FileDialog: {}", throwable.toString());
-            }
-        }
-
-        @Override
-        public void close() {
-            if (gameWindow == null) {
-                return;
-            }
-            try {
-                if (gameWindowWasEnabled) {
-                    ModalUser32.INSTANCE.EnableWindow(gameWindow, true);
-                }
-                ModalUser32.INSTANCE.SetForegroundWindow(gameWindow);
-            } catch (Throwable throwable) {
-                ChatUpgrade.LOGGER.warn("ChatUpgrade: failed to restore game window: {}", throwable.toString());
-            }
-        }
-    }
-
-    private interface ModalUser32 extends User32 {
-        ModalUser32 INSTANCE = Native.load("user32", ModalUser32.class, W32APIOptions.DEFAULT_OPTIONS);
-
-        boolean EnableWindow(HWND window, boolean enabled);
     }
 }

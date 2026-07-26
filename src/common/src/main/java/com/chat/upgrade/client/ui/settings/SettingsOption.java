@@ -7,9 +7,9 @@ import java.util.function.IntSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-public sealed interface SettingsOption permits SettingsOption.BooleanOption, SettingsOption.ColorOption,
+public sealed interface SettingsOption permits SettingsOption.BooleanOption, SettingsOption.ChoiceOption, SettingsOption.ColorOption,
         SettingsOption.EnumOption, SettingsOption.HeadingOption, SettingsOption.IntOption,
-        SettingsOption.TextOption {
+        SettingsOption.KeyOption, SettingsOption.TextOption {
     String labelKey();
 
     record HeadingOption(String labelKey) implements SettingsOption {
@@ -56,7 +56,20 @@ public sealed interface SettingsOption permits SettingsOption.BooleanOption, Set
         }
     }
 
+    record ChoiceOption(
+            String labelKey,
+            Supplier<String> value,
+            Runnable selectNext) implements SettingsOption {
+        public ChoiceOption {
+            value = value == null ? () -> "" : value;
+            selectNext = selectNext == null ? () -> { } : selectNext;
+        }
+    }
+
     record ColorOption(String labelKey, IntSupplier getter, IntConsumer setter) implements SettingsOption {
+    }
+
+    record KeyOption(String labelKey, IntSupplier getter, IntConsumer setter) implements SettingsOption {
     }
 
     record TextOption(

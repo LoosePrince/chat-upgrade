@@ -50,6 +50,10 @@ public final class ChatUpgradeConfig {
     public int maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
     public int audioVolumePercent = 100;
     public int videoVolumePercent = 100;
+    /** Stable Java Sound mixer id; blank selects the Windows default capture device. */
+    public String voiceInputDevice = "";
+    /** GLFW key code; {@code -1} keeps the voice shortcut unbound. */
+    public int voiceShortcutKey = -1;
     public UploadMode uploadMode = UploadMode.AUTO;
 
     public static final class ChatPanelConfig {
@@ -180,6 +184,8 @@ public final class ChatUpgradeConfig {
         config.maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES;
         config.audioVolumePercent = 100;
         config.videoVolumePercent = 100;
+        config.voiceInputDevice = "";
+        config.voiceShortcutKey = -1;
         config.uploadMode = UploadMode.AUTO;
         config.chatInputMode = ChatInputMode.TAKEOVER;
         config.chatInputPlaceholder = "";
@@ -202,6 +208,8 @@ public final class ChatUpgradeConfig {
         int beforeUpload = maxUploadBytes;
         int beforeAudioVolume = audioVolumePercent;
         int beforeVideoVolume = videoVolumePercent;
+        String beforeVoiceInputDevice = voiceInputDevice;
+        int beforeVoiceShortcutKey = voiceShortcutKey;
         Boolean beforeSmoothScroll = smoothScrollEnabled;
         UploadMode beforeUploadMode = uploadMode;
         ChatInputMode beforeChatInputMode = chatInputMode;
@@ -224,6 +232,8 @@ public final class ChatUpgradeConfig {
         maxUploadBytes = normalizeTransferLimit(maxUploadBytes, DEFAULT_MAX_UPLOAD_BYTES);
         audioVolumePercent = Math.clamp(audioVolumePercent, 1, 100);
         videoVolumePercent = Math.clamp(videoVolumePercent, 1, 100);
+        voiceInputDevice = voiceInputDevice == null ? "" : voiceInputDevice.trim();
+        voiceShortcutKey = normalizeVoiceShortcutKey(voiceShortcutKey);
         smoothScrollEnabled = smoothScrollEnabled == null ? true : smoothScrollEnabled;
         uploadMode = uploadMode == null ? UploadMode.AUTO : uploadMode;
         chatInputMode = chatInputMode == null ? ChatInputMode.TAKEOVER : chatInputMode;
@@ -258,6 +268,8 @@ public final class ChatUpgradeConfig {
                 || beforeUpload != maxUploadBytes
                 || beforeAudioVolume != audioVolumePercent
                 || beforeVideoVolume != videoVolumePercent
+                || !beforeVoiceInputDevice.equals(voiceInputDevice)
+                || beforeVoiceShortcutKey != voiceShortcutKey
                 || beforeSmoothScroll == null
                 || beforeUploadMode != uploadMode
                 || beforeChatInputMode != chatInputMode
@@ -286,6 +298,10 @@ public final class ChatUpgradeConfig {
     private static int normalizeTransferLimit(int bytes, int fallback) {
         int safe = bytes <= 0 ? fallback : bytes;
         return Math.min(safe, ABSOLUTE_MAX_TRANSFER_BYTES);
+    }
+
+    private static int normalizeVoiceShortcutKey(int key) {
+        return key >= 32 && key <= 348 ? key : -1;
     }
 
     public static boolean validPrivateMessageCommand(String value) {
@@ -376,6 +392,7 @@ public final class ChatUpgradeConfig {
                 boolean containsMessageGroupPosition = json.contains("\"messageGroupPosition\"");
                 boolean containsPrivateMessageCommand = json.contains("\"privateMessageCommand\"");
                 boolean containsCompactMediaCards = json.contains("\"compactMediaCards\"");
+                boolean containsVoiceShortcutKey = json.contains("\"voiceShortcutKey\"");
                 ChatUpgradeConfig read = GSON.fromJson(json, ChatUpgradeConfig.class);
                 if (read == null) {
                     instance = defaults();
@@ -414,6 +431,10 @@ public final class ChatUpgradeConfig {
                     read.compactMediaCards = true;
                     migratedLegacyDefaults = true;
                 }
+                if (!containsVoiceShortcutKey) {
+                    read.voiceShortcutKey = -1;
+                    migratedLegacyDefaults = true;
+                }
                 if (!containsAutomaticHeight && read.chatPanel != null) {
                     read.chatPanel.automaticHeight = read.chatPanel.matchesLegacyDefaults();
                     migratedLegacyDefaults = true;
@@ -446,6 +467,7 @@ public final class ChatUpgradeConfig {
                         || !containsMessageGroupPosition
                         || !containsPrivateMessageCommand
                         || !containsCompactMediaCards
+                        || !containsVoiceShortcutKey
                         || migratedLegacyDefaults;
                 instance = read;
                 if (corrected) {

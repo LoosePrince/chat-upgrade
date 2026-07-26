@@ -8,6 +8,8 @@ import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.ChatClientConfigRuntime;
 import com.chat.upgrade.client.ChatUpgradeConfig;
+import com.chat.upgrade.client.media.audio.VoiceInputDevices;
+import com.chat.upgrade.client.media.audio.VoiceShortcutKey;
 import com.chat.upgrade.client.ui.chat.surface.ChatPanelGeometry;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
@@ -66,6 +68,7 @@ public final class ChatSettingsOverlay {
     private @Nullable ActiveSlider activeSlider;
     private @Nullable EditBox textEditor;
     private @Nullable SettingsOption.TextOption visibleTextOption;
+    private @Nullable SettingsOption.KeyOption capturingKeyOption;
     private boolean syncingTextEditor;
     private @Nullable String errorMessage;
     private int screenWidth = 1;
@@ -122,6 +125,25 @@ public final class ChatSettingsOverlay {
     public boolean keyPressed(KeyEvent event) {
         if (!open) {
             return false;
+        }
+        if (capturingKeyOption != null) {
+            if (event.isEscape()) {
+                capturingKeyOption = null;
+                return true;
+            }
+            if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE
+                    || event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_DELETE) {
+                capturingKeyOption.setter().accept(VoiceShortcutKey.UNBOUND);
+                capturingKeyOption = null;
+                previewDraft();
+                return true;
+            }
+            if (VoiceShortcutKey.isBindable(event.key())) {
+                capturingKeyOption.setter().accept(event.key());
+                capturingKeyOption = null;
+                previewDraft();
+            }
+            return true;
         }
         if (event.isEscape()) {
             cancel();
@@ -183,6 +205,7 @@ public final class ChatSettingsOverlay {
             category = selected;
             scrollY = 0.0D;
             activeSlider = null;
+            capturingKeyOption = null;
             setTextEditorFocused(false);
             layoutTextEditor(layout());
             errorMessage = null;
@@ -438,6 +461,22 @@ public final class ChatSettingsOverlay {
             paintCenteredText(graphics, font, value, control.left() + control.width() / 2, control.top() + 5, TEXT);
             return;
         }
+        if (option instanceof SettingsOption.ChoiceOption choiceOption) {
+            UiPrimitives.fillRounded(graphics, control, 4, control.contains(mouseX, mouseY) ? ACTIVE : CONTROL);
+            paintCenteredText(graphics, font, trim(font, choiceOption.value().get(), control.width() - 10),
+                    control.left() + control.width() / 2, control.top() + 5, TEXT);
+            return;
+        }
+        if (option instanceof SettingsOption.KeyOption keyOption) {
+            UiPrimitives.fillRounded(graphics, control, 4, control.contains(mouseX, mouseY) ? ACTIVE : CONTROL);
+            String value = capturingKeyOption == keyOption
+                    ? I18n.get("chatupgrade.settings.value.press_key")
+                    : keyOption.getter().getAsInt() == VoiceShortcutKey.UNBOUND
+                            ? I18n.get("chatupgrade.settings.value.unbound")
+                            : VoiceShortcutKey.label(keyOption.getter().getAsInt());
+            paintCenteredText(graphics, font, value, control.left() + control.width() / 2, control.top() + 5, TEXT);
+            return;
+        }
         if (option instanceof SettingsOption.IntOption intOption) {
             paintIntSlider(graphics, font, intOption, control);
             return;
@@ -552,6 +591,18 @@ public final class ChatSettingsOverlay {
             previewDraft();
             return;
         }
+        if (option instanceof SettingsOption.ChoiceOption choiceOption) {
+            choiceOption.selectNext().run();
+            previewDraft();
+            return;
+        }
+        if (option instanceof SettingsOption.KeyOption keyOption) {
+            if (row.control().contains(round(mouseX), round(mouseY))) {
+                capturingKeyOption = keyOption;
+                setTextEditorFocused(false);
+            }
+            return;
+        }
         if (option instanceof SettingsOption.IntOption intOption && row.control().contains(round(mouseX), round(mouseY))) {
             activeSlider = new ActiveSlider(option, -1, row.control());
             updateSlider(activeSlider, mouseX);
@@ -607,7 +658,9 @@ public final class ChatSettingsOverlay {
                 control = RichChatBounds.ofSize(controlRight - 60, y + Math.max(5, (height - 16) / 2), 60, 16);
             } else if (option instanceof SettingsOption.TextOption) {
                 control = RichChatBounds.ofSize(bounds.left() + 7, y + 36, Math.max(20, bounds.width() - 14), 18);
-            } else if (option instanceof SettingsOption.EnumOption) {
+            } else if (option instanceof SettingsOption.EnumOption
+                    || option instanceof SettingsOption.ChoiceOption
+                    || option instanceof SettingsOption.KeyOption) {
                 control = RichChatBounds.ofSize(controlRight - 124, y + 4, 124, 18);
             } else if (option instanceof SettingsOption.IntOption) {
                 control = RichChatBounds.ofSize(controlRight - controlWidth - 48, y + 6, controlWidth, 12);
@@ -806,7 +859,14 @@ public final class ChatSettingsOverlay {
                 integer("chatupgrade.settings.option.audio_volume", () -> draft.audioVolumePercent,
                         value -> draft.audioVolumePercent = value, 1, 100, SettingsOption.ValueFormat.PERCENT),
                 integer("chatupgrade.settings.option.video_volume", () -> draft.videoVolumePercent,
-                        value -> draft.videoVolumePercent = value, 1, 100, SettingsOption.ValueFormat.PERCENT));
+                        value -> draft.videoVolumePercent = value, 1, 100, SettingsOption.ValueFormat.PERCENT),
+                heading("chatupgrade.settings.group.voice"),
+                choice(
+                        "chatupgrade.settings.option.voice_input_device",
+                        () -> VoiceInputDevices.displayName(draft.voiceInputDevice),
+                        () -> draft.voiceInputDevice = VoiceInputDevices.nextDeviceId(draft.voiceInputDevice)),
+                key("chatupgrade.settings.option.voice_shortcut", () -> draft.voiceShortcutKey,
+                        value -> draft.voiceShortcutKey = value));
     }
 
     private List<SettingsOption> uploadCompatibilityOptions() {
@@ -941,6 +1001,8 @@ public final class ChatSettingsOverlay {
                 draft.maxReceiveBytes = ChatUpgradeConfig.DEFAULT_MAX_RECEIVE_BYTES;
                 draft.audioVolumePercent = 100;
                 draft.videoVolumePercent = 100;
+                draft.voiceInputDevice = VoiceInputDevices.DEFAULT_DEVICE;
+                draft.voiceShortcutKey = VoiceShortcutKey.UNBOUND;
             }
             case UPLOAD_COMPATIBILITY -> {
                 draft.uploadMode = ChatUpgradeConfig.UploadMode.AUTO;
@@ -971,6 +1033,7 @@ public final class ChatSettingsOverlay {
         draft = null;
         activeSlider = null;
         visibleTextOption = null;
+        capturingKeyOption = null;
         if (textEditor != null) {
             textEditor.setFocused(false);
             textEditor.setVisible(false);
@@ -1095,6 +1158,20 @@ public final class ChatSettingsOverlay {
             java.util.function.IntConsumer setter,
             String... valueLabelKeys) {
         return new SettingsOption.EnumOption(labelKey, getter, setter, List.of(valueLabelKeys));
+    }
+
+    private static SettingsOption.ChoiceOption choice(
+            String labelKey,
+            java.util.function.Supplier<String> value,
+            Runnable selectNext) {
+        return new SettingsOption.ChoiceOption(labelKey, value, selectNext);
+    }
+
+    private static SettingsOption.KeyOption key(
+            String labelKey,
+            java.util.function.IntSupplier getter,
+            java.util.function.IntConsumer setter) {
+        return new SettingsOption.KeyOption(labelKey, getter, setter);
     }
 
     private static SettingsOption.ColorOption color(

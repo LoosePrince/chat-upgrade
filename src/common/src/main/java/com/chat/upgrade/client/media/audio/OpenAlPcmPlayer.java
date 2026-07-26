@@ -25,13 +25,22 @@ public final class OpenAlPcmPlayer implements AutoCloseable {
 
         int format = this.channels == 1 ? AL10.AL_FORMAT_MONO16 : AL10.AL_FORMAT_STEREO16;
         this.bufferId = AL10.alGenBuffers();
+        requireNoOpenAlError("generate audio buffer");
         ByteBuffer data = BufferUtils.createByteBuffer(pcmS16Le.length);
         data.put(pcmS16Le).flip();
         AL10.alBufferData(bufferId, format, data, this.sampleRate);
+        requireNoOpenAlError("upload PCM buffer");
 
         this.sourceId = AL10.alGenSources();
+        requireNoOpenAlError("generate audio source");
         AL10.alSourcei(sourceId, AL10.AL_BUFFER, bufferId);
+        // Voice messages are UI media, not a sound at the world origin. Keep the source
+        // at the listener so Minecraft's positional attenuation cannot mute it.
+        AL10.alSourcei(sourceId, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE);
+        AL10.alSource3f(sourceId, AL10.AL_POSITION, 0.0f, 0.0f, 0.0f);
+        AL10.alSourcef(sourceId, AL10.AL_ROLLOFF_FACTOR, 0.0f);
         AL10.alSourcei(sourceId, AL10.AL_LOOPING, AL10.AL_FALSE);
+        requireNoOpenAlError("configure audio source");
     }
 
     public long durationMs() {
@@ -43,6 +52,7 @@ public final class OpenAlPcmPlayer implements AutoCloseable {
         this.lastStartMs = (long) (sec * 1000.0f);
         AL10.alSourceStop(sourceId);
         AL10.alSourcePlay(sourceId);
+        requireNoOpenAlError("start audio source");
         this.playing = true;
     }
 
@@ -89,6 +99,13 @@ public final class OpenAlPcmPlayer implements AutoCloseable {
         int clamped = Math.clamp(percent, 1, 100);
         float gain = (float) Math.clamp(clamped / 100.0, 0.01, 1.0);
         AL10.alSourcef(sourceId, AL10.AL_GAIN, gain);
+    }
+
+    private static void requireNoOpenAlError(String action) {
+        int error = AL10.alGetError();
+        if (error != AL10.AL_NO_ERROR) {
+            throw new IllegalStateException(action + " failed with OpenAL error 0x" + Integer.toHexString(error));
+        }
     }
 
     @Override

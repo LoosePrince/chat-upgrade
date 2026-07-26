@@ -13,6 +13,11 @@ import com.chat.upgrade.client.MinecraftGuiBridge;
 import com.chat.upgrade.client.mixininterface.ChatCommandSuggestionAreaAccess;
 import com.chat.upgrade.client.mixininterface.ChatComposerAttachmentDragAccess;
 import com.chat.upgrade.client.mixininterface.ChatSettingsOverlayAccess;
+import com.chat.upgrade.client.mixininterface.VoiceRecordingInputAccess;
+import com.chat.upgrade.client.media.audio.VoiceMessageController;
+import com.chat.upgrade.client.media.audio.VoiceRecordingSession;
+import com.chat.upgrade.client.media.audio.VoiceShortcutKey;
+import com.chat.upgrade.client.media.audio.VoiceShortcutService;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.CompactAudioOptionsMenu;
@@ -44,6 +49,7 @@ import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceState;
 import com.chat.upgrade.client.ui.settings.ChatSettingsOverlay;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
+import com.chat.upgrade.client.media.model.InlineResourceType;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -60,7 +66,8 @@ import net.minecraft.network.chat.Component;
 
 @Mixin(ChatScreen.class)
 public abstract class ChatScreenRichInputMixin extends Screen
-        implements ChatCommandSuggestionAreaAccess, ChatComposerAttachmentDragAccess, ChatSettingsOverlayAccess {
+        implements ChatCommandSuggestionAreaAccess, ChatComposerAttachmentDragAccess, ChatSettingsOverlayAccess,
+        VoiceRecordingInputAccess {
     @Shadow
     protected EditBox input;
 
@@ -106,6 +113,18 @@ public abstract class ChatScreenRichInputMixin extends Screen
     private ChatComposerToolbar.State chatupgrade$toolbarState = ChatComposerToolbar.State.idle();
 
     @Unique
+    private final VoiceMessageController chatupgrade$voiceMessages = new VoiceMessageController();
+
+    @Unique
+    private @org.jetbrains.annotations.Nullable VoiceRecordingSession.Result chatupgrade$pendingVoice;
+
+    @Unique
+    private long chatupgrade$pendingVoiceDeadlineNanos;
+
+    @Unique
+    private boolean chatupgrade$voiceShortcutHeld;
+
+    @Unique
     private final EmojiPickerPopover chatupgrade$emojiPopover = new EmojiPickerPopover();
 
     @Unique
@@ -142,6 +161,33 @@ public abstract class ChatScreenRichInputMixin extends Screen
         chatupgrade$restoreComposerFocus();
         chatupgrade$refreshControls();
         chatupgrade$layoutComposerControls();
+    }
+
+    @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
+    private void chatupgrade$handleVoiceShortcut(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        int shortcut = ChatUpgradeConfig.get().voiceShortcutKey;
+        if (!VoiceShortcutKey.isBindable(shortcut) || event.key() != shortcut || !chatupgrade$canUseVoiceShortcut()) {
+            return;
+        }
+        if (chatupgrade$voiceShortcutHeld) {
+            cir.setReturnValue(true);
+            return;
+        }
+        chatupgrade$voiceShortcutHeld = true;
+        if (chatupgrade$pendingVoice != null) {
+            if (event.hasShiftDown()) {
+                chatupgrade$attachVoice(chatupgrade$pendingVoice);
+            } else {
+                chatupgrade$clearPendingVoice();
+                chatupgrade$systemMessage(Component.translatable("chatupgrade.voice.cancelled").withStyle(ChatFormatting.GRAY));
+            }
+            cir.setReturnValue(true);
+            return;
+        }
+        if (chatupgrade$voiceMessages.start(VoiceMessageController.Origin.SHORTCUT)) {
+            chatupgrade$refreshControls();
+        }
+        cir.setReturnValue(true);
     }
 
     @Inject(method = "keyPressed(Lnet/minecraft/client/input/KeyEvent;)Z", at = @At("HEAD"), cancellable = true)
@@ -262,7 +308,11 @@ public abstract class ChatScreenRichInputMixin extends Screen
                     event.x(),
                     event.y());
             if (toolbarAction != null) {
-                chatupgrade$activateToolbarAction(toolbarAction);
+                if (toolbarAction == ChatComposerToolbar.Action.VOICE) {
+                    chatupgrade$startButtonVoice();
+                } else {
+                    chatupgrade$activateToolbarAction(toolbarAction);
+                }
                 cir.setReturnValue(true);
                 return;
             }
@@ -464,6 +514,120 @@ public abstract class ChatScreenRichInputMixin extends Screen
     }
 
     @Override
+    public boolean chatupgrade$releaseVoiceMouse(int button) {
+        if (button != 0 || !chatupgrade$voiceMessages.recording(VoiceMessageController.Origin.BUTTON)) {
+            return false;
+        }
+        chatupgrade$voiceMessages.release(VoiceMessageController.Origin.BUTTON);
+        chatupgrade$refreshControls();
+        return true;
+    }
+
+    @Override
+    public boolean chatupgrade$releaseVoiceShortcut(int key) {
+        int shortcut = ChatUpgradeConfig.get().voiceShortcutKey;
+        if (key != shortcut || !chatupgrade$voiceShortcutHeld) {
+            return false;
+        }
+        chatupgrade$voiceShortcutHeld = false;
+        if (chatupgrade$voiceMessages.recording(VoiceMessageController.Origin.SHORTCUT)) {
+            chatupgrade$voiceMessages.release(VoiceMessageController.Origin.SHORTCUT);
+        }
+        chatupgrade$refreshControls();
+        return true;
+    }
+
+    @Unique
+    private boolean chatupgrade$canUseVoiceShortcut() {
+        return input != null
+                && !chatupgrade$settingsOverlay.isOpen()
+                && !chatupgrade$emojiPopover.isVisible()
+                && !chatupgrade$contextMenu.isOpen()
+                && !NativeFileDialogModal.isActive();
+    }
+
+    @Unique
+    private void chatupgrade$startButtonVoice() {
+        if (!chatupgrade$toolbarState.voiceEnabled() || chatupgrade$settingsOverlay.isOpen()) {
+            return;
+        }
+        if (chatupgrade$voiceMessages.start(VoiceMessageController.Origin.BUTTON)) {
+            chatupgrade$refreshControls();
+        }
+    }
+
+    @Unique
+    private void chatupgrade$consumeVoiceCompletion() {
+        chatupgrade$voiceMessages.takeCompletion().ifPresent(completion -> {
+            VoiceRecordingSession.Result result = completion.result();
+            switch (result.kind()) {
+                case READY -> {
+                    if (completion.origin() == VoiceMessageController.Origin.BUTTON) {
+                        chatupgrade$attachVoice(result);
+                    } else {
+                        chatupgrade$pendingVoice = result;
+                        chatupgrade$pendingVoiceDeadlineNanos = System.nanoTime() + 10_000_000_000L;
+                    }
+                }
+                case TOO_SHORT -> chatupgrade$systemMessage(Component.translatable("chatupgrade.voice.too_short")
+                        .withStyle(ChatFormatting.RED));
+                case SILENT -> chatupgrade$systemMessage(Component.translatable(
+                        "chatupgrade.voice.silent",
+                        result.inputDevice()).withStyle(ChatFormatting.RED));
+                case FAILED -> chatupgrade$systemMessage(Component.translatable("chatupgrade.voice.failed")
+                        .withStyle(ChatFormatting.RED));
+                case CANCELLED -> {
+                }
+            }
+        });
+    }
+
+    @Unique
+    private void chatupgrade$attachVoice(VoiceRecordingSession.Result result) {
+        if (result.wavBytes().length > ChatUpgradeConfig.get().maxUploadBytes) {
+            chatupgrade$systemMessage(Component.translatable(
+                    "chatupgrade.upload.too_large",
+                    ChatUpgradeConfig.formatBytesHuman(ChatUpgradeConfig.get().maxUploadBytes),
+                    ChatUpgradeConfig.formatBytesHuman(result.wavBytes().length)).withStyle(ChatFormatting.RED));
+            chatupgrade$clearPendingVoice();
+            return;
+        }
+        String displayName = result.fileName().endsWith(".wav")
+                ? result.fileName().substring(0, result.fileName().length() - 4)
+                : result.fileName();
+        AttachmentDraft draft = AttachmentDraft.fromBytes(
+                InlineResourceType.AUDIO,
+                result.wavBytes(),
+                result.fileName(),
+                displayName,
+                AttachmentDraft.Source.RECORDING,
+                "audio/wav");
+        chatupgrade$clearPendingVoice();
+        chatupgrade$setDraft(draft);
+    }
+
+    @Unique
+    private void chatupgrade$expirePendingVoice() {
+        if (chatupgrade$pendingVoice != null && System.nanoTime() >= chatupgrade$pendingVoiceDeadlineNanos) {
+            chatupgrade$clearPendingVoice();
+            chatupgrade$systemMessage(Component.translatable("chatupgrade.voice.timeout").withStyle(ChatFormatting.GRAY));
+        }
+    }
+
+    @Unique
+    private void chatupgrade$clearPendingVoice() {
+        chatupgrade$pendingVoice = null;
+        chatupgrade$pendingVoiceDeadlineNanos = 0L;
+    }
+
+    @Unique
+    private void chatupgrade$renderVoiceShortcutPrompt(GuiGraphicsExtractor graphics) {
+        if (!chatupgrade$settingsOverlay.isOpen()) {
+            VoiceShortcutService.renderPrompt(graphics, this.font, this.width, this.height);
+        }
+    }
+
+    @Override
     public boolean chatupgrade$updateAttachmentDrag(double mouseX, double mouseY, int button) {
         if (button != 0 || chatupgrade$draggedAttachment == null
                 || !ChatGestureArena.isCapturedBy(ChatGestureArena.Owner.ATTACHMENT_TRAY)
@@ -537,6 +701,9 @@ public abstract class ChatScreenRichInputMixin extends Screen
 
     @Inject(method = "removed()V", at = @At("HEAD"))
     private void chatupgrade$closeOverlaysOnRemoved(CallbackInfo ci) {
+        chatupgrade$voiceMessages.cancel();
+        chatupgrade$clearPendingVoice();
+        chatupgrade$voiceShortcutHeld = false;
         chatupgrade$settingsOverlay.cancel();
         CompactAudioOptionsMenu.close();
         chatupgrade$emojiPopover.close();
@@ -680,6 +847,8 @@ public abstract class ChatScreenRichInputMixin extends Screen
             int mouseY,
             float partialTick,
             CallbackInfo ci) {
+        chatupgrade$consumeVoiceCompletion();
+        chatupgrade$expirePendingVoice();
         chatupgrade$refreshControls();
         chatupgrade$layoutComposerControls();
         if (chatupgrade$settingsOverlay.isOpen()
@@ -816,6 +985,7 @@ public abstract class ChatScreenRichInputMixin extends Screen
                 mouseY,
                 this.width,
                 this.height);
+        chatupgrade$renderVoiceShortcutPrompt(graphics);
         if (chatupgrade$settingsOverlay.isOpen()) {
             MentionNotificationService.renderPassthrough(
                     graphics,
@@ -1394,8 +1564,12 @@ public abstract class ChatScreenRichInputMixin extends Screen
         boolean commandReady = !ChatCommandBridge.isCommand(inputValue)
                 || inputValue.length() > 1;
         boolean uploading = chatupgrade$composerState.isUploading();
+        boolean voiceRecording = chatupgrade$voiceMessages.recording(VoiceMessageController.Origin.BUTTON)
+                || chatupgrade$voiceMessages.recording(VoiceMessageController.Origin.SHORTCUT);
         chatupgrade$toolbarState = new ChatComposerToolbar.State(
                 chatupgrade$composerState.canAddDraft(),
+                chatupgrade$composerState.canAddDraft() && !voiceRecording,
+                chatupgrade$voiceMessages.recording(VoiceMessageController.Origin.BUTTON),
                 chatupgrade$emojiPopover.isVisible(),
                 hasDraft,
                 hasDraft && !uploading,

@@ -13,6 +13,7 @@ import net.minecraft.client.resources.language.I18n;
 public final class ChatComposerToolbar {
     public enum Action {
         ATTACHMENT,
+        VOICE,
         EMOJI,
         CLEAR,
         SEND
@@ -20,18 +21,21 @@ public final class ChatComposerToolbar {
 
     public record State(
             boolean attachmentEnabled,
+            boolean voiceEnabled,
+            boolean voiceRecording,
             boolean emojiOpen,
             boolean clearVisible,
             boolean clearEnabled,
             boolean sendVisible,
             boolean sendEnabled) {
         public static State idle() {
-            return new State(true, false, false, false, false, false);
+            return new State(true, true, false, false, false, false, false, false);
         }
     }
 
     public record Layout(
             RichChatBounds attachment,
+            RichChatBounds voice,
             RichChatBounds emoji,
             RichChatBounds clear,
             RichChatBounds send,
@@ -41,6 +45,7 @@ public final class ChatComposerToolbar {
         public RichChatBounds bounds(Action action) {
             return switch (action) {
                 case ATTACHMENT -> attachment;
+                case VOICE -> voice;
                 case EMOJI -> emoji;
                 case CLEAR -> clear;
                 case SEND -> send;
@@ -49,7 +54,7 @@ public final class ChatComposerToolbar {
 
         public boolean visible(Action action) {
             return switch (action) {
-                case ATTACHMENT, EMOJI -> true;
+                case ATTACHMENT, VOICE, EMOJI -> true;
                 case CLEAR -> clearVisible;
                 case SEND -> sendVisible;
             };
@@ -63,9 +68,10 @@ public final class ChatComposerToolbar {
     }
 
     public static Layout layout(int left, int right, int top, State state) {
-        int safeRight = Math.max(left + BUTTON_SIZE * 2 + GAP, right);
+        int safeRight = Math.max(left + BUTTON_SIZE * 3 + GAP * 2, right);
         RichChatBounds attachment = RichChatBounds.ofSize(left, top, BUTTON_SIZE, BUTTON_SIZE);
-        RichChatBounds emoji = RichChatBounds.ofSize(attachment.right() + GAP, top, BUTTON_SIZE, BUTTON_SIZE);
+        RichChatBounds voice = RichChatBounds.ofSize(attachment.right() + GAP, top, BUTTON_SIZE, BUTTON_SIZE);
+        RichChatBounds emoji = RichChatBounds.ofSize(voice.right() + GAP, top, BUTTON_SIZE, BUTTON_SIZE);
 
         int cursor = safeRight;
         RichChatBounds send = RichChatBounds.ofSize(cursor, top, 0, 0);
@@ -83,7 +89,7 @@ public final class ChatComposerToolbar {
                 top,
                 Math.max(emoji.right() + GAP, cursor),
                 top + BUTTON_SIZE);
-        return new Layout(attachment, emoji, clear, send, tray, state.clearVisible(), state.sendVisible());
+        return new Layout(attachment, voice, emoji, clear, send, tray, state.clearVisible(), state.sendVisible());
     }
 
     public static Action actionAt(Layout layout, State state, double mouseX, double mouseY) {
@@ -117,6 +123,17 @@ public final class ChatComposerToolbar {
                 "chatupgrade.input.button.attachment.tooltip",
                 state.attachmentEnabled(),
                 false,
+                mouseX,
+                mouseY);
+        paintButton(
+                graphics,
+                font,
+                appearance,
+                layout.voice(),
+                UiTextureAtlas.Icon.MICROPHONE,
+                "chatupgrade.input.button.voice.tooltip",
+                state.voiceEnabled(),
+                state.voiceRecording(),
                 mouseX,
                 mouseY);
         paintButton(
