@@ -32,7 +32,13 @@ public final class NativeFileDialogModal {
     }
 
     public static Optional<Session> tryOpen(long glfwWindowHandle) {
-        if (!ACTIVE.compareAndSet(false, true)) {
+        boolean opened = ACTIVE.compareAndSet(false, true);
+        ChatUpgrade.LOGGER.info(
+                "chat-upgrade: file dialog session requested (activeBefore={}, opened={}, glfwWindow={})",
+                !opened,
+                opened,
+                glfwWindowHandle);
+        if (!opened) {
             return Optional.empty();
         }
         releaseGameInputState();
@@ -44,14 +50,24 @@ public final class NativeFileDialogModal {
             Function<Session, T> operation) {
         Optional<Session> session = tryOpen(glfwWindowHandle);
         if (session.isEmpty()) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: file dialog request rejected because another session is active");
             return Optional.empty();
         }
         try {
-            return Optional.of(CompletableFuture.supplyAsync(() -> {
+            CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
+                ChatUpgrade.LOGGER.info("chat-upgrade: file dialog worker started");
                 try (Session currentSession = session.get()) {
                     return operation.apply(currentSession);
                 }
-            }));
+            });
+            future.whenComplete((result, throwable) -> {
+                if (throwable == null) {
+                    ChatUpgrade.LOGGER.info("chat-upgrade: file dialog worker completed");
+                } else {
+                    ChatUpgrade.LOGGER.warn("chat-upgrade: file dialog worker failed", throwable);
+                }
+            });
+            return Optional.of(future);
         } catch (RuntimeException exception) {
             session.get().close();
             throw exception;
@@ -62,22 +78,34 @@ public final class NativeFileDialogModal {
             Session session,
             String title,
             Set<String> extensions) {
+        ChatUpgrade.LOGGER.info(
+                "chat-upgrade: file dialog picker entered (headless={}, onEdt={}, title={}, extensionCount={})",
+                GraphicsEnvironment.isHeadless(),
+                SwingUtilities.isEventDispatchThread(),
+                title,
+                extensions.size());
         if (GraphicsEnvironment.isHeadless()) {
             return Optional.empty();
         }
         AtomicReference<Path> selected = new AtomicReference<>();
-        Runnable show = () -> selected.set(showOnEventDispatchThread(session, title, extensions));
+        Runnable show = () -> {
+            ChatUpgrade.LOGGER.info("chat-upgrade: file dialog executing on AWT event thread");
+            selected.set(showOnEventDispatchThread(session, title, extensions));
+        };
         try {
             if (SwingUtilities.isEventDispatchThread()) {
                 show.run();
             } else {
+                ChatUpgrade.LOGGER.info("chat-upgrade: file dialog waiting for AWT event thread");
                 SwingUtilities.invokeAndWait(show);
             }
+            ChatUpgrade.LOGGER.info("chat-upgrade: file dialog AWT invocation returned (selected={})", selected.get() != null);
             return Optional.ofNullable(selected.get());
         } catch (Throwable throwable) {
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: FileDialog invoke error: {}", throwable.toString());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: file dialog AWT invocation failed", throwable);
             return Optional.empty();
         } finally {
+            ChatUpgrade.LOGGER.info("chat-upgrade: file dialog picker closing session");
             session.close();
         }
     }
@@ -86,22 +114,21 @@ public final class NativeFileDialogModal {
             Session session,
             String title,
             Set<String> extensions) {
-        Frame owner = new Frame();
         FileDialog dialog = null;
         try {
-            // FileDialog already creates a native modal child for this AWT owner. Reparenting
-            // the owner to Minecraft's GLFW window and disabling that window causes Windows to
-            // dismiss the common dialog before it becomes visible on some drivers.
-            owner.setUndecorated(true);
-            owner.setType(java.awt.Window.Type.UTILITY);
-            owner.setBounds(0, 0, 1, 1);
-            owner.addNotify();
-
-            dialog = new FileDialog(owner, title, FileDialog.LOAD);
+            // An unowned dialog avoids retaining an invisible AWT owner between selections.
+            // Input is already captured by the modal session while the native window is open.
+            ChatUpgrade.LOGGER.info("chat-upgrade: creating unowned native file dialog");
+            dialog = new FileDialog((Frame) null, title, FileDialog.LOAD);
             dialog.setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
             dialog.setMultipleMode(false);
             dialog.setFilenameFilter((directory, name) -> hasExtension(name, extensions));
+            ChatUpgrade.LOGGER.info(
+                    "chat-upgrade: showing native file dialog (displayable={}, modalType={})",
+                    dialog.isDisplayable(),
+                    dialog.getModalityType());
             dialog.setVisible(true);
+            ChatUpgrade.LOGGER.info("chat-upgrade: native file dialog closed (displayable={})", dialog.isDisplayable());
 
             String directory = dialog.getDirectory();
             String file = dialog.getFile();
@@ -119,7 +146,6 @@ public final class NativeFileDialogModal {
             if (dialog != null) {
                 dialog.dispose();
             }
-            owner.dispose();
         }
     }
 
@@ -137,6 +163,7 @@ public final class NativeFileDialogModal {
     private static void releaseGameInputState() {
         KeyMapping.releaseAll();
         Minecraft minecraft = Minecraft.getInstance();
+        ChatUpgrade.LOGGER.info("chat-upgrade: file dialog input released (minecraftPresent={})", minecraft != null);
         if (minecraft != null && minecraft.mouseHandler instanceof MouseHandlerActiveButtonAccessor access) {
             access.chatupgrade$setActiveButton(null);
         }
@@ -146,17 +173,20 @@ public final class NativeFileDialogModal {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null) {
             ACTIVE.set(false);
+            ChatUpgrade.LOGGER.info("chat-upgrade: file dialog input restored without a Minecraft instance");
             return;
         }
         try {
+            ChatUpgrade.LOGGER.info("chat-upgrade: file dialog input restore queued on render thread");
             minecraft.execute(() -> {
                 KeyMapping.releaseAll();
                 minecraft.mouseHandler.setIgnoreFirstMove();
                 ACTIVE.set(false);
+                ChatUpgrade.LOGGER.info("chat-upgrade: file dialog input restored on render thread");
             });
         } catch (RuntimeException exception) {
             ACTIVE.set(false);
-            ChatUpgrade.LOGGER.warn("ChatUpgrade: failed to restore input state: {}", exception.toString());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: file dialog input restore failed", exception);
         }
     }
 
@@ -175,8 +205,10 @@ public final class NativeFileDialogModal {
         @Override
         public void close() {
             if (!closed.compareAndSet(false, true)) {
+                ChatUpgrade.LOGGER.info("chat-upgrade: file dialog session close ignored because it is already closed");
                 return;
             }
+            ChatUpgrade.LOGGER.info("chat-upgrade: file dialog session closing (glfwWindow={})", glfwWindowHandle);
             restoreGameInputState();
         }
     }
