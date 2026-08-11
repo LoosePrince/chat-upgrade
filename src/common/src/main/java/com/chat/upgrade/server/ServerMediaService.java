@@ -24,6 +24,19 @@ public final class ServerMediaService {
     private static final ConcurrentHashMap<String, Set<UUID>> READ_GRANTS = new ConcurrentHashMap<>();
     private static volatile MediaStore store = new InMemoryMediaStore();
 
+    public enum MediaReadFailure {
+        NONE,
+        NOT_FOUND,
+        EXPIRED,
+        ACCESS_DENIED
+    }
+
+    public record MediaReadResult(@Nullable StoredMedia media, MediaReadFailure failure) {
+        boolean found() {
+            return media != null;
+        }
+    }
+
     private ServerMediaService() {
     }
 
@@ -154,20 +167,30 @@ public final class ServerMediaService {
         return Optional.of(media);
     }
 
-    public static Optional<StoredMedia> getForPlayer(UUID playerId, String mediaId) {
+    public static MediaReadResult readForPlayer(UUID playerId, String mediaId) {
         if (playerId == null || !ServerMediaId.isValid(mediaId)) {
-            return Optional.empty();
+            return new MediaReadResult(null, MediaReadFailure.NOT_FOUND);
         }
         String normalizedMediaId = mediaId.toLowerCase(java.util.Locale.ROOT);
-        Optional<StoredMedia> media = get(normalizedMediaId);
-        if (media.isEmpty()) {
-            return Optional.empty();
+        Optional<StoredMedia> stored = store.get(normalizedMediaId);
+        if (stored.isEmpty()) {
+            return new MediaReadResult(null, MediaReadFailure.NOT_FOUND);
         }
-        if (isOwner(playerId, media.get())
+        StoredMedia media = stored.get();
+        if (media.isExpired(System.currentTimeMillis())) {
+            store.delete(normalizedMediaId);
+            READ_GRANTS.remove(normalizedMediaId);
+            return new MediaReadResult(null, MediaReadFailure.EXPIRED);
+        }
+        if (isOwner(playerId, media)
                 || READ_GRANTS.getOrDefault(normalizedMediaId, Set.of()).contains(playerId)) {
-            return media;
+            return new MediaReadResult(media, MediaReadFailure.NONE);
         }
-        return Optional.empty();
+        return new MediaReadResult(null, MediaReadFailure.ACCESS_DENIED);
+    }
+
+    public static Optional<StoredMedia> getForPlayer(UUID playerId, String mediaId) {
+        return Optional.ofNullable(readForPlayer(playerId, mediaId).media());
     }
 
     public static boolean isOwner(UUID playerId, String mediaId) {

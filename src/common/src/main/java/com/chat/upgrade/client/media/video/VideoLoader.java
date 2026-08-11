@@ -58,15 +58,15 @@ public final class VideoLoader {
         CompletableFuture.runAsync(() -> {
             if (!FfmpegNativeBootstrap.ensureReady()) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: video runtime not ready for {}, FFmpeg natives unavailable", url);
-                markFailed(url, entry, VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT);
+                markFailed(url, entry, VideoEntry.FailureKind.DECODER_UNAVAILABLE);
                 return;
             }
             VideoPlayerService.Prepared meta;
             try {
                 meta = VideoPlayerService.prepare(url, body);
             } catch (Exception ex) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported video {}: {}", url, ex.getMessage());
-                markFailed(url, entry, VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT);
+                ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode video {}: {}", url, ex.getMessage());
+                markFailed(url, entry, decodeFailure(ex));
                 return;
             }
             PreviewLayout layout = computePreviewLayout(meta.rawWidth(), meta.rawHeight());
@@ -79,12 +79,10 @@ public final class VideoLoader {
         return CACHE.get(url);
     }
 
-    public static void failServerMediaRequest(String url, boolean responseTooLarge) {
+    public static void failServerMediaRequest(String url, VideoEntry.FailureKind failureKind) {
         VideoEntry entry = CACHE.get(url);
         if (entry != null) {
-            markFailed(url, entry, responseTooLarge
-                    ? VideoEntry.FailureKind.RESPONSE_BODY_TOO_LARGE
-                    : VideoEntry.FailureKind.UNKNOWN);
+            markFailed(url, entry, failureKind);
         }
     }
 
@@ -130,7 +128,7 @@ public final class VideoLoader {
                 if (!FfmpegNativeBootstrap.ensureReady()) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: video runtime not ready for {}, FFmpeg natives unavailable",
                             url);
-                    markFailed(url, entry, VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT);
+                    markFailed(url, entry, VideoEntry.FailureKind.DECODER_UNAVAILABLE);
                     return;
                 }
                 byte[] body = payload.body();
@@ -141,7 +139,7 @@ public final class VideoLoader {
                     meta = VideoPlayerService.prepare(url, body);
                 } catch (Exception ex) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported video {}: {}", url, ex.getMessage());
-                    markFailed(url, entry, VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT);
+                    markFailed(url, entry, VideoEntry.FailureKind.DECODER_UNAVAILABLE);
                     return;
                 }
                 PreviewLayout layout = computePreviewLayout(meta.rawWidth(), meta.rawHeight());
@@ -162,6 +160,13 @@ public final class VideoLoader {
             markFailed(url, entry, VideoEntry.FailureKind.UNKNOWN);
             return null;
         });
+    }
+
+    private static VideoEntry.FailureKind decodeFailure(Exception failure) {
+        String message = rootCauseMessage(failure).toLowerCase(java.util.Locale.ROOT);
+        return message.contains("no decoder") || message.contains("unsupported")
+                ? VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT
+                : VideoEntry.FailureKind.INVALID_FILE;
     }
 
     private static boolean hasCause(Throwable failure, Class<? extends Throwable> type) {

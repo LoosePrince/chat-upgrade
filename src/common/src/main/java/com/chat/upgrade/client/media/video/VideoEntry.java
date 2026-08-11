@@ -10,6 +10,11 @@ public final class VideoEntry extends BaseMediaEntry<VideoEntry.State, VideoEntr
     public enum FailureKind {
         UNKNOWN,
         RESPONSE_BODY_TOO_LARGE,
+        INVALID_FILE,
+        EXPIRED_FILE,
+        MISSING_FILE,
+        UNAVAILABLE_FILE,
+        DECODER_UNAVAILABLE,
         UNSUPPORTED_VIDEO_FORMAT
     }
 

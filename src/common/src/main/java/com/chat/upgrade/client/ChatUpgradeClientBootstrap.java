@@ -81,7 +81,6 @@ public final class ChatUpgradeClientBootstrap {
             lastFramebufferWidth = fw;
             lastFramebufferHeight = fh;
             ImageLoader.invalidateTextureCache();
-            VideoLoader.invalidateVideoCache();
             UiTextureAtlas.invalidate();
         }
     }

@@ -178,7 +178,7 @@ public final class ServerMediaNetworking {
             }
             INCOMING.remove(mediaId, assembly);
             if (status == IncomingMediaAssembly.AcceptStatus.REJECTED) {
-                ServerMediaClient.failRequest(mediaId, false);
+                ServerMediaClient.failRequest(mediaId, "malformed_chunk");
                 ChatUpgrade.LOGGER.warn("chat-upgrade: rejected malformed server media chunk for {}", mediaId);
                 return;
             }
@@ -197,7 +197,7 @@ public final class ServerMediaNetworking {
                     payload.message());
             if (mediaId != null) {
                 INCOMING.remove(mediaId);
-                ServerMediaClient.failRequest(mediaId, false);
+                ServerMediaClient.failRequest(mediaId, payload.message());
             }
         });
 
@@ -240,13 +240,13 @@ public final class ServerMediaNetworking {
                 || !("image".equals(payload.typeWire())
                         || "audio".equals(payload.typeWire())
                         || "video".equals(payload.typeWire()))) {
-            rejectIncoming(payload.mediaId(), "invalid metadata");
+            rejectIncoming(payload.mediaId(), "invalid_metadata");
             return;
         }
         String mediaId = payload.mediaId().toLowerCase(java.util.Locale.ROOT);
         String expectedType = ServerMediaClient.expectedType(mediaId);
         if (expectedType == null || !expectedType.equals(payload.typeWire())) {
-            rejectIncoming(mediaId, "unsolicited or mismatched response");
+            rejectIncoming(mediaId, "unexpected_type");
             return;
         }
         synchronized (INCOMING) {
@@ -260,7 +260,7 @@ public final class ServerMediaNetworking {
             if (INCOMING.size() >= MAX_CONCURRENT_INCOMING_MEDIA
                     || payload.totalLen() <= 0
                     || payload.totalLen() > pendingLimit - pendingBytes) {
-                rejectIncoming(mediaId, "too many pending responses");
+                rejectIncoming(mediaId, "request_timeout");
                 return;
             }
             Optional<IncomingMediaAssembly> candidate = IncomingMediaAssembly.create(
@@ -274,7 +274,7 @@ public final class ServerMediaNetworking {
                     ChatUpgradeConfig.get().maxReceiveBytes,
                     nowMs);
             if (candidate.isEmpty()) {
-                rejectIncoming(mediaId, "allocation limits exceeded");
+                rejectIncoming(mediaId, "response_too_large");
                 return;
             }
             INCOMING.put(mediaId, candidate.get());
@@ -286,17 +286,17 @@ public final class ServerMediaNetworking {
             if (!entry.getValue().isExpired(nowMs, INCOMING_MEDIA_TIMEOUT_MS)) {
                 return false;
             }
-            ServerMediaClient.failRequest(entry.getKey(), false);
+            ServerMediaClient.failRequest(entry.getKey(), "request_timeout");
             return true;
         });
     }
 
-    private static void rejectIncoming(String mediaId, String reason) {
+    private static void rejectIncoming(String mediaId, String failureCode) {
         if (mediaId != null) {
             INCOMING.remove(mediaId);
-            ServerMediaClient.failRequest(mediaId, "allocation limits exceeded".equals(reason));
+            ServerMediaClient.failRequest(mediaId, failureCode);
         }
-        ChatUpgrade.LOGGER.warn("chat-upgrade: rejected server media response for {}: {}", mediaId, reason);
+        ChatUpgrade.LOGGER.warn("chat-upgrade: rejected server media response for {}: {}", mediaId, failureCode);
     }
 
     private static void handleChatHistoryEntry(StructuredChatEnvelope envelope) {

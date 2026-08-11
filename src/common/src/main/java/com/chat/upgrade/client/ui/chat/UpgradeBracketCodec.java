@@ -461,6 +461,11 @@ public final class UpgradeBracketCodec {
                         VideoEntry.FailureKind fk = e.getFailureKind();
                         yield switch (fk) {
                             case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
+                            case INVALID_FILE -> I18n.get("chatupgrade.detail.failed.invalid");
+                            case EXPIRED_FILE -> I18n.get("chatupgrade.detail.failed.expired");
+                            case MISSING_FILE -> I18n.get("chatupgrade.detail.failed.missing");
+                            case UNAVAILABLE_FILE -> I18n.get("chatupgrade.detail.failed.unavailable");
+                            case DECODER_UNAVAILABLE -> I18n.get("chatupgrade.detail.failed.decoder_unavailable");
                             case UNSUPPORTED_VIDEO_FORMAT -> I18n.get("chatupgrade.detail.failed.video_unsupported");
                             case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
@@ -520,6 +525,22 @@ public final class UpgradeBracketCodec {
     public static @Nullable FormattedCharSequence replaceVisibleVideoPlaceholderWithOversize(
             FormattedCharSequence seq) {
         return replaceVisiblePlaceholderWithVisibleText(seq, VIDEO_OVERSIZE_VISIBLE);
+    }
+
+    public static @Nullable FormattedCharSequence replaceVisibleVideoPlaceholderWithFailure(
+            FormattedCharSequence seq,
+            VideoEntry.FailureKind failureKind) {
+        String key = switch (failureKind) {
+            case RESPONSE_BODY_TOO_LARGE -> "chatupgrade.visible.video.oversize";
+            case INVALID_FILE -> "chatupgrade.visible.video.invalid";
+            case EXPIRED_FILE -> "chatupgrade.visible.video.expired";
+            case MISSING_FILE -> "chatupgrade.visible.video.missing";
+            case UNAVAILABLE_FILE -> "chatupgrade.visible.video.unavailable";
+            case DECODER_UNAVAILABLE -> "chatupgrade.visible.video.decoder_unavailable";
+            case UNSUPPORTED_VIDEO_FORMAT -> "chatupgrade.visible.video.unsupported";
+            case UNKNOWN -> "chatupgrade.visible.video.load_failed";
+        };
+        return replaceVisiblePlaceholderWithVisibleText(seq, I18n.get(key));
     }
 
     /**

@@ -427,14 +427,7 @@ public final class RichChatMediaRenderer {
             return;
         }
         if (entry.getState() == VideoEntry.State.FAILED) {
-            paintFailure(
-                    gfx,
-                    font,
-                    bounds,
-                    RichAttachment.structured(attachmentTypeVideo(), name, url, null, null),
-                    opacity,
-                    tokens,
-                    cornerRadius);
+            paintVideoFailure(gfx, font, bounds, entry.getFailureKind(), opacity, tokens, cornerRadius);
             return;
         }
 
@@ -621,6 +614,41 @@ public final class RichChatMediaRenderer {
                 bounds.top() + 1,
                 UiPrimitives.withOpacity(tokens.failureText(), opacity),
                 false);
+    }
+
+    private static void paintVideoFailure(
+            GuiGraphicsExtractor gfx,
+            Font font,
+            RichChatBounds bounds,
+            VideoEntry.FailureKind failureKind,
+            float opacity,
+            ChatAppearanceSnapshot.Media tokens,
+            int cornerRadius) {
+        UiPrimitives.fillRounded(
+                gfx,
+                bounds,
+                cornerRadius,
+                UiPrimitives.withOpacity(tokens.failureBackground(), opacity));
+        gfx.text(
+                font,
+                I18n.get(videoFailureTranslationKey(failureKind)),
+                bounds.left() + 6,
+                bounds.top() + 1,
+                UiPrimitives.withOpacity(tokens.failureText(), opacity),
+                false);
+    }
+
+    private static String videoFailureTranslationKey(VideoEntry.FailureKind failureKind) {
+        return switch (failureKind) {
+            case RESPONSE_BODY_TOO_LARGE -> "chatupgrade.hud.video.failed.too_large";
+            case INVALID_FILE -> "chatupgrade.hud.video.failed.invalid";
+            case EXPIRED_FILE -> "chatupgrade.hud.video.failed.expired";
+            case MISSING_FILE -> "chatupgrade.hud.video.failed.missing";
+            case UNAVAILABLE_FILE -> "chatupgrade.hud.video.failed.unavailable";
+            case DECODER_UNAVAILABLE -> "chatupgrade.hud.video.failed.decoder_unavailable";
+            case UNSUPPORTED_VIDEO_FORMAT -> "chatupgrade.hud.video.failed.unsupported";
+            case UNKNOWN -> "chatupgrade.hud.video.failed";
+        };
     }
 
     private static void paintFailure(

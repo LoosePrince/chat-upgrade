@@ -184,7 +184,8 @@ public final class UpgradeHudInlinePaint {
         if (entry.getState() == VideoEntry.State.FAILED) {
             gfx.fill(x0, y0, x1, y0 + drawH, argb(opacity * 0.55f, 20, 22, 26));
             gfx.text(font, name, x0 + VideoUiLayout.PAD_X, y0 + 2, argb(opacity, 255, 120, 120), false);
-            gfx.text(font, I18n.get("chatupgrade.hud.video.failed"), x0 + VideoUiLayout.PAD_X, y0 + 13, argb(opacity, 255, 120, 120), false);
+            gfx.text(font, videoFailureLabel(entry.getFailureKind()), x0 + VideoUiLayout.PAD_X, y0 + 13,
+                    argb(opacity, 255, 120, 120), false);
             return;
         }
 
@@ -240,6 +241,19 @@ public final class UpgradeHudInlinePaint {
             int fillX = barX0 + Math.round((barX1 - barX0) * ratio);
             gfx.fill(barX0, barY0, fillX, barY1, argb(opacity, 100, 200, 255));
         }
+    }
+
+    private static String videoFailureLabel(VideoEntry.FailureKind failureKind) {
+        return I18n.get(switch (failureKind) {
+            case RESPONSE_BODY_TOO_LARGE -> "chatupgrade.hud.video.failed.too_large";
+            case INVALID_FILE -> "chatupgrade.hud.video.failed.invalid";
+            case EXPIRED_FILE -> "chatupgrade.hud.video.failed.expired";
+            case MISSING_FILE -> "chatupgrade.hud.video.failed.missing";
+            case UNAVAILABLE_FILE -> "chatupgrade.hud.video.failed.unavailable";
+            case DECODER_UNAVAILABLE -> "chatupgrade.hud.video.failed.decoder_unavailable";
+            case UNSUPPORTED_VIDEO_FORMAT -> "chatupgrade.hud.video.failed.unsupported";
+            case UNKNOWN -> "chatupgrade.hud.video.failed";
+        });
     }
 
     private static void paintDecodedBlit(GuiGraphicsExtractor gfx, ImageEntry entry, int messageY, float opacity) {

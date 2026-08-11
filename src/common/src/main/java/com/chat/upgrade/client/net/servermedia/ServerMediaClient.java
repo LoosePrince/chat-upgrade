@@ -11,6 +11,7 @@ import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
+import com.chat.upgrade.client.media.video.VideoEntry;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
@@ -167,7 +168,7 @@ public final class ServerMediaClient {
         }
     }
 
-    static void failRequest(String mediaId, boolean responseTooLarge) {
+    static void failRequest(String mediaId, String failureCode) {
         String safeId = normalizeOptional(mediaId);
         if (safeId == null) {
             return;
@@ -177,12 +178,27 @@ public final class ServerMediaClient {
             return;
         }
         String url = ServerMediaUrl.format(safeId, typeWire);
+        boolean responseTooLarge = "response_too_large".equals(failureCode);
         switch (typeWire) {
             case "image" -> ImageLoader.failServerMediaRequest(url, responseTooLarge);
             case "audio" -> AudioLoader.failServerMediaRequest(url, responseTooLarge);
-            case "video" -> VideoLoader.failServerMediaRequest(url, responseTooLarge);
+            case "video" -> VideoLoader.failServerMediaRequest(url, videoFailure(failureCode));
             default -> ChatUpgrade.LOGGER.warn("chat-upgrade: invalid pending server media type {}", typeWire);
         }
+    }
+
+    private static VideoEntry.FailureKind videoFailure(String failureCode) {
+        return switch (failureCode == null ? "" : failureCode) {
+            case "response_too_large", "too_large", "allocation_limits_exceeded" ->
+                VideoEntry.FailureKind.RESPONSE_BODY_TOO_LARGE;
+            case "expired" -> VideoEntry.FailureKind.EXPIRED_FILE;
+            case "not_found" -> VideoEntry.FailureKind.MISSING_FILE;
+            case "access_denied", "server_media_disabled", "rate_limited", "request_timeout" ->
+                VideoEntry.FailureKind.UNAVAILABLE_FILE;
+            case "invalid", "invalid_media", "invalid_metadata", "unexpected_type", "malformed_chunk", "invalid_file",
+                    "corrupt" -> VideoEntry.FailureKind.INVALID_FILE;
+            default -> VideoEntry.FailureKind.UNKNOWN;
+        };
     }
 
     public static void forgetRequestForUrl(String url) {

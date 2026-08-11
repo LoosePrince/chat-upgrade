@@ -146,13 +146,17 @@ public final class ServerMediaServerNetworking {
                 sendMediaError(context.player(), payload.mediaId(), "rate_limited");
                 return;
             }
-            Optional<StoredMedia> mediaOpt = ServerMediaService.getForPlayer(
+            ServerMediaService.MediaReadResult media = ServerMediaService.readForPlayer(
                     context.player().getUUID(), payload.mediaId());
-            if (mediaOpt.isEmpty()) {
-                sendMediaError(context.player(), payload.mediaId(), "not_found");
+            if (!media.found()) {
+                sendMediaError(context.player(), payload.mediaId(), switch (media.failure()) {
+                    case EXPIRED -> "expired";
+                    case ACCESS_DENIED -> "access_denied";
+                    case NOT_FOUND, NONE -> "not_found";
+                });
                 return;
             }
-            sendMedia(context.player(), mediaOpt.get());
+            sendMedia(context.player(), media.media());
         });
     }
 

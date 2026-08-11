@@ -44,7 +44,10 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -79,8 +82,9 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
 
 public final class VideoPlayerService {
-    private static final int TARGET_FPS = 8;
-    private static final int MAX_CACHED_FRAMES = 60;
+    private static final int TARGET_FPS = 24;
+    private static final int FRAME_CACHE_AHEAD = TARGET_FPS * 3;
+    private static final int FRAME_CACHE_BEHIND = TARGET_FPS;
     private static final int MAX_DECODE_DIMENSION = 4_096;
     private static final long MAX_DECODE_PIXELS = 8_500_000L;
     private static final int MAX_TEXTURE_DIMENSION = 512;
@@ -114,13 +118,13 @@ public final class VideoPlayerService {
             DecodedMeta meta = decodeMetaAndFirstFrame(tempFile);
             CachePlan plan = planCache(meta.durationMs());
             Identifier firstFrameId = registerTextureOnRenderThread(meta.firstFrame());
-            Identifier[] frameIds = new Identifier[plan.frames()];
-            frameIds[0] = firstFrameId;
+            NavigableMap<Integer, Identifier> frameIds = new TreeMap<>();
+            frameIds.put(0, firstFrameId);
             VideoAudioTrack audioTrack = decodeAudioTrack(tempFile);
             VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile,
                     audioTrack);
             SESSIONS.put(url, session);
-            schedulePredecode(url, session, tempFile, meta.durationMs(), plan.intervalMs(), plan.frames());
+            schedulePredecode(session);
             return new Prepared(meta.durationMs(), meta.rawWidth(), meta.rawHeight());
         } catch (Exception error) {
             Files.deleteIfExists(tempFile);
@@ -150,24 +154,17 @@ public final class VideoPlayerService {
             return null;
         }
         synchronized (s) {
-            if (s.frameTextureIds.length == 0) {
+            if (s.frameTextureIds.isEmpty()) {
                 return null;
             }
             long pos = positionMsLocked(s, nowMs);
             if (s.frameIntervalMs <= 0L) {
-                return s.frameTextureIds[0];
+                return s.frameTextureIds.firstEntry().getValue();
             }
-            int idx = (int) Math.min(s.frameTextureIds.length - 1, Math.max(0L, pos / s.frameIntervalMs));
-            Identifier id = s.frameTextureIds[idx];
-            if (id != null) {
-                return id;
-            }
-            for (int i = idx - 1; i >= 0; i--) {
-                if (s.frameTextureIds[i] != null) {
-                    return s.frameTextureIds[i];
-                }
-            }
-            return s.frameTextureIds[0];
+            int idx = frameIndexAt(pos, s.frameIntervalMs, s.lastFrameIndex);
+            requestFramesAround(s, idx);
+            Map.Entry<Integer, Identifier> frame = s.frameTextureIds.floorEntry(idx);
+            return frame == null ? s.frameTextureIds.firstEntry().getValue() : frame.getValue();
         }
     }
 
@@ -295,55 +292,94 @@ public final class VideoPlayerService {
     }
 
     private static CachePlan planCache(long durationMs) {
-        long interval = Math.max(1L, 1000L / TARGET_FPS);
-        int frames = Math.max(1, (int) Math.ceil(durationMs / (double) interval) + 1);
-        if (frames > MAX_CACHED_FRAMES) {
-            interval = Math.max(interval, (long) Math.ceil(durationMs / (double) (MAX_CACHED_FRAMES - 1)));
-            frames = Math.max(1, (int) Math.ceil(durationMs / (double) interval) + 1);
-        }
-        return new CachePlan(interval, frames);
+        long interval = Math.max(1L, Math.round(1_000.0 / TARGET_FPS));
+        int lastFrameIndex = Math.max(0, (int) Math.ceil(durationMs / (double) interval));
+        return new CachePlan(interval, lastFrameIndex);
     }
 
-    private static void schedulePredecode(
-            String url,
-            VideoSession session,
-            Path videoPath,
-            long durationMs,
-            long intervalMs,
-            int frameCount) {
-        PREDECODE_EXECUTOR.execute(() -> {
-            for (int i = 1; i < frameCount; i++) {
-                if (session.closed) {
-                    return;
-                }
-                long t = Math.min(durationMs, i * intervalMs);
-                NativeImage frame;
-                try {
-                    frame = decodeFrameAtMs(videoPath, t);
-                } catch (Exception e) {
-                    ChatUpgrade.LOGGER.debug("chat-upgrade: predecode frame {} failed for {}: {}", i, url,
-                            e.getMessage());
-                    continue;
-                }
-                try {
-                    Identifier id = registerTextureOnRenderThread(frame);
-                    synchronized (session) {
-                        if (session.closed) {
-                            releaseTexture(id);
-                            return;
-                        }
-                        session.frameTextureIds[i] = id;
-                    }
-                } catch (Exception e) {
-                    ChatUpgrade.LOGGER.debug("chat-upgrade: upload predecoded frame {} failed for {}: {}", i, url,
-                            e.getMessage());
-                    try {
-                        frame.close();
-                    } catch (Exception ignored) {
-                    }
-                    return;
-                }
+    private static int frameIndexAt(long positionMs, long intervalMs, int lastFrameIndex) {
+        return (int) Math.min(lastFrameIndex, Math.max(0L, positionMs / intervalMs));
+    }
+
+    private static void requestFramesAround(VideoSession session, int centerIndex) {
+        int minIndex = Math.max(0, centerIndex - FRAME_CACHE_BEHIND);
+        int maxIndex = Math.min(session.lastFrameIndex, centerIndex + FRAME_CACHE_AHEAD);
+        session.requestedFrameIndex = centerIndex;
+        for (int index = minIndex; index <= maxIndex; index++) {
+            if (!session.frameTextureIds.containsKey(index) && session.pendingFrameIndexes.add(index)) {
+                schedulePredecode(session);
             }
+        }
+        releaseFramesOutsideWindow(session, minIndex, maxIndex);
+    }
+
+    private static void schedulePredecode(VideoSession session) {
+        if (!session.predecodeScheduled) {
+            session.predecodeScheduled = true;
+            PREDECODE_EXECUTOR.execute(() -> predecodeRequestedFrames(session));
+        }
+    }
+
+    private static void predecodeRequestedFrames(VideoSession session) {
+        while (true) {
+            int frameIndex;
+            synchronized (session) {
+                if (session.closed || session.pendingFrameIndexes.isEmpty()) {
+                    session.predecodeScheduled = false;
+                    return;
+                }
+                frameIndex = nextPendingFrameIndex(session);
+                session.pendingFrameIndexes.remove(frameIndex);
+            }
+            NativeImage frame;
+            try {
+                frame = decodeFrameAtMs(
+                        session.tempFile,
+                        Math.min(session.durationMs, frameIndex * session.frameIntervalMs));
+            } catch (Exception error) {
+                ChatUpgrade.LOGGER.debug("chat-upgrade: predecode frame {} failed for {}: {}", frameIndex,
+                        session.url, error.getMessage());
+                continue;
+            }
+            try {
+                Identifier textureId = registerTextureOnRenderThread(frame);
+                synchronized (session) {
+                    if (session.closed) {
+                        releaseTexture(textureId);
+                        return;
+                    }
+                    session.frameTextureIds.put(frameIndex, textureId);
+                    int minIndex = Math.max(0, session.requestedFrameIndex - FRAME_CACHE_BEHIND);
+                    int maxIndex = Math.min(session.lastFrameIndex,
+                            session.requestedFrameIndex + FRAME_CACHE_AHEAD);
+                    releaseFramesOutsideWindow(session, minIndex, maxIndex);
+                }
+            } catch (Exception error) {
+                ChatUpgrade.LOGGER.debug("chat-upgrade: upload predecoded frame {} failed for {}: {}", frameIndex,
+                        session.url, error.getMessage());
+                try {
+                    frame.close();
+                } catch (Exception ignored) {
+                }
+                return;
+            }
+        }
+    }
+
+    private static int nextPendingFrameIndex(VideoSession session) {
+        int center = session.requestedFrameIndex;
+        return session.pendingFrameIndexes.stream()
+                .min(java.util.Comparator.comparingInt(index -> Math.abs(index - center)))
+                .orElseThrow();
+    }
+
+    private static void releaseFramesOutsideWindow(VideoSession session, int minIndex, int maxIndex) {
+        session.frameTextureIds.entrySet().removeIf(entry -> {
+            if (entry.getKey() >= minIndex && entry.getKey() <= maxIndex) {
+                return false;
+            }
+            releaseTexture(entry.getValue());
+            return true;
         });
     }
 
@@ -383,40 +419,48 @@ public final class VideoPlayerService {
     private record DecodedFrame(NativeImage image, int rawWidth, int rawHeight, long durationMs) {
     }
 
-    private record CachePlan(long intervalMs, int frames) {
+    private record CachePlan(long intervalMs, int lastFrameIndex) {
     }
 
     private static final class VideoSession {
         final String url;
         final long durationMs;
-        final Identifier[] frameTextureIds;
+        final NavigableMap<Integer, Identifier> frameTextureIds;
+        final Set<Integer> pendingFrameIndexes;
+        final int lastFrameIndex;
         final long frameIntervalMs;
         final Path tempFile;
         final VideoAudioTrack audioTrack;
         boolean playing;
+        boolean predecodeScheduled;
         volatile boolean closed;
         long playStartedAtMs;
         long pausedPositionMs;
+        int requestedFrameIndex;
         @Nullable
         VideoAudioPlayback audioPlayback;
 
         VideoSession(
                 String url,
                 long durationMs,
-                Identifier[] frameTextureIds,
+                NavigableMap<Integer, Identifier> frameTextureIds,
                 long frameIntervalMs,
                 Path tempFile,
                 @Nullable VideoAudioTrack audioTrack) {
             this.url = url;
             this.durationMs = durationMs;
             this.frameTextureIds = frameTextureIds;
+            this.pendingFrameIndexes = new HashSet<>();
+            this.lastFrameIndex = frameIndexAt(durationMs, frameIntervalMs, Integer.MAX_VALUE);
             this.frameIntervalMs = frameIntervalMs;
             this.tempFile = tempFile;
             this.audioTrack = audioTrack;
             this.playing = false;
+            this.predecodeScheduled = false;
             this.closed = false;
             this.playStartedAtMs = 0L;
             this.pausedPositionMs = 0L;
+            this.requestedFrameIndex = 0;
             this.audioPlayback = null;
         }
 
@@ -424,11 +468,13 @@ public final class VideoPlayerService {
             this.closed = true;
             stopAudioLocked(this);
             Set<Identifier> dedupe = new HashSet<>();
-            for (Identifier id : frameTextureIds) {
+            for (Identifier id : frameTextureIds.values()) {
                 if (id != null && dedupe.add(id)) {
                     releaseTexture(id);
                 }
             }
+            frameTextureIds.clear();
+            pendingFrameIndexes.clear();
             try {
                 Files.deleteIfExists(tempFile);
             } catch (Exception ignored) {

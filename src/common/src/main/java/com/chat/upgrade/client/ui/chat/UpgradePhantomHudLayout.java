@@ -391,12 +391,8 @@ public final class UpgradePhantomHudLayout {
                 continue;
             }
             GuiMessageLineReadable readable = (GuiMessageLineReadable) (Object) line;
-            FormattedCharSequence updated = switch (failureKind) {
-                case RESPONSE_BODY_TOO_LARGE ->
-                    UpgradeBracketCodec.replaceVisibleVideoPlaceholderWithOversize(readable.chatupgrade$content());
-                case UNKNOWN, UNSUPPORTED_VIDEO_FORMAT ->
-                    UpgradeBracketCodec.replaceVisibleVideoPlaceholderWithLoadFailed(readable.chatupgrade$content());
-            };
+            FormattedCharSequence updated = UpgradeBracketCodec.replaceVisibleVideoPlaceholderWithFailure(
+                    readable.chatupgrade$content(), failureKind);
             if (updated != null) {
                 trim.set(j, new GuiMessage.Line(parent, updated, readable.chatupgrade$endOfEntry()));
             }
