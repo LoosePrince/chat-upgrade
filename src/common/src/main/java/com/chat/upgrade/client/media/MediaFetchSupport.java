@@ -37,10 +37,14 @@ public final class MediaFetchSupport {
         public void connectFailed(URI uri, SocketAddress address, IOException failure) {
         }
     };
-    private static final HttpClient HTTP = HttpClient.newBuilder()
+    private static final HttpClient HTTP_DIRECT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER)
             .proxy(NO_PROXY)
+            .build();
+    private static final HttpClient HTTP_SYSTEM_PROXY = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
     private MediaFetchSupport() {
@@ -66,7 +70,7 @@ public final class MediaFetchSupport {
                         .header("Accept", acceptedTypes(typeLabel))
                         .GET()
                         .build();
-                HttpResponse<byte[]> response = HTTP.send(
+                HttpResponse<byte[]> response = httpClient().send(
                         request,
                         info -> new CappedBodySubscriber(
                                 isRedirect(info.statusCode())
@@ -117,6 +121,12 @@ public final class MediaFetchSupport {
                 || statusCode == 303
                 || statusCode == 307
                 || statusCode == 308;
+    }
+
+    private static HttpClient httpClient() {
+        return ChatUpgradeConfig.get().remoteMediaNetworkMode == ChatUpgradeConfig.RemoteMediaNetworkMode.SYSTEM_PROXY
+                ? HTTP_SYSTEM_PROXY
+                : HTTP_DIRECT;
     }
 
     private static String acceptedTypes(String typeLabel) {

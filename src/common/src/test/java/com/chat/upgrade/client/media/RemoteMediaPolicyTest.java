@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 
+import com.chat.upgrade.client.ChatUpgradeConfig;
 import org.junit.jupiter.api.Test;
 
 final class RemoteMediaPolicyTest {
@@ -39,6 +40,22 @@ final class RemoteMediaPolicyTest {
         assertFalse(publicAddress("2002:0808:0808::1"));
         assertFalse(publicAddress("3fff::1"));
         assertTrue(publicAddress("2606:4700:4700::1111"));
+    }
+
+    @Test
+    void permitsOnlySyntheticProxyAddressesInTransparentProxyMode() throws Exception {
+        var synthetic = InetAddress.getByName("198.18.0.142");
+        var privateAddress = InetAddress.getByName("10.0.0.1");
+
+        assertFalse(RemoteMediaPolicy.allowsResolvedAddress(
+                synthetic,
+                ChatUpgradeConfig.RemoteMediaNetworkMode.STRICT));
+        assertTrue(RemoteMediaPolicy.allowsResolvedAddress(
+                synthetic,
+                ChatUpgradeConfig.RemoteMediaNetworkMode.TRANSPARENT_PROXY));
+        assertFalse(RemoteMediaPolicy.allowsResolvedAddress(
+                privateAddress,
+                ChatUpgradeConfig.RemoteMediaNetworkMode.TRANSPARENT_PROXY));
     }
 
     @Test

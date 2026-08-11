@@ -44,6 +44,7 @@ public final class ChatUpgradeConfig {
     public boolean manualImageReveal;
     public boolean manualAudioReveal;
     public boolean manualVideoReveal;
+    public RemoteMediaNetworkMode remoteMediaNetworkMode = RemoteMediaNetworkMode.TRANSPARENT_PROXY;
     public int securityDefaultsVersion = 1;
     public boolean compactMediaCards = true;
     public Boolean smoothScrollEnabled;
@@ -160,6 +161,12 @@ public final class ChatUpgradeConfig {
         THIRD_PARTY
     }
 
+    public enum RemoteMediaNetworkMode {
+        STRICT,
+        SYSTEM_PROXY,
+        TRANSPARENT_PROXY
+    }
+
     public enum ChatInputMode {
         TAKEOVER,
         COMPAT_TEXT_VANILLA
@@ -182,6 +189,7 @@ public final class ChatUpgradeConfig {
         config.manualImageReveal = false;
         config.manualAudioReveal = false;
         config.manualVideoReveal = false;
+        config.remoteMediaNetworkMode = RemoteMediaNetworkMode.TRANSPARENT_PROXY;
         config.securityDefaultsVersion = 1;
         config.compactMediaCards = true;
         config.smoothScrollEnabled = true;
@@ -215,6 +223,7 @@ public final class ChatUpgradeConfig {
         int beforeAudioVolume = audioVolumePercent;
         int beforeVideoVolume = videoVolumePercent;
         int beforeSecurityDefaultsVersion = securityDefaultsVersion;
+        RemoteMediaNetworkMode beforeRemoteMediaNetworkMode = remoteMediaNetworkMode;
         String beforeVoiceInputDevice = voiceInputDevice;
         int beforeVoiceShortcutKey = voiceShortcutKey;
         Boolean beforeSmoothScroll = smoothScrollEnabled;
@@ -240,6 +249,9 @@ public final class ChatUpgradeConfig {
         audioVolumePercent = Math.clamp(audioVolumePercent, 1, 100);
         videoVolumePercent = Math.clamp(videoVolumePercent, 1, 100);
         securityDefaultsVersion = Math.clamp(securityDefaultsVersion, 0, 1);
+        remoteMediaNetworkMode = remoteMediaNetworkMode == null
+                ? RemoteMediaNetworkMode.TRANSPARENT_PROXY
+                : remoteMediaNetworkMode;
         voiceInputDevice = voiceInputDevice == null ? "" : voiceInputDevice.trim();
         voiceShortcutKey = normalizeVoiceShortcutKey(voiceShortcutKey);
         smoothScrollEnabled = smoothScrollEnabled == null ? true : smoothScrollEnabled;
@@ -277,6 +289,7 @@ public final class ChatUpgradeConfig {
                 || beforeAudioVolume != audioVolumePercent
                 || beforeVideoVolume != videoVolumePercent
                 || beforeSecurityDefaultsVersion != securityDefaultsVersion
+                || beforeRemoteMediaNetworkMode != remoteMediaNetworkMode
                 || !java.util.Objects.equals(beforeVoiceInputDevice, voiceInputDevice)
                 || beforeVoiceShortcutKey != voiceShortcutKey
                 || beforeSmoothScroll == null
@@ -421,6 +434,7 @@ public final class ChatUpgradeConfig {
         boolean containsPrivateMessageCommand = root.has("privateMessageCommand");
         boolean containsCompactMediaCards = root.has("compactMediaCards");
         boolean containsVoiceShortcutKey = root.has("voiceShortcutKey");
+        boolean containsRemoteMediaNetworkMode = root.has("remoteMediaNetworkMode");
         boolean containsSecurityDefaultsVersion = root.has("securityDefaultsVersion");
         ChatUpgradeConfig read = GSON.fromJson(root, ChatUpgradeConfig.class);
         if (read == null) {
@@ -433,6 +447,10 @@ public final class ChatUpgradeConfig {
             read.manualAudioReveal = false;
             read.manualVideoReveal = false;
             read.securityDefaultsVersion = 1;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsRemoteMediaNetworkMode) {
+            read.remoteMediaNetworkMode = RemoteMediaNetworkMode.TRANSPARENT_PROXY;
             migratedLegacyDefaults = true;
         }
         if (!containsMentionNotificationMode) {
@@ -504,6 +522,7 @@ public final class ChatUpgradeConfig {
                 || !containsPrivateMessageCommand
                 || !containsCompactMediaCards
                 || !containsVoiceShortcutKey
+                || !containsRemoteMediaNetworkMode
                 || migratedLegacyDefaults;
         return new DecodedConfig(read, corrected);
     }

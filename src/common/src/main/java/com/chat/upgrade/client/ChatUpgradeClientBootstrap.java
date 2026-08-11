@@ -8,6 +8,8 @@ import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
+import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
+import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
@@ -56,6 +58,8 @@ public final class ChatUpgradeClientBootstrap {
                 ChatUpgradeConfig.get().audioVolumePercent,
                 ChatUpgradeConfig.get().videoVolumePercent);
         ChatClientConfigRuntime.initializeLoadedConfig();
+        ExternalImageIoPluginLoader.loadAtStartup();
+        FfmpegNativeBootstrap.warmupAsync();
         TwikooOwoRegistry.refreshIfExpired();
     }
 

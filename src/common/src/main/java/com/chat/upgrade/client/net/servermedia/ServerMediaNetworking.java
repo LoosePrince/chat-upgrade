@@ -178,7 +178,7 @@ public final class ServerMediaNetworking {
             }
             INCOMING.remove(mediaId, assembly);
             if (status == IncomingMediaAssembly.AcceptStatus.REJECTED) {
-                ServerMediaClient.forgetRequest(mediaId);
+                ServerMediaClient.failRequest(mediaId, false);
                 ChatUpgrade.LOGGER.warn("chat-upgrade: rejected malformed server media chunk for {}", mediaId);
                 return;
             }
@@ -197,7 +197,7 @@ public final class ServerMediaNetworking {
                     payload.message());
             if (mediaId != null) {
                 INCOMING.remove(mediaId);
-                ServerMediaClient.forgetRequest(mediaId);
+                ServerMediaClient.failRequest(mediaId, false);
             }
         });
 
@@ -286,7 +286,7 @@ public final class ServerMediaNetworking {
             if (!entry.getValue().isExpired(nowMs, INCOMING_MEDIA_TIMEOUT_MS)) {
                 return false;
             }
-            ServerMediaClient.forgetRequest(entry.getKey());
+            ServerMediaClient.failRequest(entry.getKey(), false);
             return true;
         });
     }
@@ -294,7 +294,7 @@ public final class ServerMediaNetworking {
     private static void rejectIncoming(String mediaId, String reason) {
         if (mediaId != null) {
             INCOMING.remove(mediaId);
-            ServerMediaClient.forgetRequest(mediaId);
+            ServerMediaClient.failRequest(mediaId, "allocation limits exceeded".equals(reason));
         }
         ChatUpgrade.LOGGER.warn("chat-upgrade: rejected server media response for {}: {}", mediaId, reason);
     }

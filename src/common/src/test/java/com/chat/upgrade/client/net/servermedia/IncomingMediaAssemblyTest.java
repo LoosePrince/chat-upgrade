@@ -33,6 +33,29 @@ final class IncomingMediaAssemblyTest {
     }
 
     @Test
+    void rejectsMediaThatFitsTheServerButExceedsTheClientReceiveLimit() {
+        ServerMediaCapability serverLimit = new ServerMediaCapability(
+                true,
+                10 * 1_024 * 1_024,
+                32 * 1_024,
+                ServerMediaCapability.StorageMode.MEMORY,
+                60,
+                false,
+                0);
+
+        assertFalse(IncomingMediaAssembly.create(
+                MEDIA_ID,
+                InlineResourceType.VIDEO,
+                "video/mp4",
+                "",
+                3 * 1_024 * 1_024,
+                96,
+                serverLimit,
+                2 * 1_024 * 1_024,
+                10_000L).isPresent());
+    }
+
+    @Test
     void requiresExactChunkLengthsAndCompletesOutOfOrder() {
         IncomingMediaAssembly assembly = create(
                 MEDIA_ID,

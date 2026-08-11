@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.util.Locale;
 
+import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.net.ExternalMediaUrlPolicy;
 
 final class RemoteMediaPolicy {
@@ -27,16 +28,43 @@ final class RemoteMediaPolicy {
         if (port != -1 && port != 443) {
             throw new IllegalArgumentException("non-standard media ports are not allowed");
         }
+        if (isIpLiteral(host)) {
+            throw new IllegalArgumentException("literal media addresses are not allowed");
+        }
+        ChatUpgradeConfig.RemoteMediaNetworkMode mode = ChatUpgradeConfig.get().remoteMediaNetworkMode;
+        if (mode == ChatUpgradeConfig.RemoteMediaNetworkMode.SYSTEM_PROXY) {
+            return uri;
+        }
         InetAddress[] addresses = InetAddress.getAllByName(host);
         if (addresses.length == 0) {
             throw new IllegalArgumentException("media host did not resolve");
         }
         for (InetAddress address : addresses) {
-            if (!isPublic(address)) {
+            if (!allowsResolvedAddress(address, mode)) {
                 throw new IllegalArgumentException("media host resolves to a non-public address");
             }
         }
         return uri;
+    }
+
+    private static boolean isIpLiteral(String host) {
+        return host.indexOf(':') >= 0 || host.matches("\\d{1,3}(?:\\.\\d{1,3}){3}");
+    }
+
+    static boolean allowsResolvedAddress(
+            InetAddress address,
+            ChatUpgradeConfig.RemoteMediaNetworkMode mode) {
+        return isPublic(address)
+                || (mode == ChatUpgradeConfig.RemoteMediaNetworkMode.TRANSPARENT_PROXY
+                        && isTransparentProxySyntheticAddress(address));
+    }
+
+    private static boolean isTransparentProxySyntheticAddress(InetAddress address) {
+        if (!(address instanceof Inet4Address)) {
+            return false;
+        }
+        byte[] bytes = address.getAddress();
+        return (bytes[0] & 0xFF) == 198 && ((bytes[1] & 0xFF) == 18 || (bytes[1] & 0xFF) == 19);
     }
 
     static boolean isPublic(InetAddress address) {

@@ -167,6 +167,24 @@ public final class ServerMediaClient {
         }
     }
 
+    static void failRequest(String mediaId, boolean responseTooLarge) {
+        String safeId = normalizeOptional(mediaId);
+        if (safeId == null) {
+            return;
+        }
+        String typeWire = REQUESTED_MEDIA_IDS.remove(safeId);
+        if (typeWire == null) {
+            return;
+        }
+        String url = ServerMediaUrl.format(safeId, typeWire);
+        switch (typeWire) {
+            case "image" -> ImageLoader.failServerMediaRequest(url, responseTooLarge);
+            case "audio" -> AudioLoader.failServerMediaRequest(url, responseTooLarge);
+            case "video" -> VideoLoader.failServerMediaRequest(url, responseTooLarge);
+            default -> ChatUpgrade.LOGGER.warn("chat-upgrade: invalid pending server media type {}", typeWire);
+        }
+    }
+
     public static void forgetRequestForUrl(String url) {
         Optional<ServerMediaUrl.Parsed> parsed = ServerMediaUrl.parse(url);
         if (parsed.isEmpty()) {

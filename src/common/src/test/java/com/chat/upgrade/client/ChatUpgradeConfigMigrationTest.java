@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 final class ChatUpgradeConfigMigrationTest {
 
     @Test
-    void missingSecurityVersionMigratesAllRemoteMediaToManualReveal() {
+    void missingSecurityVersionMigratesAllRemoteMediaToAutomaticReveal() {
         ChatUpgradeConfig.DecodedConfig decoded = ChatUpgradeConfig.decode("""
                 {
                   "chatInputPlaceholder": "securityDefaultsVersion manualImageReveal",
@@ -20,10 +20,12 @@ final class ChatUpgradeConfigMigrationTest {
                 """);
 
         assertTrue(decoded.corrected());
-        assertTrue(decoded.config().manualImageReveal);
-        assertTrue(decoded.config().manualAudioReveal);
-        assertTrue(decoded.config().manualVideoReveal);
+        assertFalse(decoded.config().manualImageReveal);
+        assertFalse(decoded.config().manualAudioReveal);
+        assertFalse(decoded.config().manualVideoReveal);
         assertTrue(decoded.config().securityDefaultsVersion == 1);
+        assertTrue(decoded.config().remoteMediaNetworkMode
+                == ChatUpgradeConfig.RemoteMediaNetworkMode.TRANSPARENT_PROXY);
     }
 
     @Test
@@ -56,8 +58,10 @@ final class ChatUpgradeConfigMigrationTest {
 
         assertTrue(migrated.corrected());
         assertFalse(persisted.corrected());
-        assertTrue(persisted.config().manualImageReveal);
-        assertTrue(persisted.config().manualAudioReveal);
-        assertTrue(persisted.config().manualVideoReveal);
+        assertFalse(persisted.config().manualImageReveal);
+        assertFalse(persisted.config().manualAudioReveal);
+        assertFalse(persisted.config().manualVideoReveal);
+        assertTrue(persisted.config().remoteMediaNetworkMode
+                == ChatUpgradeConfig.RemoteMediaNetworkMode.TRANSPARENT_PROXY);
     }
 }

@@ -82,6 +82,10 @@ public final class ExternalImageIoPluginLoader {
     }
 
     public static synchronized void reload(boolean forceDownload) {
+        reload(forceDownload, PluginDownloadProgress.NONE);
+    }
+
+    public static synchronized void reload(boolean forceDownload, PluginDownloadProgress progress) {
         if (forceDownload) {
             try {
                 Files.deleteIfExists(apngJarPath());
@@ -90,10 +94,15 @@ public final class ExternalImageIoPluginLoader {
             }
         }
         loaded = false;
-        loadAtStartup();
+        loadAtStartup(progress);
     }
 
     public static synchronized void loadAtStartup() {
+        loadAtStartup(PluginDownloadProgress.NONE);
+    }
+
+    private static void loadAtStartup(PluginDownloadProgress progress) {
+        PluginDownloadProgress safeProgress = progress == null ? PluginDownloadProgress.NONE : progress;
         if (loaded) {
             return;
         }
@@ -105,7 +114,7 @@ public final class ExternalImageIoPluginLoader {
             ChatUpgrade.LOGGER.warn("chat-upgrade: cannot create external plugin dir {}: {}", libsDir, e.getMessage());
             return;
         }
-        ensureApngPluginDownloaded(libsDir);
+        ensureApngPluginDownloaded(libsDir, safeProgress);
         Path plugin = apngJarPath();
         if (!verifiedApngJar(plugin)) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: APNG plugin is unavailable or failed integrity verification");
@@ -134,7 +143,7 @@ public final class ExternalImageIoPluginLoader {
         }
     }
 
-    private static void ensureApngPluginDownloaded(Path libsDir) {
+    private static void ensureApngPluginDownloaded(Path libsDir, PluginDownloadProgress progress) {
         Path target = libsDir.resolve(APNG_JAR_NAME);
         if (verifiedApngJar(target)) {
             return;
@@ -165,8 +174,9 @@ public final class ExternalImageIoPluginLoader {
                 response.body().close();
                 throw new IOException("APNG plugin has an invalid Content-Length");
             }
+            progress.update("apng", 0L, contentLength);
             try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
-                copyCapped(in, out, MAX_PLUGIN_BYTES);
+                copyCapped(in, out, MAX_PLUGIN_BYTES, contentLength, progress);
             }
             if (!verifiedApngJar(temp)) {
                 throw new IOException("APNG plugin SHA-256 mismatch");
@@ -193,16 +203,22 @@ public final class ExternalImageIoPluginLoader {
         }
     }
 
-    private static void copyCapped(InputStream in, OutputStream out, int maxBytes) throws IOException {
+    private static void copyCapped(
+            InputStream in,
+            OutputStream out,
+            int maxBytes,
+            long totalBytes,
+            PluginDownloadProgress progress) throws IOException {
         byte[] buffer = new byte[8_192];
-        int total = 0;
+        int copied = 0;
         int read;
         while ((read = in.read(buffer)) >= 0) {
-            if (total + read > maxBytes) {
+            if (copied + read > maxBytes) {
                 throw new IOException("APNG plugin exceeds size limit");
             }
             out.write(buffer, 0, read);
-            total += read;
+            copied += read;
+            progress.update("apng", copied, totalBytes);
         }
     }
 

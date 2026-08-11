@@ -74,6 +74,15 @@ public final class AudioLoader {
         return CACHE.get(url);
     }
 
+    public static void failServerMediaRequest(String url, boolean responseTooLarge) {
+        AudioEntry entry = CACHE.get(url);
+        if (entry != null) {
+            markFailed(url, entry, responseTooLarge
+                    ? AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE
+                    : AudioEntry.FailureKind.UNKNOWN);
+        }
+    }
+
     public static void forceReload(String url) {
         if (url == null || url.isBlank()) {
             return;

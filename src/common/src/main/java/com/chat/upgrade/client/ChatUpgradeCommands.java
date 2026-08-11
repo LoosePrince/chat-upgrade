@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -13,6 +15,7 @@ import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
+import com.chat.upgrade.client.plugin.PluginDownloadProgress;
 import com.chat.upgrade.client.ui.chat.UpgradeBracketCodec;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
 import com.chat.upgrade.client.upload.LocalImageSources;
@@ -287,12 +290,38 @@ public final class ChatUpgradeCommands {
         return 1;
     }
 
+    private static PluginDownloadProgress pluginDownloadProgress(CommandSink sink) {
+        AtomicReference<String> lastArtifact = new AtomicReference<>("");
+        AtomicInteger lastPercent = new AtomicInteger(-1);
+        return (artifact, downloadedBytes, totalBytes) -> {
+            if (artifact == null || artifact.isBlank() || totalBytes <= 0L) {
+                return;
+            }
+            int percent = (int) Math.clamp((downloadedBytes * 100L) / totalBytes, 0L, 100L);
+            boolean artifactChanged = !artifact.equals(lastArtifact.getAndSet(artifact));
+            int previousPercent = artifactChanged ? -1 : lastPercent.get();
+            if (!artifactChanged && percent < 100 && percent / 10 == Math.max(previousPercent, 0) / 10) {
+                return;
+            }
+            lastPercent.set(percent);
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft != null) {
+                minecraft.execute(() -> sink.feedback(Component.translatable(
+                        "chatupgrade.plugin.download.progress",
+                        artifact,
+                        ChatUpgradeConfig.formatBytesHuman(downloadedBytes),
+                        ChatUpgradeConfig.formatBytesHuman(totalBytes),
+                        percent).withStyle(ChatFormatting.GRAY)));
+            }
+        };
+    }
+
     private static int pluginLoadFfmpeg(CommandSink sink, boolean forceDownload) {
         sink.feedback(Component.translatable(
                 forceDownload ? "chatupgrade.plugin.ffmpeg.loading_force" : "chatupgrade.plugin.ffmpeg.loading")
                 .withStyle(ChatFormatting.GRAY));
         CompletableFuture.runAsync(() -> {
-            boolean ok = FfmpegNativeBootstrap.reload(forceDownload);
+            boolean ok = FfmpegNativeBootstrap.reload(forceDownload, pluginDownloadProgress(sink));
             Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> {
@@ -312,8 +341,8 @@ public final class ChatUpgradeCommands {
                 forceDownload ? "chatupgrade.plugin.apng.loading_force" : "chatupgrade.plugin.apng.loading")
                 .withStyle(ChatFormatting.GRAY));
         CompletableFuture.runAsync(() -> {
-            ExternalImageIoPluginLoader.reload(forceDownload);
-            boolean ok = ExternalImageIoPluginLoader.hasApngJar();
+            ExternalImageIoPluginLoader.reload(forceDownload, pluginDownloadProgress(sink));
+            boolean ok = ExternalImageIoPluginLoader.isLoaded();
             Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> {
@@ -333,9 +362,10 @@ public final class ChatUpgradeCommands {
                 forceDownload ? "chatupgrade.plugin.all.loading_force" : "chatupgrade.plugin.all.loading")
                 .withStyle(ChatFormatting.GRAY));
         CompletableFuture.runAsync(() -> {
-            boolean ffOk = FfmpegNativeBootstrap.reload(forceDownload);
-            ExternalImageIoPluginLoader.reload(forceDownload);
-            boolean apngOk = ExternalImageIoPluginLoader.hasApngJar();
+            PluginDownloadProgress progress = pluginDownloadProgress(sink);
+            boolean ffOk = FfmpegNativeBootstrap.reload(forceDownload, progress);
+            ExternalImageIoPluginLoader.reload(forceDownload, progress);
+            boolean apngOk = ExternalImageIoPluginLoader.isLoaded();
             Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> sink.feedback(Component.translatable(

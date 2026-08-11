@@ -270,6 +270,7 @@
   "chatupgrade.plugin.all.loading_force": "正在强制下载并加载 FFmpeg + APNG...",
   "chatupgrade.plugin.all.loading": "正在加载 FFmpeg + APNG...",
   "chatupgrade.plugin.all.result": "结果：FFmpeg=%s，APNG=%s",
+  "chatupgrade.plugin.download.progress": "%s 正在下载：%s / %s（%s%%）",
   "chatupgrade.config.ci.updated": "图片 bracket tag 已切换为 %s。",
   "chatupgrade.config.upload_mode.invalid": "未知 uploadMode: %s（可选: auto/server/third）。",
   "chatupgrade.config.upload_mode.updated": "uploadMode 已设为 %s。",
