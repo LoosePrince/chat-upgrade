@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.chat.upgrade.net.ExternalMediaUrlPolicy;
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
@@ -62,9 +63,15 @@ public final class ServerChatRouteService {
         if (descriptor == null) {
             return false;
         }
+        if (!externalAttachmentAllowed(descriptor.url())) {
+            senderPlayer.sendSystemMessage(
+                    Component.literal("External media links are disabled by the server.")
+                            .withStyle(ChatFormatting.RED),
+                    false);
+            return true;
+        }
         StructuredChatMessage legacy = structuredFromDescriptor("", descriptor);
-        routeStructuredV2(senderPlayer, StructuredChatSubmission.fromLegacy(legacy));
-        return true;
+        return routeStructuredV2(senderPlayer, StructuredChatSubmission.fromLegacy(legacy));
     }
 
     public static void routeStructured(ServerPlayer senderPlayer, StructuredChatMessage message) {
@@ -79,7 +86,16 @@ public final class ServerChatRouteService {
             return false;
         }
         ensureServerScope(server);
-        if (!attachmentsAvailable(submission)) {
+        if (!ServerRequestLimiter.allow(
+                senderPlayer.getUUID(),
+                ServerRequestLimiter.Kind.CHAT,
+                System.currentTimeMillis())) {
+            senderPlayer.sendSystemMessage(
+                    Component.literal("Structured chat rate limit exceeded.").withStyle(ChatFormatting.RED),
+                    false);
+            return false;
+        }
+        if (!attachmentsAllowed(senderPlayer, submission)) {
             senderPlayer.sendSystemMessage(
                     Component.translatable("chatupgrade.message.attachment_unavailable").withStyle(ChatFormatting.RED),
                     false);
@@ -93,6 +109,7 @@ public final class ServerChatRouteService {
             return false;
         }
         StructuredChatEnvelope envelope = createEnvelope(senderPlayer, submission, reply);
+        grantAttachmentReads(server.getPlayerList(), envelope.attachments());
         remember(envelope, senderPlayer.getUUID());
         CHAT_HISTORY.append(server, envelope);
         broadcast(server.getPlayerList(), envelope);
@@ -178,6 +195,10 @@ public final class ServerChatRouteService {
         }
     }
 
+    public static void onPlayerDisconnect(UUID playerId) {
+        ServerRequestLimiter.discard(playerId);
+    }
+
     public static List<StructuredChatEnvelope> historyAfter(ServerPlayer player, long afterTimestampMs, int limit) {
         if (player == null || !ServerMediaServerConfig.get().chatHistoryEnabled) {
             return List.of();
@@ -187,7 +208,11 @@ public final class ServerChatRouteService {
             return List.of();
         }
         ensureServerScope(server);
-        return CHAT_HISTORY.after(server, afterTimestampMs, limit);
+        List<StructuredChatEnvelope> messages = CHAT_HISTORY.after(server, afterTimestampMs, limit);
+        for (StructuredChatEnvelope message : messages) {
+            grantAttachmentReads(player.getUUID(), message.attachments());
+        }
+        return messages;
     }
 
     private static void broadcast(PlayerList playerList, StructuredChatEnvelope envelope) {
@@ -358,21 +383,53 @@ public final class ServerChatRouteService {
             }
             RECENT_MESSAGES.clear();
             RETRACTED_MESSAGES.clear();
+            ServerRequestLimiter.clear();
             activeServer = server;
             CHAT_HISTORY.bind(server);
         }
     }
 
-    private static boolean attachmentsAvailable(StructuredChatSubmission submission) {
+    private static boolean attachmentsAllowed(ServerPlayer sender, StructuredChatSubmission submission) {
         for (StructuredAttachment attachment : submission.attachments()) {
             if (attachment.hasMedia()) {
                 Optional<StoredMedia> stored = ServerMediaService.get(attachment.mediaId());
-                if (stored.isEmpty() || !normalizeType(attachment.typeWire()).equals(stored.get().typeWire())) {
+                if (stored.isEmpty()
+                        || !normalizeType(attachment.typeWire()).equals(stored.get().typeWire())
+                        || !ServerMediaService.isOwner(sender.getUUID(), attachment.mediaId())) {
                     return false;
                 }
             }
+            if (attachment.fallbackUrl() != null
+                    && !externalAttachmentAllowed(attachment.fallbackUrl())) {
+                return false;
+            }
         }
         return true;
+    }
+
+    private static boolean externalAttachmentAllowed(String url) {
+        return url == null
+                || url.isBlank()
+                || ServerMediaUrl.isServerMediaUrl(url)
+                || (ServerMediaServerConfig.get().allowExternalAttachmentUrls
+                        && ExternalMediaUrlPolicy.isAllowed(url));
+    }
+
+    private static void grantAttachmentReads(PlayerList playerList, List<StructuredAttachment> attachments) {
+        List<UUID> playerIds = playerList.getPlayers().stream().map(ServerPlayer::getUUID).toList();
+        for (StructuredAttachment attachment : attachments) {
+            if (attachment.hasMedia()) {
+                ServerMediaService.grantReadAccess(attachment.mediaId(), playerIds);
+            }
+        }
+    }
+
+    private static void grantAttachmentReads(UUID playerId, List<StructuredAttachment> attachments) {
+        for (StructuredAttachment attachment : attachments) {
+            if (attachment.hasMedia()) {
+                ServerMediaService.grantReadAccess(attachment.mediaId(), List.of(playerId));
+            }
+        }
     }
 
     private static void rememberRetraction(String messageId, long timestampMs) {
@@ -486,7 +543,7 @@ public final class ServerChatRouteService {
         return out.append(buildVanillaComponent(descriptor));
     }
 
-    private static AttachmentRouteDescriptor descriptorForBracketProtocol(String raw) {
+    static AttachmentRouteDescriptor descriptorForBracketProtocol(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
@@ -494,27 +551,56 @@ public final class ServerChatRouteService {
         if (!matcher.find()) {
             return null;
         }
+        int payloadStart = matcher.start();
+        int payloadEnd = matcher.end();
         String fields = matcher.group(1);
+        if (matcher.find()) {
+            return null;
+        }
         String name = Component.translatable("chatupgrade.vanilla.default_name").getString();
         String type = "image";
-        String url = "";
-        for (String part : fields.split(",")) {
+        String url = null;
+        boolean sawName = false;
+        boolean sawType = false;
+        for (String part : fields.split(",", -1)) {
             int idx = part.indexOf('=');
             if (idx <= 0 || idx >= part.length() - 1) {
-                continue;
+                return null;
             }
-            String k = part.substring(0, idx).trim().toLowerCase(Locale.ROOT);
-            String v = part.substring(idx + 1).trim();
-            if ("name".equals(k) && !v.isBlank()) {
-                name = v;
-            } else if ("type".equals(k) && !v.isBlank()) {
-                type = v.toLowerCase(Locale.ROOT);
-            } else if ("url".equals(k) && !v.isBlank()) {
-                url = v;
+            String key = part.substring(0, idx).trim().toLowerCase(Locale.ROOT);
+            String value = part.substring(idx + 1).trim();
+            if (value.isBlank()) {
+                return null;
+            }
+            if ("name".equals(key)) {
+                if (sawName) {
+                    return null;
+                }
+                name = value;
+                sawName = true;
+            } else if ("type".equals(key)) {
+                if (sawType || !("image".equalsIgnoreCase(value)
+                        || "audio".equalsIgnoreCase(value)
+                        || "video".equalsIgnoreCase(value))) {
+                    return null;
+                }
+                type = value.toLowerCase(Locale.ROOT);
+                sawType = true;
+            } else if ("url".equals(key)) {
+                if (url != null) {
+                    return null;
+                }
+                url = value;
+            } else {
+                return null;
             }
         }
+        if (url == null
+                || !(ServerMediaUrl.isServerMediaUrl(url) || ExternalMediaUrlPolicy.isAllowed(url))) {
+            return null;
+        }
         String normalizedType = normalizeType(type);
-        String visibleText = stripPayload(raw, matcher.start(), matcher.end()).trim();
+        String visibleText = stripPayload(raw, payloadStart, payloadEnd).trim();
         return new AttachmentRouteDescriptor(raw, visibleText, normalizedType, typeLabel(normalizedType), name, url);
     }
 

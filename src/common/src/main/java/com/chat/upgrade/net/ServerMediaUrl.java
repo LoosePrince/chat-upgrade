@@ -37,10 +37,12 @@ public final class ServerMediaUrl {
 
         String typeWire = suffix.substring(0, slash).trim().toLowerCase();
         String mediaId = suffix.substring(slash + 1).trim();
-        if (typeWire.isBlank() || mediaId.isBlank()) {
+        if (typeWire.isBlank()
+                || !("image".equals(typeWire) || "audio".equals(typeWire) || "video".equals(typeWire))
+                || !ServerMediaId.isValid(mediaId)) {
             return Optional.empty();
         }
-        return Optional.of(new Parsed(mediaId, typeWire));
+        return Optional.of(new Parsed(mediaId.toLowerCase(java.util.Locale.ROOT), typeWire));
     }
 
     public record Parsed(String mediaId, String typeWire) {

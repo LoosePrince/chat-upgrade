@@ -3,17 +3,21 @@ package com.chat.upgrade.server;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.chat.upgrade.net.ExternalMediaUrlPolicy;
+import com.chat.upgrade.net.ServerMediaUrl;
 import com.chat.upgrade.net.StructuredAttachment;
+import com.chat.upgrade.net.StructuredChatProtocolLimits;
 import com.chat.upgrade.server.store.StoredAttachment;
 import com.chat.upgrade.server.store.StoredMedia;
 
 public final class ServerAttachmentService {
     private static final SecureRandom RNG = new SecureRandom();
-    private static final ConcurrentHashMap<String, StoredAttachment> ATTACHMENTS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, OwnedAttachment> ATTACHMENTS = new ConcurrentHashMap<>();
 
     private ServerAttachmentService() {
     }
@@ -23,11 +27,12 @@ public final class ServerAttachmentService {
     }
 
     public static Optional<StoredAttachment> createForMedia(
+            UUID ownerId,
             String mediaId,
             @Nullable String typeWire,
             @Nullable String displayName) {
         String safeMediaId = normalizeOptional(mediaId);
-        if (safeMediaId == null) {
+        if (ownerId == null || safeMediaId == null || !ServerMediaService.isOwner(ownerId, safeMediaId)) {
             return Optional.empty();
         }
         Optional<StoredMedia> mediaOpt = ServerMediaService.get(safeMediaId);
@@ -38,24 +43,31 @@ public final class ServerAttachmentService {
         if (safeType == null) {
             safeType = mediaOpt.get().typeWire();
         }
-        return Optional.of(put(StructuredAttachment.serverMedia(null, safeMediaId, safeType, displayName)));
+        return put(ownerId, StructuredAttachment.serverMedia(null, safeMediaId, safeType, displayName));
     }
 
     public static Optional<StoredAttachment> createExternal(
+            UUID ownerId,
             @Nullable String typeWire,
             @Nullable String displayName,
             String fallbackUrl) {
+        if (ownerId == null || !ServerMediaServerConfig.get().allowExternalAttachmentUrls) {
+            return Optional.empty();
+        }
         try {
-            return Optional.of(put(StructuredAttachment.externalUrl(null, typeWire, displayName, fallbackUrl)));
+            return put(ownerId, StructuredAttachment.externalUrl(null, typeWire, displayName, fallbackUrl));
         } catch (IllegalArgumentException ex) {
             return Optional.empty();
         }
     }
 
-    public static StoredAttachment put(StructuredAttachment descriptor) {
+    public static Optional<StoredAttachment> put(UUID ownerId, StructuredAttachment descriptor) {
+        if (ownerId == null || descriptor == null || !descriptorAllowed(ownerId, descriptor)) {
+            return Optional.empty();
+        }
         StructuredAttachment assigned = descriptor.hasAttachmentId()
                 ? descriptor
-                : descriptor.withAttachmentId(randomAttachmentIdHex());
+                : descriptor.withAttachmentId(unusedAttachmentId());
         long now = System.currentTimeMillis();
         StoredAttachment stored = new StoredAttachment(
                 assigned.requireAttachmentId(),
@@ -66,8 +78,16 @@ public final class ServerAttachmentService {
                 assigned.schemaVersion(),
                 now,
                 expiresAtMs(now));
-        ATTACHMENTS.put(stored.attachmentId(), stored);
-        return stored;
+        OwnedAttachment candidate = new OwnedAttachment(ownerId, stored);
+        OwnedAttachment existing = ATTACHMENTS.putIfAbsent(stored.attachmentId(), candidate);
+        if (existing == null) {
+            return Optional.of(stored);
+        }
+        if (existing.ownerId().equals(ownerId)
+                && existing.attachment().descriptor().equals(stored.descriptor())) {
+            return Optional.of(existing.attachment());
+        }
+        return Optional.empty();
     }
 
     public static Optional<StoredAttachment> get(String attachmentId) {
@@ -75,15 +95,38 @@ public final class ServerAttachmentService {
         if (safeId == null) {
             return Optional.empty();
         }
-        StoredAttachment stored = ATTACHMENTS.get(safeId);
-        if (stored == null) {
+        OwnedAttachment owned = ATTACHMENTS.get(safeId);
+        if (owned == null) {
             return Optional.empty();
         }
+        StoredAttachment stored = owned.attachment();
         if (stored.isExpired(System.currentTimeMillis())) {
-            ATTACHMENTS.remove(safeId, stored);
+            ATTACHMENTS.remove(safeId, owned);
             return Optional.empty();
         }
         return Optional.of(stored);
+    }
+
+    public static Optional<StoredAttachment> getForPlayer(UUID playerId, String attachmentId) {
+        String safeId = normalizeOptional(attachmentId);
+        if (playerId == null || safeId == null) {
+            return Optional.empty();
+        }
+        OwnedAttachment owned = ATTACHMENTS.get(safeId);
+        if (owned == null) {
+            return Optional.empty();
+        }
+        Optional<StoredAttachment> stored = get(safeId);
+        if (stored.isEmpty()) {
+            return Optional.empty();
+        }
+        if (owned.ownerId().equals(playerId)) {
+            return stored;
+        }
+        String mediaId = stored.get().mediaId();
+        return mediaId != null && ServerMediaService.getForPlayer(playerId, mediaId).isPresent()
+                ? stored
+                : Optional.empty();
     }
 
     public static Optional<StoredAttachment> findByMediaId(String mediaId) {
@@ -92,12 +135,13 @@ public final class ServerAttachmentService {
             return Optional.empty();
         }
         long now = System.currentTimeMillis();
-        for (StoredAttachment stored : new ArrayList<>(ATTACHMENTS.values())) {
-            if (stored == null) {
+        for (OwnedAttachment owned : new ArrayList<>(ATTACHMENTS.values())) {
+            if (owned == null) {
                 continue;
             }
+            StoredAttachment stored = owned.attachment();
             if (stored.isExpired(now)) {
-                ATTACHMENTS.remove(stored.attachmentId(), stored);
+                ATTACHMENTS.remove(stored.attachmentId(), owned);
                 continue;
             }
             if (safeMediaId.equals(stored.mediaId())) {
@@ -105,6 +149,13 @@ public final class ServerAttachmentService {
             }
         }
         return Optional.empty();
+    }
+
+    public static Optional<StoredAttachment> findByMediaIdForPlayer(UUID playerId, String mediaId) {
+        if (playerId == null || ServerMediaService.getForPlayer(playerId, mediaId).isEmpty()) {
+            return Optional.empty();
+        }
+        return findByMediaId(mediaId);
     }
 
     public static Optional<StructuredAttachment> descriptor(String attachmentId) {
@@ -120,11 +171,38 @@ public final class ServerAttachmentService {
 
     public static void cleanup() {
         long now = System.currentTimeMillis();
-        for (StoredAttachment attachment : new ArrayList<>(ATTACHMENTS.values())) {
-            if (attachment != null && attachment.isExpired(now)) {
-                ATTACHMENTS.remove(attachment.attachmentId(), attachment);
+        for (OwnedAttachment owned : new ArrayList<>(ATTACHMENTS.values())) {
+            if (owned != null && owned.attachment().isExpired(now)) {
+                ATTACHMENTS.remove(owned.attachment().attachmentId(), owned);
             }
         }
+    }
+
+    private static boolean descriptorAllowed(UUID ownerId, StructuredAttachment descriptor) {
+        if (!StructuredChatProtocolLimits.acceptsAttachment(descriptor)) {
+            return false;
+        }
+        if (!descriptor.hasMedia()) {
+            return descriptor.fallbackUrl() != null
+                    && ExternalMediaUrlPolicy.isAllowed(descriptor.fallbackUrl())
+                    && ServerMediaServerConfig.get().allowExternalAttachmentUrls;
+        }
+        Optional<StoredMedia> media = ServerMediaService.get(descriptor.mediaId());
+        if (media.isEmpty()
+                || !ServerMediaService.isOwner(ownerId, descriptor.mediaId())
+                || !media.get().typeWire().equals(descriptor.typeWire())) {
+            return false;
+        }
+        if (descriptor.fallbackUrl() == null) {
+            return true;
+        }
+        Optional<ServerMediaUrl.Parsed> internal = ServerMediaUrl.parse(descriptor.fallbackUrl());
+        if (internal.isPresent()) {
+            return internal.get().mediaId().equals(descriptor.mediaId())
+                    && internal.get().typeWire().equals(descriptor.typeWire());
+        }
+        return ServerMediaServerConfig.get().allowExternalAttachmentUrls
+                && ExternalMediaUrlPolicy.isAllowed(descriptor.fallbackUrl());
     }
 
     private static long expiresAtMs(long nowMs) {
@@ -139,6 +217,14 @@ public final class ServerAttachmentService {
         return nowMs + ttlMs;
     }
 
+    private static String unusedAttachmentId() {
+        String id;
+        do {
+            id = randomAttachmentIdHex();
+        } while (ATTACHMENTS.containsKey(id));
+        return id;
+    }
+
     private static String randomAttachmentIdHex() {
         byte[] bytes = new byte[16];
         RNG.nextBytes(bytes);
@@ -148,6 +234,9 @@ public final class ServerAttachmentService {
             out.append(Character.forDigit(value & 0xF, 16));
         }
         return out.toString();
+    }
+
+    private record OwnedAttachment(UUID ownerId, StoredAttachment attachment) {
     }
 
     private static @Nullable String normalizeOptional(@Nullable String value) {

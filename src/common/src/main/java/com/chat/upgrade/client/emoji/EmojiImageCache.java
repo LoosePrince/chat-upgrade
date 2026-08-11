@@ -1,8 +1,6 @@
 package com.chat.upgrade.client.emoji;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,11 +55,14 @@ public final class EmojiImageCache {
         if (sourceUrl == null || sourceUrl.isBlank()) {
             return Optional.empty();
         }
-        HttpResponse<InputStream> response = MediaFetchSupport.sendGet(sourceUrl, 15, "emoji image");
-        if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
+        MediaFetchSupport.FetchPayload payload = MediaFetchSupport.fetch(
+                sourceUrl,
+                15,
+                "emoji image",
+                maxBytes);
+        if (payload == null) {
             return Optional.empty();
         }
-        MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, maxBytes);
         writeLocal(hash, sourceUrl, payload);
         return Optional.of(new CachedPayload(payload.body(), payload.contentType(), payload.md5Hex()));
     }

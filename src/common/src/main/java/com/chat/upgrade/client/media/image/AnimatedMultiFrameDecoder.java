@@ -14,10 +14,11 @@ import java.util.Optional;
  * Shared multi-frame decode loop for ImageReader-based animations (GIF, WebP, APNG).
  */
 public final class AnimatedMultiFrameDecoder {
-    static final int MAX_FRAMES = 150;
+    static final int MAX_FRAMES = 60;
     static final int MIN_FRAME_DELAY_MS = 20;
     static final int DEFAULT_FRAME_DELAY_MS = 100;
     static final long MAX_DECODE_PIXELS_PER_FRAME = 16L * 1024 * 1024;
+    static final long MAX_TOTAL_DECODE_PIXELS = 32L * 1024 * 1024;
 
     @FunctionalInterface
     public interface FrameDelaySource {
@@ -42,6 +43,7 @@ public final class AnimatedMultiFrameDecoder {
             }
             int limit = Math.min(numImages, MAX_FRAMES);
             ArrayList<Integer> delayList = new ArrayList<>(limit);
+            long totalPixels = 0L;
             for (int i = 0; i < limit; i++) {
                 BufferedImage bi;
                 try {
@@ -65,15 +67,17 @@ public final class AnimatedMultiFrameDecoder {
                     break;
                 }
                 long pixels = (long) bi.getWidth() * bi.getHeight();
-                if (pixels > MAX_DECODE_PIXELS_PER_FRAME) {
+                if (pixels <= 0L
+                        || pixels > MAX_DECODE_PIXELS_PER_FRAME
+                        || pixels > MAX_TOTAL_DECODE_PIXELS - totalPixels) {
                     ChatUpgrade.LOGGER.debug(
-                            "ChatUpgrade: {} frame {} exceeds pixel cap ({}), static fallback",
+                            "ChatUpgrade: {} frame {} exceeds decoded pixel policy, static fallback",
                             formatLabel,
-                            i,
-                            MAX_DECODE_PIXELS_PER_FRAME);
+                            i);
                     closeAll(frameList);
                     return Optional.empty();
                 }
+                totalPixels += pixels;
                 NativeImage ni = RasterImageDecoder.fromBufferedImage(bi);
                 frameList.add(ni);
                 int d;
@@ -113,6 +117,7 @@ public final class AnimatedMultiFrameDecoder {
     ) {
         ArrayList<NativeImage> frameList = new ArrayList<>();
         ArrayList<Integer> delayList = new ArrayList<>();
+        long totalPixels = 0L;
         try {
             for (int i = 0; i < MAX_FRAMES; i++) {
                 BufferedImage bi;
@@ -131,15 +136,17 @@ public final class AnimatedMultiFrameDecoder {
                     break;
                 }
                 long pixels = (long) bi.getWidth() * bi.getHeight();
-                if (pixels > MAX_DECODE_PIXELS_PER_FRAME) {
+                if (pixels <= 0L
+                        || pixels > MAX_DECODE_PIXELS_PER_FRAME
+                        || pixels > MAX_TOTAL_DECODE_PIXELS - totalPixels) {
                     ChatUpgrade.LOGGER.debug(
-                            "ChatUpgrade: {} frame {} exceeds pixel cap ({}), static fallback",
+                            "ChatUpgrade: {} frame {} exceeds decoded pixel policy, static fallback",
                             formatLabel,
-                            i,
-                            MAX_DECODE_PIXELS_PER_FRAME);
+                            i);
                     closeAll(frameList);
                     return Optional.empty();
                 }
+                totalPixels += pixels;
                 NativeImage ni = RasterImageDecoder.fromBufferedImage(bi);
                 frameList.add(ni);
                 int d;
@@ -175,6 +182,7 @@ public final class AnimatedMultiFrameDecoder {
     ) {
         ArrayList<NativeImage> frameList = new ArrayList<>();
         ArrayList<Integer> delayList = new ArrayList<>();
+        long totalPixels = 0L;
         BufferedImage canvas = null;
         Graphics2D g = null;
         try {
@@ -194,16 +202,23 @@ public final class AnimatedMultiFrameDecoder {
                     }
                     break;
                 }
-                long pixels = (long) bi.getWidth() * bi.getHeight();
-                if (pixels > MAX_DECODE_PIXELS_PER_FRAME) {
+                long sourcePixels = (long) bi.getWidth() * bi.getHeight();
+                int outputWidth = canvas == null ? bi.getWidth() : canvas.getWidth();
+                int outputHeight = canvas == null ? bi.getHeight() : canvas.getHeight();
+                long outputPixels = (long) outputWidth * outputHeight;
+                if (sourcePixels <= 0L
+                        || sourcePixels > MAX_DECODE_PIXELS_PER_FRAME
+                        || outputPixels <= 0L
+                        || outputPixels > MAX_DECODE_PIXELS_PER_FRAME
+                        || outputPixels > MAX_TOTAL_DECODE_PIXELS - totalPixels) {
                     ChatUpgrade.LOGGER.debug(
-                            "ChatUpgrade: {} frame {} exceeds pixel cap ({}), static fallback",
+                            "ChatUpgrade: {} frame {} exceeds decoded pixel policy, static fallback",
                             formatLabel,
-                            i,
-                            MAX_DECODE_PIXELS_PER_FRAME);
+                            i);
                     closeAll(frameList);
                     return Optional.empty();
                 }
+                totalPixels += outputPixels;
 
                 if (canvas == null) {
                     canvas = new BufferedImage(bi.getWidth(), bi.getHeight(), BufferedImage.TYPE_INT_ARGB);

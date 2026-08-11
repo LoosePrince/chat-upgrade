@@ -96,29 +96,25 @@ public final class AudioLoader {
             ServerMediaClient.requestIfNeeded(url);
             return;
         }
-        CompletableFuture.supplyAsync(() -> {
-            return MediaFetchSupport.sendGet(url, 20, "audio");
-        }).thenAccept(response -> {
-            if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
-                int status = response == null ? -1 : response.statusCode();
-                ChatUpgrade.LOGGER.warn("chat-upgrade: audio fetch failed url={} status={}", url, status);
+        int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
+        CompletableFuture.supplyAsync(() -> MediaFetchSupport.fetch(url, 20, "audio", maxReceive))
+                .thenAccept(payload -> {
+            if (payload == null) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: audio fetch failed url={}", url);
                 markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
                 return;
             }
-            int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
-            long declaredLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
-            String contentType = response.headers().firstValue("Content-Type").orElse("unknown");
+            long declaredLength = payload.declaredLength();
+            String contentType = payload.contentType();
             ChatUpgrade.LOGGER.info(
-                    "chat-upgrade: audio fetch start url={} status={} contentType={} contentLength={} maxReceive={}",
+                    "chat-upgrade: audio fetch complete url={} contentType={} contentLength={} maxReceive={}",
                     url,
-                    response.statusCode(),
                     contentType,
                     declaredLength,
                     maxReceive);
             try {
-                MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, maxReceive);
                 byte[] body = payload.body();
-                entry.setTransferMetadata(body.length, payload.contentType(), payload.md5Hex());
+                entry.setTransferMetadata(body.length, contentType, payload.md5Hex());
                 entry.setLoadPhase(AudioEntry.LoadPhase.DECODE);
                 if (!FfmpegNativeBootstrap.ensureReady()) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: audio runtime not ready for {}, FFmpeg natives unavailable",
@@ -136,22 +132,35 @@ public final class AudioLoader {
                 }
                 entry.setLoaded(durationMs);
                 notifyChanged(url);
-            } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
-                ChatUpgrade.LOGGER.warn(
-                        "chat-upgrade: audio body too large url={} contentLength={} maxReceive={}",
-                        url,
-                        declaredLength,
-                        maxReceive);
-                markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode audio {}: {}", url, e.getMessage());
                 markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
             }
         }).exceptionally(e -> {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: audio load pipeline failed {}: {}", url, e.toString());
+            if (hasCause(e, MediaFetchSupport.ResponseBodyTooLarge.class)) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: audio body exceeds limit ({}) for {}", maxReceive, url);
+                markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+                return null;
+            }
+            ChatUpgrade.LOGGER.warn("chat-upgrade: audio load pipeline failed {}: {}", url, rootCauseMessage(e));
             markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
             return null;
         });
+    }
+
+    private static boolean hasCause(Throwable failure, Class<? extends Throwable> type) {
+        Throwable cause = failure;
+        while (cause != null) {
+            if (type.isInstance(cause)) {
+                return true;
+            }
+            Throwable next = cause.getCause();
+            if (next == cause) {
+                break;
+            }
+            cause = next;
+        }
+        return false;
     }
 
     private static String rootCauseMessage(Throwable failure) {

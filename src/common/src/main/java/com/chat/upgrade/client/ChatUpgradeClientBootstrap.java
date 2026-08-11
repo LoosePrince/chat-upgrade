@@ -7,8 +7,7 @@ import com.chat.upgrade.client.media.audio.VoiceShortcutService;
 import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.video.VideoLoader;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
-import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
-import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
+import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
@@ -45,7 +44,6 @@ public final class ChatUpgradeClientBootstrap {
 
     public static void init() {
         System.setProperty("java.awt.headless", "false");
-        ExternalImageIoPluginLoader.loadAtStartup();
         ChatUpgradeConfig.load();
         ChatUpgrade.LOGGER.info(
                 "chat-upgrade: loaded config from {} | maxReceive={} maxUpload={} manual(image/audio/video)={}/{}/{} volume(audio/video)={}/{}",
@@ -57,7 +55,6 @@ public final class ChatUpgradeClientBootstrap {
                 ChatUpgradeConfig.get().manualVideoReveal,
                 ChatUpgradeConfig.get().audioVolumePercent,
                 ChatUpgradeConfig.get().videoVolumePercent);
-        FfmpegNativeBootstrap.warmupAsync();
         ChatClientConfigRuntime.initializeLoadedConfig();
         TwikooOwoRegistry.refreshIfExpired();
     }
@@ -65,6 +62,7 @@ public final class ChatUpgradeClientBootstrap {
     /** Invalidate cached HUD textures when the window / GUI scale changes. */
     public static void onClientTick(Minecraft client) {
         VoiceShortcutService.tick();
+        ServerMediaNetworking.onClientTick();
         var w = client.getWindow();
         int sw = w.getGuiScaledWidth();
         int sh = w.getGuiScaledHeight();

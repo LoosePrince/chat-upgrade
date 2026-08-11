@@ -19,7 +19,7 @@ import com.chat.upgrade.net.StructuredAttachment;
  * Client-side bridge for resolving {@link ServerMediaUrl} references via server packets.
  */
 public final class ServerMediaClient {
-    private static final ConcurrentHashMap<String, Boolean> REQUESTED_MEDIA_IDS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, String> REQUESTED_MEDIA_IDS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, StructuredAttachment> ATTACHMENTS_BY_MEDIA_ID = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, StructuredAttachment> ATTACHMENTS_BY_ID = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> PENDING_ATTACHMENT_MEDIA_IDS = new ConcurrentHashMap<>();
@@ -64,11 +64,12 @@ public final class ServerMediaClient {
         if (parsed.isEmpty()) {
             return;
         }
-        String mediaId = parsed.get().mediaId();
+        ServerMediaUrl.Parsed parsedMedia = parsed.get();
+        String mediaId = parsedMedia.mediaId();
         if (!capability.enabled()) {
             return;
         }
-        boolean first = REQUESTED_MEDIA_IDS.putIfAbsent(mediaId, Boolean.TRUE) == null;
+        boolean first = REQUESTED_MEDIA_IDS.putIfAbsent(mediaId, parsedMedia.typeWire()) == null;
         if (!first) {
             return;
         }
@@ -152,6 +153,18 @@ public final class ServerMediaClient {
             return;
         }
         requestAttachmentByMediaId(mediaId).whenComplete((result, error) -> PENDING_ATTACHMENT_MEDIA_IDS.remove(mediaId));
+    }
+
+    public static @Nullable String expectedType(String mediaId) {
+        String safeId = normalizeOptional(mediaId);
+        return safeId == null ? null : REQUESTED_MEDIA_IDS.get(safeId);
+    }
+
+    static void forgetRequest(String mediaId) {
+        String safeId = normalizeOptional(mediaId);
+        if (safeId != null) {
+            REQUESTED_MEDIA_IDS.remove(safeId);
+        }
     }
 
     public static void forgetRequestForUrl(String url) {

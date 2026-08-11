@@ -2,12 +2,16 @@ package com.chat.upgrade.server;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Collection;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.ChatUpgrade;
+import com.chat.upgrade.net.ServerMediaId;
 import com.chat.upgrade.server.store.DiskMediaStore;
 import com.chat.upgrade.server.store.InMemoryMediaStore;
 import com.chat.upgrade.server.store.MediaStore;
@@ -17,13 +21,14 @@ import com.chat.upgrade.platform.Platform;
 
 public final class ServerMediaService {
     private static final SecureRandom RNG = new SecureRandom();
-    private static final ConcurrentHashMap<Long, PendingUpload> UPLOADS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Set<UUID>> READ_GRANTS = new ConcurrentHashMap<>();
     private static volatile MediaStore store = new InMemoryMediaStore();
 
     private ServerMediaService() {
     }
 
     public static void initFromConfig() {
+        READ_GRANTS.clear();
         ServerMediaServerConfig cfg = ServerMediaServerConfig.get();
         if (cfg.storageMode == ServerMediaServerConfig.StorageMode.DISK) {
             try {
@@ -44,35 +49,57 @@ public final class ServerMediaService {
     }
 
     public static void clearAll() {
-        UPLOADS.clear();
+        ServerUploadRegistry.clear();
+        READ_GRANTS.clear();
         store = new InMemoryMediaStore();
         ServerAttachmentService.clearAll();
     }
 
-    public static void beginUpload(long uploadId, String typeWire, String contentType,
-            int totalLen, int totalChunks) {
-        if (uploadId == 0L) {
-            return;
-        }
-        UPLOADS.put(uploadId, new PendingUpload(uploadId, typeWire, contentType, totalLen, totalChunks));
+    public static Optional<String> beginUpload(
+            UUID playerId,
+            long uploadId,
+            String typeWire,
+            String contentType,
+            int totalLen,
+            int totalChunks) {
+        return ServerUploadRegistry.begin(
+                playerId,
+                uploadId,
+                typeWire,
+                contentType,
+                totalLen,
+                totalChunks,
+                System.currentTimeMillis());
     }
 
-    public static Optional<UploadCompleted> acceptUploadChunk(long uploadId, int idx, byte[] chunk,
-            int maxSingleBytes) {
-        PendingUpload upload = UPLOADS.get(uploadId);
-        if (upload == null) {
+    public static Optional<UploadCompleted> acceptUploadChunk(
+            UUID playerId,
+            long uploadId,
+            int index,
+            byte[] chunk) {
+        ServerUploadRegistry.AcceptResult result = ServerUploadRegistry.accept(
+                playerId,
+                uploadId,
+                index,
+                chunk,
+                System.currentTimeMillis());
+        if (result.status() == ServerUploadRegistry.Status.PENDING) {
             return Optional.empty();
         }
-        boolean done = upload.acceptChunk(idx, chunk);
-        if (!done) {
-            return Optional.empty();
+        if (result.status() == ServerUploadRegistry.Status.REJECTED) {
+            return Optional.of(new UploadCompleted(uploadId, null, result.error()));
         }
-        UPLOADS.remove(uploadId, upload);
-        byte[] body = upload.build();
-        if (body.length > maxSingleBytes) {
-            return Optional.of(new UploadCompleted(uploadId, null, "too_large"));
+
+        byte[] body = result.body();
+        String typeWire = result.typeWire();
+        String contentType = result.contentType();
+        if (body == null || typeWire == null || contentType == null) {
+            return Optional.of(new UploadCompleted(uploadId, null, "invalid_upload_state"));
         }
-        String fingerprint = fingerprint(upload.typeWire(), body);
+        if (!ServerMediaContentPolicy.accepts(typeWire, contentType, body)) {
+            return Optional.of(new UploadCompleted(uploadId, null, "content_type_mismatch"));
+        }
+        String fingerprint = fingerprint(playerId, typeWire, body);
         Optional<String> existingId = store.findMediaIdByFingerprint(fingerprint);
         if (existingId.isPresent()) {
             Optional<StoredMedia> existing = get(existingId.get());
@@ -85,7 +112,15 @@ public final class ServerMediaService {
         long ttlSeconds = ServerMediaServerConfig.get().ttlSeconds;
         long expiresAt = ttlSeconds <= 0 ? 0L : (now + ttlSeconds * 1000L);
         try {
-            store.put(new StoredMedia(mediaId, upload.typeWire(), upload.contentType(), fingerprint, body, now, expiresAt));
+            store.put(new StoredMedia(
+                    mediaId,
+                    typeWire,
+                    contentType,
+                    fingerprint,
+                    body,
+                    now,
+                    expiresAt,
+                    playerId.toString()));
         } catch (Exception e) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to store upload {}: {}", mediaId, e.getMessage());
             return Optional.of(new UploadCompleted(uploadId, null, "store_failed"));
@@ -93,7 +128,19 @@ public final class ServerMediaService {
         return Optional.of(new UploadCompleted(uploadId, mediaId, null));
     }
 
+    public static void discardUpload(UUID playerId, long uploadId) {
+        ServerUploadRegistry.discard(playerId, uploadId);
+    }
+
+    public static void discardUploads(UUID playerId) {
+        ServerUploadRegistry.discardPlayer(playerId);
+    }
+
     public static Optional<StoredMedia> get(String mediaId) {
+        if (!ServerMediaId.isValid(mediaId)) {
+            return Optional.empty();
+        }
+        mediaId = mediaId.toLowerCase(java.util.Locale.ROOT);
         Optional<StoredMedia> m = store.get(mediaId);
         if (m.isEmpty()) {
             return Optional.empty();
@@ -101,14 +148,56 @@ public final class ServerMediaService {
         StoredMedia media = m.get();
         if (media.isExpired(System.currentTimeMillis())) {
             store.delete(mediaId);
+            READ_GRANTS.remove(mediaId);
             return Optional.empty();
         }
         return Optional.of(media);
     }
 
+    public static Optional<StoredMedia> getForPlayer(UUID playerId, String mediaId) {
+        if (playerId == null || !ServerMediaId.isValid(mediaId)) {
+            return Optional.empty();
+        }
+        String normalizedMediaId = mediaId.toLowerCase(java.util.Locale.ROOT);
+        Optional<StoredMedia> media = get(normalizedMediaId);
+        if (media.isEmpty()) {
+            return Optional.empty();
+        }
+        if (isOwner(playerId, media.get())
+                || READ_GRANTS.getOrDefault(normalizedMediaId, Set.of()).contains(playerId)) {
+            return media;
+        }
+        return Optional.empty();
+    }
+
+    public static boolean isOwner(UUID playerId, String mediaId) {
+        return playerId != null && get(mediaId).map(media -> isOwner(playerId, media)).orElse(false);
+    }
+
+    public static void grantReadAccess(String mediaId, Collection<UUID> playerIds) {
+        if (!ServerMediaId.isValid(mediaId) || playerIds == null || playerIds.isEmpty()) {
+            return;
+        }
+        String normalizedMediaId = mediaId.toLowerCase(java.util.Locale.ROOT);
+        if (get(normalizedMediaId).isEmpty()) {
+            return;
+        }
+        Set<UUID> grants = READ_GRANTS.computeIfAbsent(
+                normalizedMediaId,
+                ignored -> ConcurrentHashMap.newKeySet());
+        playerIds.stream().filter(java.util.Objects::nonNull).forEach(grants::add);
+    }
+
+    private static boolean isOwner(UUID playerId, StoredMedia media) {
+        return media.ownerId() != null && media.ownerId().equals(playerId.toString());
+    }
+
     public static void cleanup() {
+        long now = System.currentTimeMillis();
         ServerMediaServerConfig cfg = ServerMediaServerConfig.get();
-        store.cleanup(System.currentTimeMillis(), cfg.maxTotalBytes);
+        ServerUploadRegistry.cleanup(now);
+        store.cleanup(now, cfg.maxTotalBytes);
+        READ_GRANTS.keySet().removeIf(mediaId -> get(mediaId).isEmpty());
     }
 
     private static String randomMediaIdHex() {
@@ -122,9 +211,11 @@ public final class ServerMediaService {
         return sb.toString();
     }
 
-    private static String fingerprint(String typeWire, byte[] body) {
+    private static String fingerprint(UUID playerId, String typeWire, byte[] body) {
         try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(playerId.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            md.update((byte) 0);
             if (typeWire != null) {
                 md.update(typeWire.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
@@ -138,81 +229,11 @@ public final class ServerMediaService {
             }
             return sb.toString();
         } catch (Exception e) {
-            return "md5_error_" + System.nanoTime();
+            throw new IllegalStateException("SHA-256 is unavailable", e);
         }
     }
 
     public record UploadCompleted(long uploadId, @Nullable String mediaId, @Nullable String error) {
-    }
-
-    private static final class PendingUpload {
-        private final long uploadId;
-        private final String typeWire;
-        private final String contentType;
-        private final int totalLen;
-        private final int totalChunks;
-        private final byte[][] chunks;
-        private int receivedChunks = 0;
-        private int receivedBytes = 0;
-
-        PendingUpload(long uploadId, String typeWire, String contentType, int totalLen,
-                int totalChunks) {
-            this.uploadId = uploadId;
-            this.typeWire = typeWire == null ? "image" : typeWire;
-            this.contentType = contentType == null ? "application/octet-stream" : contentType;
-            this.totalLen = Math.max(0, totalLen);
-            this.totalChunks = Math.max(0, totalChunks);
-            this.chunks = new byte[this.totalChunks][];
-        }
-
-        String typeWire() {
-            return typeWire;
-        }
-
-        String contentType() {
-            return contentType;
-        }
-
-        synchronized boolean acceptChunk(int idx, byte[] chunk) {
-            if (idx < 0 || idx >= totalChunks) {
-                return false;
-            }
-            if (chunks[idx] != null) {
-                return false;
-            }
-            chunks[idx] = chunk;
-            receivedChunks++;
-            receivedBytes += (chunk == null ? 0 : chunk.length);
-            return receivedChunks == totalChunks;
-        }
-
-        synchronized byte[] build() {
-            if (totalChunks == 0) {
-                return new byte[0];
-            }
-            int len = totalLen > 0 ? totalLen : receivedBytes;
-            byte[] out = new byte[len];
-            int offset = 0;
-            for (byte[] c : chunks) {
-                if (c == null || c.length == 0) {
-                    continue;
-                }
-                int copy = Math.min(c.length, out.length - offset);
-                if (copy <= 0) {
-                    break;
-                }
-                System.arraycopy(c, 0, out, offset, copy);
-                offset += copy;
-            }
-            if (offset != out.length) {
-                ChatUpgrade.LOGGER.debug("chat-upgrade: upload {} assembled {} bytes (declared={})",
-                        uploadId, offset, out.length);
-                byte[] shrink = new byte[offset];
-                System.arraycopy(out, 0, shrink, 0, offset);
-                return shrink;
-            }
-            return out;
-        }
     }
 }
 

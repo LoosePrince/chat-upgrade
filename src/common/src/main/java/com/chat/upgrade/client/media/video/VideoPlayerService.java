@@ -79,8 +79,14 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
 
 public final class VideoPlayerService {
-    private static final int TARGET_FPS = 12;
-    private static final int MAX_CACHED_FRAMES = 240;
+    private static final int TARGET_FPS = 8;
+    private static final int MAX_CACHED_FRAMES = 60;
+    private static final int MAX_DECODE_DIMENSION = 4_096;
+    private static final long MAX_DECODE_PIXELS = 8_500_000L;
+    private static final int MAX_TEXTURE_DIMENSION = 512;
+    private static final long MAX_DURATION_MS = 5L * 60L * 1_000L;
+    private static final int MAX_AUDIO_PCM_BYTES = 32 * 1024 * 1024;
+    private static final int MAX_DECODE_PACKETS = 100_000;
     private static final ConcurrentHashMap<String, VideoSession> SESSIONS = new ConcurrentHashMap<>();
     private static final AtomicInteger TEXTURE_COUNTER = new AtomicInteger(0);
     private static final ExecutorService PREDECODE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
@@ -104,17 +110,22 @@ public final class VideoPlayerService {
         }
 
         Path tempFile = writeTempVideoFile(videoBytes);
-        DecodedMeta meta = decodeMetaAndFirstFrame(tempFile);
-        CachePlan plan = planCache(meta.durationMs());
-        Identifier firstFrameId = registerTextureOnRenderThread(meta.firstFrame());
-        Identifier[] frameIds = new Identifier[plan.frames()];
-        frameIds[0] = firstFrameId;
-        VideoAudioTrack audioTrack = decodeAudioTrack(tempFile);
-        VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile,
-                audioTrack);
-        SESSIONS.put(url, session);
-        schedulePredecode(url, session, tempFile, meta.durationMs(), plan.intervalMs(), plan.frames());
-        return new Prepared(meta.durationMs(), meta.rawWidth(), meta.rawHeight());
+        try {
+            DecodedMeta meta = decodeMetaAndFirstFrame(tempFile);
+            CachePlan plan = planCache(meta.durationMs());
+            Identifier firstFrameId = registerTextureOnRenderThread(meta.firstFrame());
+            Identifier[] frameIds = new Identifier[plan.frames()];
+            frameIds[0] = firstFrameId;
+            VideoAudioTrack audioTrack = decodeAudioTrack(tempFile);
+            VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile,
+                    audioTrack);
+            SESSIONS.put(url, session);
+            schedulePredecode(url, session, tempFile, meta.durationMs(), plan.intervalMs(), plan.frames());
+            return new Prepared(meta.durationMs(), meta.rawWidth(), meta.rawHeight());
+        } catch (Exception error) {
+            Files.deleteIfExists(tempFile);
+            throw error;
+        }
     }
 
     public static void clearAll() {
@@ -463,6 +474,7 @@ public final class VideoPlayerService {
             if (avcodec_parameters_to_context(codecCtx, codecpar) < 0) {
                 throw new IllegalStateException("copy codec params failed");
             }
+            validateVideoDimensions(codecCtx.width(), codecCtx.height());
             if (avcodec_open2(codecCtx, codec, (AVDictionary) null) < 0) {
                 throw new IllegalStateException("open codec failed");
             }
@@ -486,10 +498,17 @@ public final class VideoPlayerService {
             }
 
             long durationMs = durationFrom(fmt, stream);
+            if (durationMs <= 0L || durationMs > MAX_DURATION_MS) {
+                throw new IllegalStateException("video duration exceeds policy");
+            }
             int rawW = codecCtx.width();
             int rawH = codecCtx.height();
+            int packets = 0;
 
             while (av_read_frame(fmt, pkt) >= 0) {
+                if (++packets > MAX_DECODE_PACKETS) {
+                    throw new IllegalStateException("video packet count exceeds policy");
+                }
                 try {
                     if (pkt.stream_index() != videoIdx) {
                         continue;
@@ -506,23 +525,45 @@ public final class VideoPlayerService {
                         }
                         int w = frame.width();
                         int h = frame.height();
+                        validateDecodedFrameDimensions(w, h);
+                        int[] outputSize = scaledFrameSize(w, h);
+                        int outputWidth = outputSize[0];
+                        int outputHeight = outputSize[1];
                         sws = sws_getContext(
                                 w, h, frame.format(),
-                                w, h, AV_PIX_FMT_RGBA,
+                                outputWidth, outputHeight, AV_PIX_FMT_RGBA,
                                 SWS_BILINEAR,
                                 null, null, (double[]) null);
                         if (sws == null) {
                             throw new IllegalStateException("sws context failed");
                         }
                         rgba = av_frame_alloc();
-                        int bufferSize = av_image_get_buffer_size(AV_PIX_FMT_RGBA, w, h, 1);
+                        int bufferSize = av_image_get_buffer_size(
+                                AV_PIX_FMT_RGBA, outputWidth, outputHeight, 1);
+                        if (bufferSize <= 0 || bufferSize > MAX_TEXTURE_DIMENSION * MAX_TEXTURE_DIMENSION * 4) {
+                            throw new IllegalStateException("invalid decoded frame buffer size");
+                        }
                         rgbaBuffer = new BytePointer(av_malloc(bufferSize));
-                        av_image_fill_arrays(rgba.data(), new IntPointer(rgba.linesize()), rgbaBuffer, AV_PIX_FMT_RGBA,
-                                w, h, 1);
+                        if (rgbaBuffer.isNull()) {
+                            throw new IllegalStateException("decoded frame allocation failed");
+                        }
+                        av_image_fill_arrays(
+                                rgba.data(),
+                                new IntPointer(rgba.linesize()),
+                                rgbaBuffer,
+                                AV_PIX_FMT_RGBA,
+                                outputWidth,
+                                outputHeight,
+                                1);
                         sws_scale(sws, frame.data(), frame.linesize(), 0, h, rgba.data(), rgba.linesize());
-                        BufferedImage bi = bufferedImageFromRgba(rgbaBuffer, rgba.linesize(0), w, h);
+                        BufferedImage bi = bufferedImageFromRgba(
+                                rgbaBuffer, rgba.linesize(0), outputWidth, outputHeight);
                         NativeImage out = RasterImageDecoder.fromBufferedImage(bi);
-                        return new DecodedFrame(out, rawW > 0 ? rawW : w, rawH > 0 ? rawH : h, durationMs);
+                        return new DecodedFrame(
+                                out,
+                                rawW > 0 ? rawW : w,
+                                rawH > 0 ? rawH : h,
+                                durationMs);
                     }
                 } finally {
                     av_packet_unref(pkt);
@@ -550,6 +591,36 @@ public final class VideoPlayerService {
             }
             avformat_close_input(fmt);
         }
+    }
+
+    private static void validateVideoDimensions(int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        validateDecodedFrameDimensions(width, height);
+    }
+
+    private static void validateDecodedFrameDimensions(int width, int height) {
+        if (width <= 0
+                || height <= 0
+                || width > MAX_DECODE_DIMENSION
+                || height > MAX_DECODE_DIMENSION
+                || (long) width * height > MAX_DECODE_PIXELS) {
+            throw new IllegalStateException("video dimensions exceed policy");
+        }
+    }
+
+    private static int[] scaledFrameSize(int width, int height) {
+        if (width <= MAX_TEXTURE_DIMENSION && height <= MAX_TEXTURE_DIMENSION) {
+            return new int[] { width, height };
+        }
+        double scale = Math.min(
+                MAX_TEXTURE_DIMENSION / (double) width,
+                MAX_TEXTURE_DIMENSION / (double) height);
+        return new int[] {
+                Math.max(1, (int) Math.floor(width * scale)),
+                Math.max(1, (int) Math.floor(height * scale))
+        };
     }
 
     private static @Nullable VideoAudioTrack decodeAudioTrack(Path path) {
@@ -585,10 +656,17 @@ public final class VideoPlayerService {
             if (pkt == null || frame == null) {
                 return null;
             }
-            int channels = Math.max(1, codecCtx.ch_layout().nb_channels());
-            int sampleRate = Math.max(8000, codecCtx.sample_rate());
+            int channels = codecCtx.ch_layout().nb_channels();
+            int sampleRate = codecCtx.sample_rate();
+            if (channels <= 0 || channels > 2 || sampleRate < 8_000 || sampleRate > 48_000) {
+                return null;
+            }
             ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+            int packets = 0;
             while (av_read_frame(fmt, pkt) >= 0) {
+                if (++packets > MAX_DECODE_PACKETS) {
+                    throw new IllegalStateException("video audio packet count exceeds policy");
+                }
                 try {
                     if (pkt.stream_index() != audioIdx) {
                         continue;
@@ -635,6 +713,10 @@ public final class VideoPlayerService {
         if (samples <= 0) {
             return;
         }
+        long outputBytes = (long) samples * channels * 2L;
+        if (outputBytes > MAX_AUDIO_PCM_BYTES || out.size() + outputBytes > MAX_AUDIO_PCM_BYTES) {
+            throw new IllegalStateException("decoded audio exceeds memory policy");
+        }
         if (fmt == AV_SAMPLE_FMT_S16) {
             BytePointer data = frame.data(0);
             int bytes = samples * channels * 2;
@@ -669,7 +751,9 @@ public final class VideoPlayerService {
                     writeS16Le(out, floatToS16(f));
                 }
             }
+            return;
         }
+        throw new IllegalStateException("unsupported decoded video audio sample format");
     }
 
     private static short floatToS16(float f) {

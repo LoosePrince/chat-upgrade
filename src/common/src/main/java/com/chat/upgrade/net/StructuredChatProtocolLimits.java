@@ -129,7 +129,7 @@ public final class StructuredChatProtocolLimits {
             return false;
         }
         for (StructuredAttachment attachment : attachments) {
-            if (!accepts(attachment)) {
+            if (!acceptsAttachment(attachment)) {
                 return false;
             }
         }
@@ -154,11 +154,11 @@ public final class StructuredChatProtocolLimits {
                 .anyMatch(segment -> segment != null && segment.isText() && !segment.text().isBlank());
     }
 
-    private static boolean accepts(@Nullable StructuredAttachment attachment) {
+    public static boolean acceptsAttachment(@Nullable StructuredAttachment attachment) {
         return attachment != null
                 && supportedSchema(attachment.schemaVersion(), StructuredAttachment.CURRENT_SCHEMA_VERSION)
-                && optionalId(attachment.attachmentId(), MAX_ATTACHMENT_ID_CHARS)
-                && optionalId(attachment.mediaId(), MAX_MEDIA_ID_CHARS)
+                && optionalServerId(attachment.attachmentId())
+                && optionalServerId(attachment.mediaId())
                 && fits(attachment.typeWire(), 16)
                 && fits(attachment.displayName(), MAX_DISPLAY_NAME_CHARS)
                 && fits(attachment.fallbackUrl(), MAX_URL_CHARS);
@@ -186,6 +186,10 @@ public final class StructuredChatProtocolLimits {
 
     private static boolean requiredId(@Nullable String value, int maxChars) {
         return value != null && !value.isBlank() && value.length() <= maxChars;
+    }
+
+    private static boolean optionalServerId(@Nullable String value) {
+        return value == null || value.isBlank() || ServerMediaId.isValid(value);
     }
 
     private static boolean optionalId(@Nullable String value, int maxChars) {

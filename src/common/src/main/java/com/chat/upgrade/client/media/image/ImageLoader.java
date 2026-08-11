@@ -1,6 +1,5 @@
 package com.chat.upgrade.client.media.image;
 
-import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -171,16 +170,14 @@ public final class ImageLoader {
             ServerMediaClient.requestIfNeeded(url);
             return;
         }
-        CompletableFuture.supplyAsync(() -> {
-            return MediaFetchSupport.sendGet(url, 15, "image");
-        }).thenAccept(response -> {
-            if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
+        int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
+        CompletableFuture.supplyAsync(() -> MediaFetchSupport.fetch(url, 15, "image", maxReceive))
+                .thenAccept(payload -> {
+            if (payload == null) {
                 markFailed(url, entry);
                 return;
             }
-            int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
             try {
-                MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, maxReceive);
                 byte[] body = payload.body();
                 String contentType = payload.contentType();
                 int declaredLen = payload.declaredLength();
@@ -194,16 +191,18 @@ public final class ImageLoader {
                 entry.setTransferMetadata(byteLen, contentType, md5Hex);
                 entry.setLoadPhase(ImageEntry.LoadPhase.DECODE);
                 decodeAndSchedule(url, entry, body, false);
-            } catch (MediaFetchSupport.ResponseBodyTooLarge e) {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: image body exceeds limit ({}) for {}", maxReceive, url);
-                markFailedOversize(url, entry);
             } catch (Throwable t) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode image {}: {} [{}]",
                         url, t.getMessage(), t.getClass().getName());
                 markFailed(url, entry);
             }
         }).exceptionally(e -> {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: unexpected error loading {}: {}", url, e.getMessage());
+            if (hasCause(e, MediaFetchSupport.ResponseBodyTooLarge.class)) {
+                ChatUpgrade.LOGGER.warn("chat-upgrade: image body exceeds limit ({}) for {}", maxReceive, url);
+                markFailedOversize(url, entry);
+                return null;
+            }
+            ChatUpgrade.LOGGER.warn("chat-upgrade: unexpected error loading {}: {}", url, rootCauseMessage(e));
             markFailed(url, entry);
             return null;
         });
@@ -236,19 +235,44 @@ public final class ImageLoader {
                 markFailed(url, entry);
             }
         }).exceptionally(e -> {
-            if (e.getCause() instanceof MediaFetchSupport.ResponseBodyTooLarge
-                    || e instanceof MediaFetchSupport.ResponseBodyTooLarge) {
+            if (hasCause(e, MediaFetchSupport.ResponseBodyTooLarge.class)) {
                 markFailedOversize(url, entry);
             } else {
-                ChatUpgrade.LOGGER.warn("chat-upgrade: unexpected error loading emoji image {}: {}", url, e.getMessage());
+                ChatUpgrade.LOGGER.warn("chat-upgrade: unexpected error loading emoji image {}: {}", url,
+                        rootCauseMessage(e));
                 markFailed(url, entry);
             }
             return null;
         });
     }
 
+    private static boolean hasCause(Throwable failure, Class<? extends Throwable> type) {
+        Throwable cause = failure;
+        while (cause != null) {
+            if (type.isInstance(cause)) {
+                return true;
+            }
+            Throwable next = cause.getCause();
+            if (next == cause) {
+                break;
+            }
+            cause = next;
+        }
+        return false;
+    }
+
+    private static String rootCauseMessage(Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
+    }
+
     private static void decodeAndSchedule(String url, ImageEntry entry, byte[] body, boolean logRasterSuccess)
             throws Exception {
+        ImagePayloadPolicy.validate(body);
         Optional<AnimatedDecodeResult> animatedOpt = GifAnimatedDecoder.tryDecode(body);
         if (animatedOpt.isEmpty()) {
             animatedOpt = WebpAnimatedDecoder.tryDecode(body);
@@ -262,7 +286,7 @@ public final class ImageLoader {
             scheduleAnimatedTextureRegistration(url, entry, r.frames(), r.delayMs());
             return;
         }
-        NativeImage img = RasterImageDecoder.decode(new ByteArrayInputStream(body));
+        NativeImage img = RasterImageDecoder.decode(body);
         if (logRasterSuccess) {
             ChatUpgrade.LOGGER.info("chat-upgrade: raster decode ok for {} ({}x{}, format={})",
                     url, img.getWidth(), img.getHeight(), img.format().name());

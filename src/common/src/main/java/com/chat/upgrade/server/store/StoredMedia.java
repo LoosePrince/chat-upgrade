@@ -1,5 +1,7 @@
 package com.chat.upgrade.server.store;
 
+import org.jetbrains.annotations.Nullable;
+
 public record StoredMedia(
         String mediaId,
         String typeWire,
@@ -7,7 +9,8 @@ public record StoredMedia(
         String fingerprint,
         byte[] body,
         long createdAtMs,
-        long expiresAtMs) {
+        long expiresAtMs,
+        @Nullable String ownerId) {
     public boolean isExpired(long nowMs) {
         return expiresAtMs > 0 && nowMs >= expiresAtMs;
     }

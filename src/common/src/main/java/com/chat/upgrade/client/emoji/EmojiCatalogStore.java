@@ -1,7 +1,6 @@
 package com.chat.upgrade.client.emoji;
 
 import java.io.IOException;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,16 +47,19 @@ public final class EmojiCatalogStore {
     }
 
     public static EmojiCatalog fetchOnline() {
-        HttpResponse<java.io.InputStream> response = MediaFetchSupport.sendGet(OWO_JSON_URL, 15, "emoji catalog");
-        if (response == null || response.statusCode() < 200 || response.statusCode() >= 300) {
-            return EmojiCatalog.empty();
-        }
         try {
-            MediaFetchSupport.FetchPayload payload = MediaFetchSupport.readPayload(response, MAX_CATALOG_BYTES);
+            MediaFetchSupport.FetchPayload payload = MediaFetchSupport.fetch(
+                    OWO_JSON_URL,
+                    15,
+                    "emoji catalog",
+                    MAX_CATALOG_BYTES);
+            if (payload == null) {
+                return EmojiCatalog.empty();
+            }
             String json = new String(payload.body(), StandardCharsets.UTF_8);
             return parseOwoCatalog(json, System.currentTimeMillis());
         } catch (Exception e) {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to parse online emoji catalog: {}", e.getMessage());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to fetch or parse online emoji catalog: {}", e.getMessage());
             return EmojiCatalog.empty();
         }
     }

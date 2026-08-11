@@ -25,6 +25,17 @@ public final class ServerMediaServerConfig {
     public int maxChunkBytes = 32 * 1024;
     public long maxTotalBytes = 200L * 1024L * 1024L;
     public int ttlSeconds = 60 * 60;
+    public int uploadTimeoutSeconds = 30;
+    public int maxPendingUploadsPerPlayer = 2;
+    public int maxPendingUploadsGlobal = 64;
+    public long maxPendingBytesPerPlayer = 20L * 1024L * 1024L;
+    public long maxPendingBytesGlobal = 128L * 1024L * 1024L;
+    public int maxStructuredMessagesPer10Seconds = 8;
+    public int maxUploadPacketsPer10Seconds = 512;
+    public int maxMediaRequestsPer10Seconds = 32;
+    public int maxAttachmentWritesPerMinute = 20;
+    public int maxHistoryRequestsPerMinute = 6;
+    public boolean allowExternalAttachmentUrls;
     public boolean chatHistoryEnabled;
     public int chatHistoryMaxMessages = 500;
     public int chatHistoryReplayLimit = 100;
@@ -76,6 +87,17 @@ public final class ServerMediaServerConfig {
         c.maxChunkBytes = 32 * 1024;
         c.maxTotalBytes = 200L * 1024L * 1024L;
         c.ttlSeconds = 60 * 60;
+        c.uploadTimeoutSeconds = 30;
+        c.maxPendingUploadsPerPlayer = 2;
+        c.maxPendingUploadsGlobal = 64;
+        c.maxPendingBytesPerPlayer = 20L * 1024L * 1024L;
+        c.maxPendingBytesGlobal = 128L * 1024L * 1024L;
+        c.maxStructuredMessagesPer10Seconds = 8;
+        c.maxUploadPacketsPer10Seconds = 512;
+        c.maxMediaRequestsPer10Seconds = 32;
+        c.maxAttachmentWritesPerMinute = 20;
+        c.maxHistoryRequestsPerMinute = 6;
+        c.allowExternalAttachmentUrls = false;
         c.chatHistoryEnabled = false;
         c.chatHistoryMaxMessages = 500;
         c.chatHistoryReplayLimit = 100;
@@ -91,12 +113,31 @@ public final class ServerMediaServerConfig {
         if (maxChunkBytes <= 0) {
             maxChunkBytes = 32 * 1024;
         }
-        maxChunkBytes = Math.min(maxChunkBytes, 256 * 1024);
+        maxChunkBytes = Math.clamp(maxChunkBytes, 1_024, 256 * 1_024);
         maxSingleBytes = Math.min(maxSingleBytes, 10 * 1024 * 1024);
         if (maxTotalBytes < 0) {
             maxTotalBytes = 0;
         }
         ttlSeconds = Math.max(0, ttlSeconds);
+        uploadTimeoutSeconds = Math.clamp(uploadTimeoutSeconds, 5, 300);
+        maxPendingUploadsPerPlayer = Math.clamp(maxPendingUploadsPerPlayer, 1, 8);
+        maxPendingUploadsGlobal = Math.clamp(
+                maxPendingUploadsGlobal,
+                maxPendingUploadsPerPlayer,
+                256);
+        maxPendingBytesPerPlayer = Math.clamp(
+                maxPendingBytesPerPlayer,
+                (long) maxSingleBytes,
+                80L * 1024L * 1024L);
+        maxPendingBytesGlobal = Math.clamp(
+                maxPendingBytesGlobal,
+                maxPendingBytesPerPlayer,
+                512L * 1024L * 1024L);
+        maxStructuredMessagesPer10Seconds = Math.clamp(maxStructuredMessagesPer10Seconds, 1, 100);
+        maxUploadPacketsPer10Seconds = Math.clamp(maxUploadPacketsPer10Seconds, 32, 4_096);
+        maxMediaRequestsPer10Seconds = Math.clamp(maxMediaRequestsPer10Seconds, 1, 200);
+        maxAttachmentWritesPerMinute = Math.clamp(maxAttachmentWritesPerMinute, 1, 120);
+        maxHistoryRequestsPerMinute = Math.clamp(maxHistoryRequestsPerMinute, 1, 60);
         chatHistoryMaxMessages = Math.clamp(chatHistoryMaxMessages, 10, 2_000);
         chatHistoryReplayLimit = Math.clamp(chatHistoryReplayLimit, 1, chatHistoryMaxMessages);
         if (storageMode == null) {

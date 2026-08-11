@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.security.SecureRandom;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,6 +40,7 @@ import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionService;
 import com.chat.upgrade.client.ui.chat.state.RichChatStateStore;
+import com.chat.upgrade.net.ServerMediaId;
 import com.chat.upgrade.net.ServerMediaPayloads;
 import com.chat.upgrade.net.StructuredAttachment;
 import com.chat.upgrade.net.StructuredChatAuthor;
@@ -57,9 +57,15 @@ import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.network.chat.Component;
 
 public final class ServerMediaNetworking {
+    private static final int MAX_CONCURRENT_INCOMING_MEDIA = 4;
+    private static final long INCOMING_MEDIA_TIMEOUT_MS = 30_000L;
+    private static final long PENDING_REQUEST_TIMEOUT_MS = 30_000L;
     private static final ConcurrentHashMap<String, IncomingMediaAssembly> INCOMING = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Long, CompletableFuture<Optional<String>>> UPLOADS = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Long, CompletableFuture<Optional<StructuredAttachment>>> ATTACHMENTS = new ConcurrentHashMap<>();
+    private static final PendingClientRequestRegistry<String> UPLOADS = new PendingClientRequestRegistry<>(
+            4,
+            PENDING_REQUEST_TIMEOUT_MS);
+    private static final PendingClientRequestRegistry<StructuredAttachment> ATTACHMENTS =
+            new PendingClientRequestRegistry<>(16, PENDING_REQUEST_TIMEOUT_MS);
     private static final SecureRandom RNG = new SecureRandom();
     private static final AtomicBoolean SESSION_OPEN = new AtomicBoolean(false);
     private static final DateTimeFormatter HISTORY_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -80,9 +86,7 @@ public final class ServerMediaNetworking {
         clearHistoryRecovery();
         historySessionKey = "";
         INCOMING.clear();
-        UPLOADS.forEach((id, fut) -> fut.complete(Optional.empty()));
         UPLOADS.clear();
-        ATTACHMENTS.forEach((id, fut) -> fut.complete(Optional.empty()));
         ATTACHMENTS.clear();
         capabilityAnnounced = false;
         ChatUpgradeClientBootstrap.clearAllRuntimeState();
@@ -92,6 +96,13 @@ public final class ServerMediaNetworking {
         ChatUpgradeClientBootstrap.clearAllRuntimeState();
         SESSION_OPEN.set(true);
         restoreClientHistory();
+    }
+
+    public static void onClientTick() {
+        long nowMs = System.currentTimeMillis();
+        cleanupExpiredIncoming(nowMs);
+        UPLOADS.cleanup(nowMs);
+        ATTACHMENTS.cleanup(nowMs);
     }
 
     public static void registerClientHandlers(NetworkRegistrar r) {
@@ -148,48 +159,52 @@ public final class ServerMediaNetworking {
         r.clientHandler(ServerMediaPayloads.S2CChatHistoryComplete.TYPE, (payload, context) ->
                 context.execute(() -> finishChatHistoryRecovery()));
 
-        r.clientHandler(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) -> {
-            InlineResourceType type = InlineResourceType.fromWire(payload.typeWire());
-            INCOMING.put(payload.mediaId(), new IncomingMediaAssembly(
-                    payload.mediaId(),
-                    type,
-                    payload.contentType(),
-                    payload.md5Hex(),
-                    payload.totalLen(),
-                    payload.totalChunks()));
-        });
+        r.clientHandler(ServerMediaPayloads.S2CMediaInit.TYPE, (payload, context) ->
+                handleIncomingMediaInit(payload));
 
         r.clientHandler(ServerMediaPayloads.S2CMediaChunk.TYPE, (payload, context) -> {
-            IncomingMediaAssembly asm = INCOMING.get(payload.mediaId());
-            if (asm == null) {
+            String mediaId = normalizeMediaId(payload.mediaId());
+            if (mediaId == null) {
                 return;
             }
-            boolean done = asm.acceptChunk(payload.idx(), payload.chunk());
-            if (!done) {
+            IncomingMediaAssembly assembly = INCOMING.get(mediaId);
+            if (assembly == null) {
                 return;
             }
-            INCOMING.remove(payload.mediaId(), asm);
-            byte[] body = asm.build();
+            IncomingMediaAssembly.AcceptStatus status = assembly.acceptChunk(
+                    payload.idx(), payload.chunk(), System.currentTimeMillis());
+            if (status == IncomingMediaAssembly.AcceptStatus.PENDING) {
+                return;
+            }
+            INCOMING.remove(mediaId, assembly);
+            if (status == IncomingMediaAssembly.AcceptStatus.REJECTED) {
+                ServerMediaClient.forgetRequest(mediaId);
+                ChatUpgrade.LOGGER.warn("chat-upgrade: rejected malformed server media chunk for {}", mediaId);
+                return;
+            }
+            byte[] body = assembly.completedBody();
             context.execute(() -> ServerMediaClient.acceptMediaBytes(
-                    asm.mediaId(),
-                    asm.type(),
-                    asm.contentType(),
-                    asm.md5Hex(),
+                    assembly.mediaId(),
+                    assembly.type(),
+                    assembly.contentType(),
+                    assembly.fingerprint(),
                     body));
         });
 
         r.clientHandler(ServerMediaPayloads.S2CMediaError.TYPE, (payload, context) -> {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: server media error mediaId={} msg={}", payload.mediaId(),
+            String mediaId = normalizeMediaId(payload.mediaId());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: server media error mediaId={} msg={}", mediaId,
                     payload.message());
-            INCOMING.remove(payload.mediaId());
-        });
-
-        r.clientHandler(ServerMediaPayloads.S2CUploadAck.TYPE, (payload, context) -> {
-            CompletableFuture<Optional<String>> fut = UPLOADS.remove(payload.uploadId());
-            if (fut != null) {
-                fut.complete(Optional.ofNullable(payload.specialUrl()).filter(s -> !s.isBlank()));
+            if (mediaId != null) {
+                INCOMING.remove(mediaId);
+                ServerMediaClient.forgetRequest(mediaId);
             }
         });
+
+        r.clientHandler(ServerMediaPayloads.S2CUploadAck.TYPE, (payload, context) ->
+                UPLOADS.complete(
+                        payload.uploadId(),
+                        Optional.ofNullable(payload.specialUrl()).filter(s -> !s.isBlank())));
 
         r.clientHandler(ServerMediaPayloads.S2CAttachmentAck.TYPE, (payload, context) -> {
             completeAttachment(payload.requestId(), toStructuredAttachment(
@@ -212,13 +227,76 @@ public final class ServerMediaNetworking {
         });
 
         r.clientHandler(ServerMediaPayloads.S2CAttachmentError.TYPE, (payload, context) -> {
-            CompletableFuture<Optional<StructuredAttachment>> fut = ATTACHMENTS.remove(payload.requestId());
-            if (fut != null) {
-                fut.complete(Optional.empty());
-            }
+            ATTACHMENTS.fail(payload.requestId());
             ChatUpgrade.LOGGER.warn("chat-upgrade: server attachment error attachmentId={} mediaId={} msg={}",
                     payload.attachmentId(), payload.mediaId(), payload.message());
         });
+    }
+
+    private static void handleIncomingMediaInit(ServerMediaPayloads.S2CMediaInit payload) {
+        long nowMs = System.currentTimeMillis();
+        cleanupExpiredIncoming(nowMs);
+        if (!ServerMediaId.isValid(payload.mediaId())
+                || !("image".equals(payload.typeWire())
+                        || "audio".equals(payload.typeWire())
+                        || "video".equals(payload.typeWire()))) {
+            rejectIncoming(payload.mediaId(), "invalid metadata");
+            return;
+        }
+        String mediaId = payload.mediaId().toLowerCase(java.util.Locale.ROOT);
+        String expectedType = ServerMediaClient.expectedType(mediaId);
+        if (expectedType == null || !expectedType.equals(payload.typeWire())) {
+            rejectIncoming(mediaId, "unsolicited or mismatched response");
+            return;
+        }
+        synchronized (INCOMING) {
+            if (INCOMING.containsKey(mediaId)) {
+                return;
+            }
+            long pendingBytes = INCOMING.values().stream()
+                    .mapToLong(IncomingMediaAssembly::declaredBytes)
+                    .sum();
+            long pendingLimit = 2L * ChatUpgradeConfig.ABSOLUTE_MAX_RECEIVE_BYTES;
+            if (INCOMING.size() >= MAX_CONCURRENT_INCOMING_MEDIA
+                    || payload.totalLen() <= 0
+                    || payload.totalLen() > pendingLimit - pendingBytes) {
+                rejectIncoming(mediaId, "too many pending responses");
+                return;
+            }
+            Optional<IncomingMediaAssembly> candidate = IncomingMediaAssembly.create(
+                    mediaId,
+                    InlineResourceType.fromWire(payload.typeWire()),
+                    payload.contentType(),
+                    payload.md5Hex(),
+                    payload.totalLen(),
+                    payload.totalChunks(),
+                    ServerMediaClient.capability(),
+                    ChatUpgradeConfig.get().maxReceiveBytes,
+                    nowMs);
+            if (candidate.isEmpty()) {
+                rejectIncoming(mediaId, "allocation limits exceeded");
+                return;
+            }
+            INCOMING.put(mediaId, candidate.get());
+        }
+    }
+
+    private static void cleanupExpiredIncoming(long nowMs) {
+        INCOMING.entrySet().removeIf(entry -> {
+            if (!entry.getValue().isExpired(nowMs, INCOMING_MEDIA_TIMEOUT_MS)) {
+                return false;
+            }
+            ServerMediaClient.forgetRequest(entry.getKey());
+            return true;
+        });
+    }
+
+    private static void rejectIncoming(String mediaId, String reason) {
+        if (mediaId != null) {
+            INCOMING.remove(mediaId);
+            ServerMediaClient.forgetRequest(mediaId);
+        }
+        ChatUpgrade.LOGGER.warn("chat-upgrade: rejected server media response for {}: {}", mediaId, reason);
     }
 
     private static void handleChatHistoryEntry(StructuredChatEnvelope envelope) {
@@ -522,9 +600,14 @@ public final class ServerMediaNetworking {
         if (attachment == null || !ServerMediaClient.capability().attachmentMetadataEnabled()) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
-        long requestId = nextUploadId();
-        CompletableFuture<Optional<StructuredAttachment>> fut = new CompletableFuture<>();
-        ATTACHMENTS.put(requestId, fut);
+        PendingClientRequestRegistry.Registration<StructuredAttachment> registration = ATTACHMENTS.begin(
+                ServerMediaNetworking::nextRequestId,
+                System.currentTimeMillis());
+        if (registration == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        long requestId = registration.requestId();
+        CompletableFuture<Optional<StructuredAttachment>> fut = registration.future();
         try {
             Net.sendToServer(new ServerMediaPayloads.C2SAttachMetadata(
                     requestId,
@@ -535,8 +618,7 @@ public final class ServerMediaNetworking {
                     attachment.displayName(),
                     wire(attachment.fallbackUrl())));
         } catch (Exception ex) {
-            ATTACHMENTS.remove(requestId);
-            fut.complete(Optional.empty());
+            ATTACHMENTS.fail(requestId);
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to send attachment metadata: {}", ex.getMessage());
         }
         return fut;
@@ -551,17 +633,21 @@ public final class ServerMediaNetworking {
         if ((attachmentId == null || attachmentId.isBlank()) && (mediaId == null || mediaId.isBlank())) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
-        long requestId = nextUploadId();
-        CompletableFuture<Optional<StructuredAttachment>> fut = new CompletableFuture<>();
-        ATTACHMENTS.put(requestId, fut);
+        PendingClientRequestRegistry.Registration<StructuredAttachment> registration = ATTACHMENTS.begin(
+                ServerMediaNetworking::nextRequestId,
+                System.currentTimeMillis());
+        if (registration == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        long requestId = registration.requestId();
+        CompletableFuture<Optional<StructuredAttachment>> fut = registration.future();
         try {
             Net.sendToServer(new ServerMediaPayloads.C2SRequestAttachmentMeta(
                     requestId,
                     wire(attachmentId),
                     wire(mediaId)));
         } catch (Exception ex) {
-            ATTACHMENTS.remove(requestId);
-            fut.complete(Optional.empty());
+            ATTACHMENTS.fail(requestId);
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to request attachment metadata: {}", ex.getMessage());
         }
         return fut;
@@ -586,9 +672,14 @@ public final class ServerMediaNetworking {
         chunkSize = Math.clamp(chunkSize, 1024, 256 * 1024);
         int totalChunks = (int) Math.ceil(body.length / (double) chunkSize);
 
-        long uploadId = nextUploadId();
-        CompletableFuture<Optional<String>> fut = new CompletableFuture<>();
-        UPLOADS.put(uploadId, fut);
+        PendingClientRequestRegistry.Registration<String> registration = UPLOADS.begin(
+                ServerMediaNetworking::nextRequestId,
+                System.currentTimeMillis());
+        if (registration == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        long uploadId = registration.requestId();
+        CompletableFuture<Optional<String>> fut = registration.future();
 
         try {
             Net.sendToServer(new ServerMediaPayloads.C2SUploadInit(
@@ -607,27 +698,23 @@ public final class ServerMediaNetworking {
                 Net.sendToServer(new ServerMediaPayloads.C2SUploadChunk(uploadId, i, chunk));
             }
         } catch (Exception ex) {
-            UPLOADS.remove(uploadId);
-            fut.complete(Optional.empty());
+            UPLOADS.fail(uploadId);
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to upload server media: {}", ex.getMessage());
         }
 
         return fut;
     }
 
-    private static long nextUploadId() {
-        long v = 0L;
-        while (v == 0L) {
-            v = RNG.nextLong();
+    private static long nextRequestId() {
+        long value = 0L;
+        while (value == 0L) {
+            value = RNG.nextLong();
         }
-        return v;
+        return value;
     }
 
     private static void completeAttachment(long requestId, Optional<StructuredAttachment> attachmentOpt) {
-        CompletableFuture<Optional<StructuredAttachment>> fut = ATTACHMENTS.remove(requestId);
-        if (fut != null) {
-            fut.complete(attachmentOpt);
-        }
+        ATTACHMENTS.complete(requestId, attachmentOpt);
     }
 
     private static Optional<StructuredAttachment> toStructuredAttachment(
@@ -655,94 +742,19 @@ public final class ServerMediaNetworking {
         return value == null ? "" : value;
     }
 
+    private static @Nullable String normalizeMediaId(@Nullable String value) {
+        if (!ServerMediaId.isValid(value)) {
+            return null;
+        }
+        return value.toLowerCase(java.util.Locale.ROOT);
+    }
+
     private static @Nullable String normalizeOptional(@Nullable String value) {
         if (value == null) {
             return null;
         }
         String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
-    }
-
-    private static final class IncomingMediaAssembly {
-        private final String mediaId;
-        private final InlineResourceType type;
-        private final String contentType;
-        private final @Nullable String md5Hex;
-        private final int totalLen;
-        private final int totalChunks;
-        private final byte[][] chunks;
-        private int receivedChunks = 0;
-        private int receivedBytes = 0;
-
-        IncomingMediaAssembly(
-                String mediaId,
-                InlineResourceType type,
-                String contentType,
-                @Nullable String md5Hex,
-                int totalLen,
-                int totalChunks) {
-            this.mediaId = mediaId;
-            this.type = type;
-            this.contentType = contentType == null ? "unknown" : contentType;
-            this.md5Hex = md5Hex == null || md5Hex.isBlank() ? null : md5Hex;
-            this.totalLen = Math.max(0, totalLen);
-            this.totalChunks = Math.max(0, totalChunks);
-            this.chunks = new byte[this.totalChunks][];
-        }
-
-        String mediaId() {
-            return mediaId;
-        }
-
-        InlineResourceType type() {
-            return type;
-        }
-
-        String contentType() {
-            return contentType;
-        }
-
-        @Nullable
-        String md5Hex() {
-            return md5Hex;
-        }
-
-        synchronized boolean acceptChunk(int idx, byte[] chunk) {
-            if (idx < 0 || idx >= totalChunks) {
-                return false;
-            }
-            if (chunks[idx] != null) {
-                return false;
-            }
-            chunks[idx] = chunk;
-            receivedChunks++;
-            receivedBytes += (chunk == null ? 0 : chunk.length);
-            return receivedChunks == totalChunks;
-        }
-
-        synchronized byte[] build() {
-            if (totalChunks == 0) {
-                return new byte[0];
-            }
-            int len = totalLen > 0 ? totalLen : receivedBytes;
-            byte[] out = new byte[len];
-            int offset = 0;
-            for (byte[] c : chunks) {
-                if (c == null || c.length == 0) {
-                    continue;
-                }
-                int copy = Math.min(c.length, out.length - offset);
-                if (copy <= 0) {
-                    break;
-                }
-                System.arraycopy(c, 0, out, offset, copy);
-                offset += copy;
-            }
-            if (offset != out.length) {
-                return Arrays.copyOf(out, offset);
-            }
-            return out;
-        }
     }
 }
 

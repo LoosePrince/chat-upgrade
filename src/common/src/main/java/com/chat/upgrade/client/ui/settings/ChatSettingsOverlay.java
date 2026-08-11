@@ -1011,9 +1011,9 @@ public final class ChatSettingsOverlay {
             }
             case MEDIA -> {
                 draft.compactMediaCards = false;
-                draft.manualImageReveal = false;
-                draft.manualAudioReveal = false;
-                draft.manualVideoReveal = false;
+                draft.manualImageReveal = true;
+                draft.manualAudioReveal = true;
+                draft.manualVideoReveal = true;
                 draft.maxReceiveBytes = ChatUpgradeConfig.DEFAULT_MAX_RECEIVE_BYTES;
                 draft.audioVolumePercent = 100;
                 draft.videoVolumePercent = 100;

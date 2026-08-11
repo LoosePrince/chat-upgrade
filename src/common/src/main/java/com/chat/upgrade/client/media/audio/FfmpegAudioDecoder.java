@@ -18,7 +18,6 @@ import static org.bytedeco.ffmpeg.global.avformat.avformat_open_input;
 import static org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_AUDIO;
 
 import java.io.ByteArrayOutputStream;
-import java.nio.ByteOrder;
 import java.nio.file.Path;
 
 import org.bytedeco.ffmpeg.avcodec.AVCodec;
@@ -35,6 +34,15 @@ import org.bytedeco.javacpp.BytePointer;
  * suitable for OpenAL playback.
  */
 public final class FfmpegAudioDecoder {
+    private static final int MIN_SAMPLE_RATE = 8_000;
+    private static final int MAX_SAMPLE_RATE = 48_000;
+    private static final int MAX_SOURCE_CHANNELS = 8;
+    private static final int MAX_OUTPUT_CHANNELS = 2;
+    private static final int MAX_FRAME_SAMPLES = 1_048_576;
+    private static final int MAX_SOURCE_FRAME_BYTES = 16 * 1_024 * 1_024;
+    private static final int MAX_PCM_BYTES = 24 * 1_024 * 1_024;
+    private static final int MAX_PACKETS = 100_000;
+
     private FfmpegAudioDecoder() {
     }
 
@@ -78,10 +86,21 @@ public final class FfmpegAudioDecoder {
             if (pkt == null || frame == null) {
                 throw new IllegalStateException("alloc frame/packet failed");
             }
-            int channels = Math.max(1, Math.min(2, codecCtx.ch_layout().nb_channels()));
-            int sampleRate = Math.max(8000, codecCtx.sample_rate());
-            ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+            int sourceChannels = codecCtx.ch_layout().nb_channels();
+            int sampleRate = codecCtx.sample_rate();
+            if (sourceChannels <= 0
+                    || sourceChannels > MAX_SOURCE_CHANNELS
+                    || sampleRate < MIN_SAMPLE_RATE
+                    || sampleRate > MAX_SAMPLE_RATE) {
+                throw new IllegalStateException("audio stream parameters exceed policy");
+            }
+            int channels = Math.min(MAX_OUTPUT_CHANNELS, sourceChannels);
+            ByteArrayOutputStream pcm = new ByteArrayOutputStream(64 * 1_024);
+            int packets = 0;
             while (av_read_frame(fmt, pkt) >= 0) {
+                if (++packets > MAX_PACKETS) {
+                    throw new IllegalStateException("audio packet count exceeds policy");
+                }
                 try {
                     if (pkt.stream_index() != audioIdx) {
                         continue;
@@ -90,7 +109,7 @@ public final class FfmpegAudioDecoder {
                         continue;
                     }
                     while (avcodec_receive_frame(codecCtx, frame) >= 0) {
-                        appendFrameAsS16Le(pcm, frame, channels);
+                        appendFrameAsS16Le(pcm, frame, sourceChannels, channels);
                     }
                 } finally {
                     av_packet_unref(pkt);
@@ -98,7 +117,7 @@ public final class FfmpegAudioDecoder {
             }
             avcodec_send_packet(codecCtx, null);
             while (avcodec_receive_frame(codecCtx, frame) >= 0) {
-                appendFrameAsS16Le(pcm, frame, channels);
+                appendFrameAsS16Le(pcm, frame, sourceChannels, channels);
             }
             byte[] audioBytes = pcm.toByteArray();
             if (audioBytes.length == 0) {
@@ -119,54 +138,71 @@ public final class FfmpegAudioDecoder {
         }
     }
 
-    private static void appendFrameAsS16Le(ByteArrayOutputStream out, AVFrame frame, int channels) {
-        int fmt = frame.format();
+    private static void appendFrameAsS16Le(
+            ByteArrayOutputStream out,
+            AVFrame frame,
+            int fallbackSourceChannels,
+            int outputChannels) {
+        int format = frame.format();
         int samples = frame.nb_samples();
+        int sourceChannels = frame.ch_layout().nb_channels();
+        if (sourceChannels <= 0) {
+            sourceChannels = fallbackSourceChannels;
+        }
         if (samples <= 0) {
             return;
         }
-        if (fmt == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16) {
+        if (samples > MAX_FRAME_SAMPLES || sourceChannels <= 0 || sourceChannels > MAX_SOURCE_CHANNELS) {
+            throw new IllegalStateException("decoded audio frame exceeds policy");
+        }
+        long outputBytes = (long) samples * outputChannels * 2L;
+        if (outputBytes > MAX_PCM_BYTES || out.size() + outputBytes > MAX_PCM_BYTES) {
+            throw new IllegalStateException("decoded audio exceeds memory policy");
+        }
+        if (format == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16) {
+            long sourceBytes = (long) samples * sourceChannels * 2L;
+            if (sourceBytes > MAX_SOURCE_FRAME_BYTES) {
+                throw new IllegalStateException("decoded audio frame exceeds source buffer policy");
+            }
             BytePointer data = frame.data(0);
-            int bytes = samples * frame.ch_layout().nb_channels() * 2;
-            byte[] buf = new byte[bytes];
-            data.position(0).get(buf, 0, bytes);
-            if (frame.ch_layout().nb_channels() == channels) {
-                out.writeBytes(buf);
+            byte[] buffer = new byte[(int) sourceBytes];
+            data.position(0).get(buffer, 0, buffer.length);
+            if (sourceChannels == outputChannels) {
+                out.writeBytes(buffer);
                 return;
             }
-            downmixToChannels(out, buf, frame.ch_layout().nb_channels(), channels);
+            downmixToChannels(out, buffer, sourceChannels, outputChannels);
             return;
         }
-        if (fmt == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16P) {
-            for (int i = 0; i < samples; i++) {
-                for (int c = 0; c < channels; c++) {
-                    BytePointer plane = frame.data(c);
-                    short v = plane.getShort((long) i * 2L);
-                    writeS16Le(out, v);
+        if (format == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16P) {
+            for (int sample = 0; sample < samples; sample++) {
+                for (int channel = 0; channel < outputChannels; channel++) {
+                    BytePointer plane = frame.data(channel);
+                    writeS16Le(out, plane.getShort((long) sample * 2L));
                 }
             }
             return;
         }
-        if (fmt == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_FLT) {
+        if (format == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_FLT) {
             BytePointer data = frame.data(0);
-            int totalChannels = frame.ch_layout().nb_channels();
-            for (int i = 0; i < samples; i++) {
-                for (int c = 0; c < channels; c++) {
-                    float f = data.getFloat((long) ((i * totalChannels) + c) * 4L);
-                    writeS16Le(out, floatToS16(f));
+            for (int sample = 0; sample < samples; sample++) {
+                for (int channel = 0; channel < outputChannels; channel++) {
+                    float value = data.getFloat((long) ((sample * sourceChannels) + channel) * 4L);
+                    writeS16Le(out, floatToS16(value));
                 }
             }
             return;
         }
-        if (fmt == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_FLTP) {
-            for (int i = 0; i < samples; i++) {
-                for (int c = 0; c < channels; c++) {
-                    BytePointer plane = frame.data(c);
-                    float f = plane.getFloat((long) i * 4L);
-                    writeS16Le(out, floatToS16(f));
+        if (format == org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_FLTP) {
+            for (int sample = 0; sample < samples; sample++) {
+                for (int channel = 0; channel < outputChannels; channel++) {
+                    BytePointer plane = frame.data(channel);
+                    writeS16Le(out, floatToS16(plane.getFloat((long) sample * 4L)));
                 }
             }
+            return;
         }
+        throw new IllegalStateException("unsupported decoded audio sample format");
     }
 
     private static void downmixToChannels(ByteArrayOutputStream out, byte[] buf, int srcChannels, int dstChannels) {
@@ -210,14 +246,9 @@ public final class FfmpegAudioDecoder {
         return (short) Math.round(clamped * 32767.0f);
     }
 
-    private static void writeS16Le(ByteArrayOutputStream out, short v) {
-        if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
-            out.write(v & 0xFF);
-            out.write((v >> 8) & 0xFF);
-            return;
-        }
-        out.write(v & 0xFF);
-        out.write((v >> 8) & 0xFF);
+    private static void writeS16Le(ByteArrayOutputStream out, short value) {
+        out.write(value & 0xFF);
+        out.write((value >> 8) & 0xFF);
     }
 }
 

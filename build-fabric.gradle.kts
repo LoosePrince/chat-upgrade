@@ -26,6 +26,9 @@ sourceSets {
         resources.srcDir(rootProject.file("src/common/src/main/resources"))
         resources.srcDir(rootProject.file("src/fabric/src/main/resources"))
     }
+    named("test") {
+        java.srcDir(rootProject.file("src/common/src/test/java"))
+    }
 }
 
 // Merge common + fabric Java sources, applying version preprocessing.
@@ -45,6 +48,8 @@ dependencies {
     minecraft("com.mojang:minecraft:${mod.dep("minecraft.fabric")}")
     implementation("net.fabricmc:fabric-loader:${mod.dep("fabric_loader")}")
     implementation("net.fabricmc.fabric-api:fabric-api:${mod.dep("fabric_api_version")}")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.14.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.14.4")
 
     // Bundled (Jar-in-Jar) libraries: ImageIO SPI (WebP / animated) + JavaCPP FFmpeg.
     val bundled = mutableListOf(
@@ -56,13 +61,13 @@ dependencies {
         "com.twelvemonkeys.imageio:imageio-jpeg:3.12.0",
         "com.twelvemonkeys.imageio:imageio-webp:3.12.0",
         "org.apache.commons:commons-imaging:1.0.0-alpha5",
-        "org.bytedeco:javacpp:1.5.11",
-        "org.bytedeco:ffmpeg:7.1-1.5.11"
+        "org.bytedeco:javacpp:1.5.14",
+        "org.bytedeco:ffmpeg:8.1.2-1.5.14"
     )
     if (embedFfmpegNatives) {
         for (classifier in listOf("windows-x86_64", "linux-x86_64", "linux-arm64", "macosx-x86_64", "macosx-arm64")) {
-            bundled += "org.bytedeco:javacpp:1.5.11:$classifier"
-            bundled += "org.bytedeco:ffmpeg:7.1-1.5.11:$classifier"
+            bundled += "org.bytedeco:javacpp:1.5.14:$classifier"
+            bundled += "org.bytedeco:ffmpeg:8.1.2-1.5.14:$classifier"
         }
     }
     for (notation in bundled) {
@@ -79,6 +84,10 @@ java {
 
 tasks.withType<JavaCompile>().configureEach {
     options.release.set(javaVersion.toInt())
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
 
 loom {

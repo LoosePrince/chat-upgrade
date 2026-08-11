@@ -10,6 +10,8 @@ import java.nio.file.StandardCopyOption;
 import com.chat.upgrade.platform.Platform;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /** {@code config/chat-upgrade/chat-upgrade.json} */
 public final class ChatUpgradeConfig {
@@ -42,6 +44,7 @@ public final class ChatUpgradeConfig {
     public boolean manualImageReveal;
     public boolean manualAudioReveal;
     public boolean manualVideoReveal;
+    public int securityDefaultsVersion = 1;
     public boolean compactMediaCards = true;
     public Boolean smoothScrollEnabled;
     public boolean debugChatActions;
@@ -179,6 +182,7 @@ public final class ChatUpgradeConfig {
         config.manualImageReveal = false;
         config.manualAudioReveal = false;
         config.manualVideoReveal = false;
+        config.securityDefaultsVersion = 1;
         config.compactMediaCards = true;
         config.smoothScrollEnabled = true;
         config.debugChatActions = false;
@@ -210,6 +214,7 @@ public final class ChatUpgradeConfig {
         int beforeUpload = maxUploadBytes;
         int beforeAudioVolume = audioVolumePercent;
         int beforeVideoVolume = videoVolumePercent;
+        int beforeSecurityDefaultsVersion = securityDefaultsVersion;
         String beforeVoiceInputDevice = voiceInputDevice;
         int beforeVoiceShortcutKey = voiceShortcutKey;
         Boolean beforeSmoothScroll = smoothScrollEnabled;
@@ -234,6 +239,7 @@ public final class ChatUpgradeConfig {
         maxUploadBytes = normalizeTransferLimit(maxUploadBytes, DEFAULT_MAX_UPLOAD_BYTES);
         audioVolumePercent = Math.clamp(audioVolumePercent, 1, 100);
         videoVolumePercent = Math.clamp(videoVolumePercent, 1, 100);
+        securityDefaultsVersion = Math.clamp(securityDefaultsVersion, 0, 1);
         voiceInputDevice = voiceInputDevice == null ? "" : voiceInputDevice.trim();
         voiceShortcutKey = normalizeVoiceShortcutKey(voiceShortcutKey);
         smoothScrollEnabled = smoothScrollEnabled == null ? true : smoothScrollEnabled;
@@ -270,7 +276,8 @@ public final class ChatUpgradeConfig {
                 || beforeUpload != maxUploadBytes
                 || beforeAudioVolume != audioVolumePercent
                 || beforeVideoVolume != videoVolumePercent
-                || !beforeVoiceInputDevice.equals(voiceInputDevice)
+                || beforeSecurityDefaultsVersion != securityDefaultsVersion
+                || !java.util.Objects.equals(beforeVoiceInputDevice, voiceInputDevice)
                 || beforeVoiceShortcutKey != voiceShortcutKey
                 || beforeSmoothScroll == null
                 || beforeUploadMode != uploadMode
@@ -377,102 +384,9 @@ public final class ChatUpgradeConfig {
                 return;
             }
             try {
-                String json = Files.readString(path);
-                boolean containsLegacyTheme = json.contains("\"chatTheme\"");
-                boolean containsAutomaticHeight = json.contains("\"automaticHeight\"");
-                boolean containsScreenMarginsEnabled = json.contains("\"screenMarginsEnabled\"");
-                boolean containsMessageBackground = json.contains("\"messageBackgroundColor\"");
-                boolean containsAvatarFirstLineOnly = json.contains("\"avatarFirstLineOnly\"");
-                boolean containsBubblePadding = json.contains("\"bubblePadding\"");
-                boolean containsChatInputPlaceholder = json.contains("\"chatInputPlaceholder\"");
-                boolean containsChatScreenMask = json.contains("\"chatScreenMaskEnabled\"");
-                boolean containsMentionNotificationMode = json.contains("\"mentionNotificationMode\"");
-                boolean containsMessagePassthrough = json.contains("\"messagePassthroughEnabled\"");
-                boolean containsMessageGrouping = json.contains("\"messageGroupingEnabled\"");
-                boolean containsChatHistory = json.contains("\"chatHistoryEnabled\"");
-                boolean containsChatHistoryMaxMessages = json.contains("\"chatHistoryMaxMessages\"");
-                boolean containsMessageGroupPosition = json.contains("\"messageGroupPosition\"");
-                boolean containsPrivateMessageCommand = json.contains("\"privateMessageCommand\"");
-                boolean containsCompactMediaCards = json.contains("\"compactMediaCards\"");
-                boolean containsVoiceShortcutKey = json.contains("\"voiceShortcutKey\"");
-                ChatUpgradeConfig read = GSON.fromJson(json, ChatUpgradeConfig.class);
-                if (read == null) {
-                    instance = defaults();
-                    return;
-                }
-                boolean migratedLegacyDefaults = false;
-                if (!containsMentionNotificationMode) {
-                    read.mentionNotificationMode = MentionNotificationMode.SOUND;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsMessagePassthrough) {
-                    read.messagePassthroughEnabled = false;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsMessageGrouping) {
-                    read.messageGroupingEnabled = false;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsChatHistory) {
-                    read.chatHistoryEnabled = true;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsChatHistoryMaxMessages) {
-                    read.chatHistoryMaxMessages = 500;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsMessageGroupPosition) {
-                    read.messageGroupPosition = MessageGroupPosition.LEFT;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsPrivateMessageCommand) {
-                    read.privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsCompactMediaCards) {
-                    read.compactMediaCards = true;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsVoiceShortcutKey) {
-                    read.voiceShortcutKey = -1;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsAutomaticHeight && read.chatPanel != null) {
-                    read.chatPanel.automaticHeight = read.chatPanel.matchesLegacyDefaults();
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsScreenMarginsEnabled && read.chatPanel != null) {
-                    read.chatPanel.screenMarginsEnabled = true;
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsMessageBackground && read.appearance != null && read.appearance.matchesLegacyDefaults()) {
-                    read.appearance = new AppearanceConfig();
-                    migratedLegacyDefaults = true;
-                }
-                if (!containsBubblePadding && read.appearance != null) {
-                    read.appearance.bubblePadding = 3;
-                }
-                boolean corrected = read.normalizeLimits()
-                        || containsLegacyTheme
-                        || !containsAutomaticHeight
-                        || !containsScreenMarginsEnabled
-                        || !containsMessageBackground
-                        || !containsAvatarFirstLineOnly
-                        || !containsBubblePadding
-                        || !containsChatInputPlaceholder
-                        || !containsChatScreenMask
-                        || !containsMentionNotificationMode
-                        || !containsMessagePassthrough
-                        || !containsMessageGrouping
-                        || !containsChatHistory
-                        || !containsChatHistoryMaxMessages
-                        || !containsMessageGroupPosition
-                        || !containsPrivateMessageCommand
-                        || !containsCompactMediaCards
-                        || !containsVoiceShortcutKey
-                        || migratedLegacyDefaults;
-                instance = read;
-                if (corrected) {
+                DecodedConfig decoded = decode(Files.readString(path));
+                instance = decoded.config();
+                if (decoded.corrected()) {
                     saveQuiet();
                     com.chat.upgrade.ChatUpgrade.LOGGER.info(
                             "chat-upgrade: normalized client config and removed deprecated fields at {}",
@@ -485,6 +399,127 @@ public final class ChatUpgradeConfig {
                 instance = defaults();
             }
         }
+    }
+
+    static DecodedConfig decode(String json) {
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        boolean containsLegacyTheme = root.has("chatTheme");
+        boolean containsAutomaticHeight = root.has("automaticHeight")
+                || nestedHas(root, "chatPanel", "automaticHeight");
+        boolean containsScreenMarginsEnabled = nestedHas(root, "chatPanel", "screenMarginsEnabled");
+        boolean containsMessageBackground = nestedHas(root, "appearance", "messageBackgroundColor");
+        boolean containsAvatarFirstLineOnly = nestedHas(root, "appearance", "avatarFirstLineOnly");
+        boolean containsBubblePadding = nestedHas(root, "appearance", "bubblePadding");
+        boolean containsChatInputPlaceholder = root.has("chatInputPlaceholder");
+        boolean containsChatScreenMask = root.has("chatScreenMaskEnabled");
+        boolean containsMentionNotificationMode = root.has("mentionNotificationMode");
+        boolean containsMessagePassthrough = root.has("messagePassthroughEnabled");
+        boolean containsMessageGrouping = root.has("messageGroupingEnabled");
+        boolean containsChatHistory = root.has("chatHistoryEnabled");
+        boolean containsChatHistoryMaxMessages = root.has("chatHistoryMaxMessages");
+        boolean containsMessageGroupPosition = root.has("messageGroupPosition");
+        boolean containsPrivateMessageCommand = root.has("privateMessageCommand");
+        boolean containsCompactMediaCards = root.has("compactMediaCards");
+        boolean containsVoiceShortcutKey = root.has("voiceShortcutKey");
+        boolean containsSecurityDefaultsVersion = root.has("securityDefaultsVersion");
+        ChatUpgradeConfig read = GSON.fromJson(root, ChatUpgradeConfig.class);
+        if (read == null) {
+            throw new IllegalArgumentException("config JSON must be an object");
+        }
+
+        boolean migratedLegacyDefaults = false;
+        if (!containsSecurityDefaultsVersion || read.securityDefaultsVersion < 1) {
+            read.manualImageReveal = false;
+            read.manualAudioReveal = false;
+            read.manualVideoReveal = false;
+            read.securityDefaultsVersion = 1;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsMentionNotificationMode) {
+            read.mentionNotificationMode = MentionNotificationMode.SOUND;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsMessagePassthrough) {
+            read.messagePassthroughEnabled = false;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsMessageGrouping) {
+            read.messageGroupingEnabled = false;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsChatHistory) {
+            read.chatHistoryEnabled = true;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsChatHistoryMaxMessages) {
+            read.chatHistoryMaxMessages = 500;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsMessageGroupPosition) {
+            read.messageGroupPosition = MessageGroupPosition.LEFT;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsPrivateMessageCommand) {
+            read.privateMessageCommand = DEFAULT_PRIVATE_MESSAGE_COMMAND;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsCompactMediaCards) {
+            read.compactMediaCards = true;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsVoiceShortcutKey) {
+            read.voiceShortcutKey = -1;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsAutomaticHeight && read.chatPanel != null) {
+            read.chatPanel.automaticHeight = read.chatPanel.matchesLegacyDefaults();
+            migratedLegacyDefaults = true;
+        }
+        if (!containsScreenMarginsEnabled && read.chatPanel != null) {
+            read.chatPanel.screenMarginsEnabled = true;
+            migratedLegacyDefaults = true;
+        }
+        if (!containsMessageBackground && read.appearance != null && read.appearance.matchesLegacyDefaults()) {
+            read.appearance = new AppearanceConfig();
+            migratedLegacyDefaults = true;
+        }
+        if (!containsBubblePadding && read.appearance != null) {
+            read.appearance.bubblePadding = 3;
+        }
+        boolean corrected = read.normalizeLimits()
+                || containsLegacyTheme
+                || !containsAutomaticHeight
+                || !containsScreenMarginsEnabled
+                || !containsMessageBackground
+                || !containsAvatarFirstLineOnly
+                || !containsBubblePadding
+                || !containsChatInputPlaceholder
+                || !containsChatScreenMask
+                || !containsMentionNotificationMode
+                || !containsMessagePassthrough
+                || !containsMessageGrouping
+                || !containsChatHistory
+                || !containsChatHistoryMaxMessages
+                || !containsMessageGroupPosition
+                || !containsPrivateMessageCommand
+                || !containsCompactMediaCards
+                || !containsVoiceShortcutKey
+                || migratedLegacyDefaults;
+        return new DecodedConfig(read, corrected);
+    }
+
+    static String encode(ChatUpgradeConfig config) {
+        return GSON.toJson(config);
+    }
+
+    private static boolean nestedHas(JsonObject root, String objectName, String fieldName) {
+        if (!root.has(objectName) || !root.get(objectName).isJsonObject()) {
+            return false;
+        }
+        return root.getAsJsonObject(objectName).has(fieldName);
+    }
+
+    record DecodedConfig(ChatUpgradeConfig config, boolean corrected) {
     }
 
     public static void save() throws IOException {

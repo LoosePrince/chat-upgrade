@@ -59,6 +59,7 @@ public final class ServerMediaServerNetworking {
         if (ticks % CLEANUP_INTERVAL_TICKS == 0) {
             ServerMediaService.cleanup();
             ServerAttachmentService.cleanup();
+            ServerRequestLimiter.cleanup(System.currentTimeMillis());
         }
     }
 
@@ -68,6 +69,8 @@ public final class ServerMediaServerNetworking {
     }
 
     public static void onPlayerDisconnect(ServerPlayer player) {
+        ServerMediaService.discardUploads(player.getUUID());
+        ServerChatRouteService.onPlayerDisconnect(player.getUUID());
     }
 
     // --- Payload handlers ---
@@ -77,12 +80,23 @@ public final class ServerMediaServerNetworking {
             context.execute(() -> sendUploadError(context.player(), payload.uploadId(), "server_media_disabled"));
             return;
         }
-        context.execute(() -> ServerMediaService.beginUpload(
-                payload.uploadId(),
-                payload.typeWire(),
-                payload.contentType(),
-                payload.totalLen(),
-                payload.totalChunks()));
+        context.execute(() -> {
+            if (!ServerRequestLimiter.allow(
+                    context.player().getUUID(),
+                    ServerRequestLimiter.Kind.UPLOAD_PACKET,
+                    System.currentTimeMillis())) {
+                sendUploadError(context.player(), payload.uploadId(), "rate_limited");
+                return;
+            }
+            ServerMediaService.beginUpload(
+                    context.player().getUUID(),
+                    payload.uploadId(),
+                    payload.typeWire(),
+                    payload.contentType(),
+                    payload.totalLen(),
+                    payload.totalChunks()).ifPresent(error ->
+                            sendUploadError(context.player(), payload.uploadId(), error));
+        });
     }
 
     private static void handleUploadChunk(ServerMediaPayloads.C2SUploadChunk payload, ServerPlayContext context) {
@@ -90,10 +104,17 @@ public final class ServerMediaServerNetworking {
             context.execute(() -> sendUploadError(context.player(), payload.uploadId(), "server_media_disabled"));
             return;
         }
-        int maxSingle = ServerMediaServerConfig.get().maxSingleBytes;
         context.execute(() -> {
+            if (!ServerRequestLimiter.allow(
+                    context.player().getUUID(),
+                    ServerRequestLimiter.Kind.UPLOAD_PACKET,
+                    System.currentTimeMillis())) {
+                ServerMediaService.discardUpload(context.player().getUUID(), payload.uploadId());
+                sendUploadError(context.player(), payload.uploadId(), "rate_limited");
+                return;
+            }
             Optional<ServerMediaService.UploadCompleted> completedOpt = ServerMediaService.acceptUploadChunk(
-                    payload.uploadId(), payload.idx(), payload.chunk(), maxSingle);
+                    context.player().getUUID(), payload.uploadId(), payload.idx(), payload.chunk());
             if (completedOpt.isEmpty()) {
                 return;
             }
@@ -118,7 +139,15 @@ public final class ServerMediaServerNetworking {
             return;
         }
         context.execute(() -> {
-            Optional<StoredMedia> mediaOpt = ServerMediaService.get(payload.mediaId());
+            if (!ServerRequestLimiter.allow(
+                    context.player().getUUID(),
+                    ServerRequestLimiter.Kind.MEDIA_READ,
+                    System.currentTimeMillis())) {
+                sendMediaError(context.player(), payload.mediaId(), "rate_limited");
+                return;
+            }
+            Optional<StoredMedia> mediaOpt = ServerMediaService.getForPlayer(
+                    context.player().getUUID(), payload.mediaId());
             if (mediaOpt.isEmpty()) {
                 sendMediaError(context.player(), payload.mediaId(), "not_found");
                 return;
@@ -169,7 +198,11 @@ public final class ServerMediaServerNetworking {
     private static void handleRetractChatMessagePacket(
             ServerMediaPayloads.C2SRetractChatMessage payload, ServerPlayContext context) {
         context.execute(() -> {
-            if (!ServerChatRouteService.retract(context.player(), payload.messageId())) {
+            if (!ServerRequestLimiter.allow(
+                    context.player().getUUID(),
+                    ServerRequestLimiter.Kind.CHAT,
+                    System.currentTimeMillis())
+                    || !ServerChatRouteService.retract(context.player(), payload.messageId())) {
                 context.player().sendSystemMessage(
                         net.minecraft.network.chat.Component.translatable("chatupgrade.retract.denied")
                                 .withStyle(net.minecraft.ChatFormatting.RED),
@@ -182,6 +215,13 @@ public final class ServerMediaServerNetworking {
             ServerMediaPayloads.C2SRequestChatHistory payload,
             ServerPlayContext context) {
         context.execute(() -> {
+            if (!ServerRequestLimiter.allow(
+                    context.player().getUUID(),
+                    ServerRequestLimiter.Kind.HISTORY_READ,
+                    System.currentTimeMillis())) {
+                Net.sendToClient(context.player(), new ServerMediaPayloads.S2CChatHistoryComplete(0));
+                return;
+            }
             if (!ServerMediaServerConfig.get().chatHistoryEnabled) {
                 Net.sendToClient(context.player(), new ServerMediaPayloads.S2CChatHistoryComplete(0));
                 return;
@@ -232,6 +272,14 @@ public final class ServerMediaServerNetworking {
     }
 
     private static void handleAttachMetadata(ServerPlayer player, ServerMediaPayloads.C2SAttachMetadata payload) {
+        if (!ServerRequestLimiter.allow(
+                player.getUUID(),
+                ServerRequestLimiter.Kind.ATTACHMENT_WRITE,
+                System.currentTimeMillis())) {
+            sendAttachmentError(
+                    player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "rate_limited");
+            return;
+        }
         try {
             StructuredAttachment descriptor = new StructuredAttachment(
                     payload.schemaVersion(),
@@ -240,11 +288,23 @@ public final class ServerMediaServerNetworking {
                     payload.typeWire(),
                     payload.displayName(),
                     normalizeOptional(payload.fallbackUrl()));
-            if (descriptor.hasMedia() && ServerMediaService.get(descriptor.mediaId()).isEmpty()) {
-                sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "media_not_found");
+            if (descriptor.hasMedia()
+                    && !ServerMediaService.isOwner(player.getUUID(), descriptor.mediaId())) {
+                sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "media_not_owned");
                 return;
             }
-            sendAttachmentAck(player, payload.requestId(), ServerAttachmentService.put(descriptor));
+            if (descriptor.fallbackUrl() != null
+                    && !ServerMediaUrl.isServerMediaUrl(descriptor.fallbackUrl())
+                    && !ServerMediaServerConfig.get().allowExternalAttachmentUrls) {
+                sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "external_url_disabled");
+                return;
+            }
+            Optional<StoredAttachment> stored = ServerAttachmentService.put(player.getUUID(), descriptor);
+            if (stored.isEmpty()) {
+                sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "attachment_id_conflict");
+                return;
+            }
+            sendAttachmentAck(player, payload.requestId(), stored.get());
         } catch (IllegalArgumentException ex) {
             sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "invalid_metadata");
         }
@@ -253,9 +313,18 @@ public final class ServerMediaServerNetworking {
     private static void handleRequestAttachmentMeta(
             ServerPlayer player,
             ServerMediaPayloads.C2SRequestAttachmentMeta payload) {
-        Optional<StoredAttachment> attachmentOpt = ServerAttachmentService.get(payload.attachmentId());
+        if (!ServerRequestLimiter.allow(
+                player.getUUID(),
+                ServerRequestLimiter.Kind.MEDIA_READ,
+                System.currentTimeMillis())) {
+            sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "rate_limited");
+            return;
+        }
+        Optional<StoredAttachment> attachmentOpt = ServerAttachmentService.getForPlayer(
+                player.getUUID(), payload.attachmentId());
         if (attachmentOpt.isEmpty()) {
-            attachmentOpt = ServerAttachmentService.findByMediaId(payload.mediaId());
+            attachmentOpt = ServerAttachmentService.findByMediaIdForPlayer(
+                    player.getUUID(), payload.mediaId());
         }
         if (attachmentOpt.isEmpty()) {
             sendAttachmentError(player, payload.requestId(), payload.attachmentId(), payload.mediaId(), "not_found");

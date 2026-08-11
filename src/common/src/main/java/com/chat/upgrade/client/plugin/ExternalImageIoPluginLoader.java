@@ -2,18 +2,22 @@ package com.chat.upgrade.client.plugin;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.ServiceLoader;
 
@@ -36,11 +40,24 @@ import com.chat.upgrade.platform.Platform;
 public final class ExternalImageIoPluginLoader {
     private static final String APNG_VERSION = "1.0.1";
     private static final String APNG_JAR_NAME = "imageio-apng-" + APNG_VERSION + ".jar";
-    private static final String APNG_URL = "https://repo1.maven.org/maven2/com/tianscar/imageio/imageio-apng/"
+    private static final String APNG_URL = "https://repo.maven.apache.org/maven2/com/tianscar/imageio/imageio-apng/"
             + APNG_VERSION + "/" + APNG_JAR_NAME;
+    private static final String APNG_SHA256 = "a3fa5f977bd0089ce2363ea1c2f2a2731bf02d2343cd569e1406a1c1fded8b45";
+    private static final int MAX_PLUGIN_BYTES = 2 * 1024 * 1024;
+    private static final ProxySelector NO_PROXY = new ProxySelector() {
+        @Override
+        public List<Proxy> select(URI uri) {
+            return List.of(Proxy.NO_PROXY);
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress address, IOException failure) {
+        }
+    };
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .proxy(NO_PROXY)
             .build();
     private static volatile boolean loaded = false;
     private static URLClassLoader externalPluginClassLoader;
@@ -57,7 +74,7 @@ public final class ExternalImageIoPluginLoader {
     }
 
     public static boolean hasApngJar() {
-        return Files.isRegularFile(apngJarPath());
+        return verifiedApngJar(apngJarPath());
     }
 
     public static boolean isLoaded() {
@@ -80,7 +97,6 @@ public final class ExternalImageIoPluginLoader {
         if (loaded) {
             return;
         }
-        loaded = true;
 
         Path libsDir = libsDir();
         try {
@@ -90,26 +106,15 @@ public final class ExternalImageIoPluginLoader {
             return;
         }
         ensureApngPluginDownloaded(libsDir);
-
-        List<Path> jars = new ArrayList<>();
-        try (var stream = Files.list(libsDir)) {
-            stream.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().toLowerCase().endsWith(".jar"))
-                    .sorted(Comparator.comparing(Path::toString))
-                    .forEach(jars::add);
-        } catch (IOException e) {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to scan external plugin dir {}: {}", libsDir, e.getMessage());
-            return;
-        }
-
-        if (jars.isEmpty()) {
-            ChatUpgrade.LOGGER.info("chat-upgrade: no external ImageIO plugin jar found in {}", libsDir);
+        Path plugin = apngJarPath();
+        if (!verifiedApngJar(plugin)) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: APNG plugin is unavailable or failed integrity verification");
             return;
         }
 
         try {
-            URL[] urls = jars.stream().map(ExternalImageIoPluginLoader::toUrl).toArray(URL[]::new);
             externalPluginClassLoader = new URLClassLoader(
-                    urls,
+                    new URL[] { toUrl(plugin) },
                     ExternalImageIoPluginLoader.class.getClassLoader());
 
             int registered = 0;
@@ -118,27 +123,32 @@ public final class ExternalImageIoPluginLoader {
             registered += registerSpis(ImageInputStreamSpi.class);
             registered += registerSpis(ImageOutputStreamSpi.class);
             registered += registerSpis(ImageTranscoderSpi.class);
-
-            // Let ImageIO discover any provider that relies on SPI metadata scanning.
             ImageIO.scanForPlugins();
+            loaded = registered > 0;
 
             ChatUpgrade.LOGGER.info(
-                    "chat-upgrade: external ImageIO plugins loaded from {} (jars={}, providers={})",
-                    libsDir,
-                    jars.size(),
+                    "chat-upgrade: verified APNG ImageIO plugin loaded (providers={})",
                     registered);
         } catch (Exception e) {
-            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to load external ImageIO plugins: {}", e.getMessage());
+            ChatUpgrade.LOGGER.warn("chat-upgrade: failed to load APNG ImageIO plugin: {}", e.getMessage());
         }
     }
 
     private static void ensureApngPluginDownloaded(Path libsDir) {
         Path target = libsDir.resolve(APNG_JAR_NAME);
-        if (Files.isRegularFile(target)) {
+        if (verifiedApngJar(target)) {
             return;
         }
-        ChatUpgrade.LOGGER.info("chat-upgrade: downloading optional APNG plugin {}", APNG_URL);
         try {
+            Files.deleteIfExists(target);
+        } catch (IOException e) {
+            ChatUpgrade.LOGGER.warn("chat-upgrade: cannot remove unverified APNG plugin: {}", e.getMessage());
+            return;
+        }
+        ChatUpgrade.LOGGER.info("chat-upgrade: downloading optional pinned APNG plugin");
+        Path temp = null;
+        try {
+            temp = Files.createTempFile(libsDir, APNG_JAR_NAME + ".", ".tmp");
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(APNG_URL))
                     .timeout(Duration.ofSeconds(45))
@@ -146,20 +156,80 @@ public final class ExternalImageIoPluginLoader {
                     .build();
             HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                ChatUpgrade.LOGGER.warn(
-                        "chat-upgrade: APNG plugin download skipped, status={} url={}",
-                        response.statusCode(),
-                        APNG_URL);
+                response.body().close();
+                ChatUpgrade.LOGGER.warn("chat-upgrade: APNG plugin download skipped, status={}", response.statusCode());
                 return;
             }
-            Path temp = target.resolveSibling(target.getFileName() + ".tmp");
-            try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
-                in.transferTo(out);
+            long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+            if (contentLength < 0L || contentLength > MAX_PLUGIN_BYTES) {
+                response.body().close();
+                throw new IOException("APNG plugin has an invalid Content-Length");
             }
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            ChatUpgrade.LOGGER.info("chat-upgrade: APNG plugin downloaded to {}", target);
+            try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
+                copyCapped(in, out, MAX_PLUGIN_BYTES);
+            }
+            if (!verifiedApngJar(temp)) {
+                throw new IOException("APNG plugin SHA-256 mismatch");
+            }
+            try {
+                Files.move(
+                        temp,
+                        target,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            ChatUpgrade.LOGGER.info("chat-upgrade: verified APNG plugin downloaded to {}", target);
         } catch (Exception e) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: failed to download APNG plugin: {}", e.getMessage());
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private static void copyCapped(InputStream in, OutputStream out, int maxBytes) throws IOException {
+        byte[] buffer = new byte[8_192];
+        int total = 0;
+        int read;
+        while ((read = in.read(buffer)) >= 0) {
+            if (total + read > maxBytes) {
+                throw new IOException("APNG plugin exceeds size limit");
+            }
+            out.write(buffer, 0, read);
+            total += read;
+        }
+    }
+
+    private static boolean verifiedApngJar(Path path) {
+        try {
+            if (Files.isSymbolicLink(path)
+                    || !Files.isRegularFile(path)
+                    || Files.size(path) <= 0L
+                    || Files.size(path) > MAX_PLUGIN_BYTES) {
+                return false;
+            }
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8_192];
+            int total = 0;
+            try (InputStream in = Files.newInputStream(path)) {
+                int read;
+                while ((read = in.read(buffer)) >= 0) {
+                    if (total + read > MAX_PLUGIN_BYTES) {
+                        return false;
+                    }
+                    digest.update(buffer, 0, read);
+                    total += read;
+                }
+            }
+            return total > 0 && APNG_SHA256.equals(HexFormat.of().formatHex(digest.digest()));
+        } catch (Exception e) {
+            return false;
         }
     }
 
