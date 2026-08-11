@@ -46,6 +46,10 @@ final class ServerMediaAccessControlTest {
     void onlyOwnerAndExplicitRecipientsCanReadMedia() {
         String mediaId = uploadPng(owner, 1L, (byte) 1);
         assertTrue(ServerMediaService.getForPlayer(owner, mediaId).isPresent());
+        assertEquals(ServerMediaService.MediaReadFailure.ACCESS_DENIED,
+                ServerMediaService.readForPlayer(recipient, mediaId).failure());
+        assertEquals(ServerMediaService.MediaReadFailure.NOT_FOUND,
+                ServerMediaService.readForPlayer(recipient, "00000000000000000000000000000000").failure());
         assertFalse(ServerMediaService.getForPlayer(recipient, mediaId).isPresent());
         assertFalse(ServerMediaService.getForPlayer(stranger, mediaId).isPresent());
 

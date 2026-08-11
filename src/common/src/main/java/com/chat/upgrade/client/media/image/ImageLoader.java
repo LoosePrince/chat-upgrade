@@ -14,6 +14,7 @@ import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.emoji.EmojiImageCache;
 import com.chat.upgrade.client.media.MediaFetchSupport;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.UpgradePhantomHudLayout;
@@ -140,12 +141,10 @@ public final class ImageLoader {
         return CACHE.get(url);
     }
 
-    public static void failServerMediaRequest(String url, boolean responseTooLarge) {
+    public static void failServerMediaRequest(String url, MediaFailureKind failureKind) {
         ImageEntry entry = CACHE.get(url);
         if (entry != null) {
-            markFailed(url, entry, responseTooLarge
-                    ? ImageEntry.FailureKind.RESPONSE_BODY_TOO_LARGE
-                    : ImageEntry.FailureKind.UNKNOWN);
+            markFailed(url, entry, failureKind);
         }
     }
 
@@ -316,14 +315,14 @@ public final class ImageLoader {
     }
 
     private static void markFailed(String url, ImageEntry entry) {
-        markFailed(url, entry, ImageEntry.FailureKind.UNKNOWN);
+        markFailed(url, entry, MediaFailureKind.UNKNOWN);
     }
 
     private static void markFailedOversize(String url, ImageEntry entry) {
-        markFailed(url, entry, ImageEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+        markFailed(url, entry, MediaFailureKind.RESPONSE_BODY_TOO_LARGE);
     }
 
-    private static void markFailed(String url, ImageEntry entry, ImageEntry.FailureKind kind) {
+    private static void markFailed(String url, ImageEntry entry, MediaFailureKind kind) {
         entry.setFailed(kind);
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {

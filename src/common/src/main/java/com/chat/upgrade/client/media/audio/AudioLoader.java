@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.MediaFetchSupport;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
@@ -46,7 +47,7 @@ public final class AudioLoader {
         int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
         if (body.length > maxReceive) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: audio bytes exceed limit ({}) for {}", maxReceive, url);
-            markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+            markFailed(url, entry, MediaFailureKind.RESPONSE_BODY_TOO_LARGE);
             return;
         }
         entry.setTransferMetadata(body.length, contentType == null ? "unknown" : contentType, md5Hex);
@@ -54,7 +55,7 @@ public final class AudioLoader {
         CompletableFuture.runAsync(() -> {
             if (!FfmpegNativeBootstrap.ensureReady()) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: audio runtime not ready for {}, FFmpeg natives unavailable", url);
-                markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                markFailed(url, entry, MediaFailureKind.UNSUPPORTED_FORMAT);
                 return;
             }
             long durationMs;
@@ -62,7 +63,7 @@ public final class AudioLoader {
                 durationMs = AudioPlayerService.prepareAsync(url, body).join();
             } catch (Exception ex) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, rootCauseMessage(ex));
-                markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                markFailed(url, entry, MediaFailureKind.UNSUPPORTED_FORMAT);
                 return;
             }
             entry.setLoaded(durationMs);
@@ -74,12 +75,10 @@ public final class AudioLoader {
         return CACHE.get(url);
     }
 
-    public static void failServerMediaRequest(String url, boolean responseTooLarge) {
+    public static void failServerMediaRequest(String url, MediaFailureKind failureKind) {
         AudioEntry entry = CACHE.get(url);
         if (entry != null) {
-            markFailed(url, entry, responseTooLarge
-                    ? AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE
-                    : AudioEntry.FailureKind.UNKNOWN);
+            markFailed(url, entry, failureKind);
         }
     }
 
@@ -99,7 +98,7 @@ public final class AudioLoader {
     private static void startLoad(String url, AudioEntry entry) {
         if (ServerMediaClient.isServerMediaUrl(url)) {
             if (!ServerMediaClient.capability().enabled()) {
-                markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
+                markFailed(url, entry, MediaFailureKind.UNKNOWN);
                 return;
             }
             ServerMediaClient.requestIfNeeded(url);
@@ -110,7 +109,7 @@ public final class AudioLoader {
                 .thenAccept(payload -> {
             if (payload == null) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: audio fetch failed url={}", url);
-                markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
+                markFailed(url, entry, MediaFailureKind.UNKNOWN);
                 return;
             }
             long declaredLength = payload.declaredLength();
@@ -128,7 +127,7 @@ public final class AudioLoader {
                 if (!FfmpegNativeBootstrap.ensureReady()) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: audio runtime not ready for {}, FFmpeg natives unavailable",
                             url);
-                    markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                    markFailed(url, entry, MediaFailureKind.UNSUPPORTED_FORMAT);
                     return;
                 }
                 long durationMs;
@@ -136,23 +135,23 @@ public final class AudioLoader {
                     durationMs = AudioPlayerService.prepareAsync(url, body).join();
                 } catch (Exception ex) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported audio {}: {}", url, rootCauseMessage(ex));
-                    markFailed(url, entry, AudioEntry.FailureKind.UNSUPPORTED_AUDIO_FORMAT);
+                    markFailed(url, entry, MediaFailureKind.UNSUPPORTED_FORMAT);
                     return;
                 }
                 entry.setLoaded(durationMs);
                 notifyChanged(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode audio {}: {}", url, e.getMessage());
-                markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
+                markFailed(url, entry, MediaFailureKind.UNKNOWN);
             }
         }).exceptionally(e -> {
             if (hasCause(e, MediaFetchSupport.ResponseBodyTooLarge.class)) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: audio body exceeds limit ({}) for {}", maxReceive, url);
-                markFailed(url, entry, AudioEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+                markFailed(url, entry, MediaFailureKind.RESPONSE_BODY_TOO_LARGE);
                 return null;
             }
             ChatUpgrade.LOGGER.warn("chat-upgrade: audio load pipeline failed {}: {}", url, rootCauseMessage(e));
-            markFailed(url, entry, AudioEntry.FailureKind.UNKNOWN);
+            markFailed(url, entry, MediaFailureKind.UNKNOWN);
             return null;
         });
     }
@@ -181,7 +180,7 @@ public final class AudioLoader {
         return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
     }
 
-    private static void markFailed(String url, AudioEntry entry, AudioEntry.FailureKind kind) {
+    private static void markFailed(String url, AudioEntry entry, MediaFailureKind kind) {
         entry.setFailed(kind);
         notifyChanged(url);
     }

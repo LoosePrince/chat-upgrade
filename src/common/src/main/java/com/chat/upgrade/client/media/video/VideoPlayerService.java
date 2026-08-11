@@ -39,14 +39,12 @@ import static org.bytedeco.ffmpeg.global.swscale.sws_freeContext;
 import static org.bytedeco.ffmpeg.global.swscale.sws_getContext;
 import static org.bytedeco.ffmpeg.global.swscale.sws_scale;
 
-import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,14 +64,13 @@ import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.swscale.SwsContext;
 import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.PointerPointer;
 import org.jetbrains.annotations.Nullable;
+import org.lwjgl.system.MemoryUtil;
 
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.media.audio.OpenAlPcmPlayer;
 import com.chat.upgrade.client.media.audio.SingleActivePlaybackCoordinator;
-import com.chat.upgrade.client.media.image.RasterImageDecoder;
 import com.mojang.blaze3d.platform.NativeImage;
 
 import net.minecraft.client.Minecraft;
@@ -82,9 +79,9 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
 
 public final class VideoPlayerService {
-    private static final int TARGET_FPS = 24;
-    private static final int FRAME_CACHE_AHEAD = TARGET_FPS * 3;
-    private static final int FRAME_CACHE_BEHIND = TARGET_FPS;
+    private static final long FRAME_CACHE_AHEAD_MS = 1_500L;
+    private static final long FRAME_CACHE_BEHIND_MS = 500L;
+    private static final long MAX_CACHE_BYTES = 64L * 1024L * 1024L;
     private static final int MAX_DECODE_DIMENSION = 4_096;
     private static final long MAX_DECODE_PIXELS = 8_500_000L;
     private static final int MAX_TEXTURE_DIMENSION = 512;
@@ -114,19 +111,44 @@ public final class VideoPlayerService {
         }
 
         Path tempFile = writeTempVideoFile(videoBytes);
+        StreamingVideoDecoder decoder = null;
+        VideoTexture videoTexture = null;
         try {
-            DecodedMeta meta = decodeMetaAndFirstFrame(tempFile);
-            CachePlan plan = planCache(meta.durationMs());
-            Identifier firstFrameId = registerTextureOnRenderThread(meta.firstFrame());
-            NavigableMap<Integer, Identifier> frameIds = new TreeMap<>();
-            frameIds.put(0, firstFrameId);
+            decoder = StreamingVideoDecoder.open(tempFile);
+            DecodedFrame firstFrame = decoder.nextFrame();
+            if (firstFrame == null) {
+                throw new IllegalStateException("no decoded video frame");
+            }
+            videoTexture = registerTextureOnRenderThread(
+                    firstFrame.rgbaPixels(), firstFrame.outputWidth(), firstFrame.outputHeight());
+            NavigableMap<Long, CachedFrame> frameIds = new TreeMap<>();
+            frameIds.put(firstFrame.presentationMs(),
+                    new CachedFrame(firstFrame.presentationMs(), firstFrame.rgbaPixels(), firstFrame.byteSize()));
             VideoAudioTrack audioTrack = decodeAudioTrack(tempFile);
-            VideoSession session = new VideoSession(url, meta.durationMs(), frameIds, plan.intervalMs(), tempFile,
+            VideoSession session = new VideoSession(
+                    url,
+                    decoder.durationMs(),
+                    decoder.rawWidth(),
+                    decoder.rawHeight(),
+                    decoder,
+                    frameIds,
+                    videoTexture,
+                    tempFile,
                     audioTrack);
+            decoder = null;
+            videoTexture = null;
             SESSIONS.put(url, session);
-            schedulePredecode(session);
-            return new Prepared(meta.durationMs(), meta.rawWidth(), meta.rawHeight());
+            synchronized (session) {
+                requestFramesAround(session, 0L, false);
+            }
+            return new Prepared(session.durationMs, session.rawWidth, session.rawHeight);
         } catch (Exception error) {
+            if (videoTexture != null) {
+                releaseTexture(videoTexture.textureId());
+            }
+            if (decoder != null) {
+                decoder.close();
+            }
             Files.deleteIfExists(tempFile);
             throw error;
         }
@@ -154,17 +176,20 @@ public final class VideoPlayerService {
             return null;
         }
         synchronized (s) {
+            long positionMs = positionMsLocked(s, nowMs);
+            requestFramesAround(s, positionMs, false);
             if (s.frameTextureIds.isEmpty()) {
+                return s.videoTexture.textureId();
+            }
+            CachedFrame frame = valueAtOrFirst(s.frameTextureIds, positionMs);
+            if (frame == null) {
                 return null;
             }
-            long pos = positionMsLocked(s, nowMs);
-            if (s.frameIntervalMs <= 0L) {
-                return s.frameTextureIds.firstEntry().getValue();
+            if (s.displayedFrameMs != frame.presentationMs()) {
+                s.videoTexture.upload(frame.rgbaPixels());
+                s.displayedFrameMs = frame.presentationMs();
             }
-            int idx = frameIndexAt(pos, s.frameIntervalMs, s.lastFrameIndex);
-            requestFramesAround(s, idx);
-            Map.Entry<Integer, Identifier> frame = s.frameTextureIds.floorEntry(idx);
-            return frame == null ? s.frameTextureIds.firstEntry().getValue() : frame.getValue();
+            return s.videoTexture.textureId();
         }
     }
 
@@ -177,6 +202,11 @@ public final class VideoPlayerService {
         synchronized (s) {
             if (s.playing) {
                 s.pausedPositionMs = positionMsLocked(s, now);
+                ChatUpgrade.LOGGER.debug(
+                        "chat-upgrade: video pause url={} position={}ms cache={}",
+                        url,
+                        s.pausedPositionMs,
+                        cacheSummary(s));
                 s.playing = false;
                 stopAudioLocked(s);
                 ACTIVE_PLAYBACK.deactivateIfActive(url);
@@ -197,10 +227,13 @@ public final class VideoPlayerService {
             });
             if (s.pausedPositionMs >= s.durationMs) {
                 s.pausedPositionMs = 0L;
+                s.seekPendingMs = 0L;
+                s.decoderEof = false;
+                s.lastDecodedPositionMs = 0L;
             }
-            s.playStartedAtMs = now - s.pausedPositionMs;
             s.playing = true;
             startAudioLocked(s, s.pausedPositionMs);
+            s.playStartedAtMs = Util.getMillis() - s.pausedPositionMs;
             return true;
         }
     }
@@ -214,10 +247,20 @@ public final class VideoPlayerService {
         synchronized (s) {
             double r = Math.clamp(ratio, 0.0, 1.0);
             s.pausedPositionMs = (long) (s.durationMs * r);
+            ChatUpgrade.LOGGER.debug(
+                    "chat-upgrade: video seek requested url={} ratio={} target={}ms playing={} lastDecoded={}ms eof={} cache={}",
+                    url,
+                    r,
+                    s.pausedPositionMs,
+                    s.playing,
+                    s.lastDecodedPositionMs,
+                    s.decoderEof,
+                    cacheSummary(s));
             if (s.playing) {
-                s.playStartedAtMs = now - s.pausedPositionMs;
                 restartAudioLocked(s, s.pausedPositionMs);
+                s.playStartedAtMs = Util.getMillis() - s.pausedPositionMs;
             }
+            requestFramesAround(s, s.pausedPositionMs, true);
         }
     }
 
@@ -282,122 +325,193 @@ public final class VideoPlayerService {
         return Math.max(0L, Math.min(duration, pos));
     }
 
-    private static DecodedMeta decodeMetaAndFirstFrame(Path path) throws Exception {
-        DecodedFrame frame = decodeFrame(path, 0L, false);
-        return new DecodedMeta(frame.durationMs(), frame.rawWidth(), frame.rawHeight(), frame.image());
-    }
-
-    private static NativeImage decodeFrameAtMs(Path path, long ms) throws Exception {
-        return decodeFrame(path, ms, true).image();
-    }
-
-    private static CachePlan planCache(long durationMs) {
-        long interval = Math.max(1L, Math.round(1_000.0 / TARGET_FPS));
-        int lastFrameIndex = Math.max(0, (int) Math.ceil(durationMs / (double) interval));
-        return new CachePlan(interval, lastFrameIndex);
-    }
-
-    private static int frameIndexAt(long positionMs, long intervalMs, int lastFrameIndex) {
-        return (int) Math.min(lastFrameIndex, Math.max(0L, positionMs / intervalMs));
-    }
-
-    private static void requestFramesAround(VideoSession session, int centerIndex) {
-        int minIndex = Math.max(0, centerIndex - FRAME_CACHE_BEHIND);
-        int maxIndex = Math.min(session.lastFrameIndex, centerIndex + FRAME_CACHE_AHEAD);
-        session.requestedFrameIndex = centerIndex;
-        for (int index = minIndex; index <= maxIndex; index++) {
-            if (!session.frameTextureIds.containsKey(index) && session.pendingFrameIndexes.add(index)) {
-                schedulePredecode(session);
-            }
+    private static void requestFramesAround(VideoSession session, long positionMs, boolean resetDecoder) {
+        long minMs = Math.max(0L, positionMs - FRAME_CACHE_BEHIND_MS);
+        long maxMs = Math.min(session.durationMs, positionMs + FRAME_CACHE_AHEAD_MS);
+        session.requestedPositionMs = positionMs;
+        if (resetDecoder) {
+            session.seekPendingMs = positionMs;
+            session.lastDecodedPositionMs = positionMs;
+            session.decoderEof = false;
         }
-        releaseFramesOutsideWindow(session, minIndex, maxIndex);
+        releaseFramesOutsideWindow(session, minMs, maxMs, shouldReleasePrefetchedFrames(resetDecoder));
+        boolean resetForCacheMiss = shouldResetDecoderForCacheMiss(
+                session.frameTextureIds.isEmpty(),
+                session.decoderEof,
+                session.lastDecodedPositionMs,
+                maxMs);
+        if (resetForCacheMiss) {
+            session.seekPendingMs = positionMs;
+            session.lastDecodedPositionMs = positionMs;
+            session.decoderEof = false;
+        }
+        boolean needsDecode = !session.decoderEof
+                && (session.frameTextureIds.isEmpty()
+                || session.lastDecodedPositionMs < maxMs
+                || session.seekPendingMs != null);
+        if (needsDecode) {
+            schedulePredecode(session);
+        }
+    }
+
+    static boolean shouldReleasePrefetchedFrames(boolean resetDecoder) {
+        return resetDecoder;
+    }
+
+    static boolean shouldRetainCachedFrame(
+            long presentationMs,
+            long windowStartMs,
+            long windowEndMs,
+            boolean releasePrefetchedFrames) {
+        return presentationMs >= windowStartMs
+                && (!releasePrefetchedFrames || presentationMs <= windowEndMs);
+    }
+
+    static boolean shouldResetDecoderForCacheMiss(
+            boolean cacheEmpty,
+            boolean decoderEof,
+            long lastDecodedPositionMs,
+            long windowEndMs) {
+        return cacheEmpty && (decoderEof || lastDecodedPositionMs >= windowEndMs);
+    }
+
+    static <T> @Nullable T valueAtOrFirst(NavigableMap<Long, T> values, long positionMs) {
+        Map.Entry<Long, T> value = values.floorEntry(positionMs);
+        if (value != null) {
+            return value.getValue();
+        }
+        Map.Entry<Long, T> firstValue = values.firstEntry();
+        return firstValue == null ? null : firstValue.getValue();
     }
 
     private static void schedulePredecode(VideoSession session) {
-        if (!session.predecodeScheduled) {
-            session.predecodeScheduled = true;
-            PREDECODE_EXECUTOR.execute(() -> predecodeRequestedFrames(session));
+        if (session.predecodeScheduled) {
+            return;
         }
+        session.predecodeScheduled = true;
+        PREDECODE_EXECUTOR.execute(() -> predecodeRequestedFrames(session));
     }
 
     private static void predecodeRequestedFrames(VideoSession session) {
         while (true) {
-            int frameIndex;
+            Long seekMs;
+            long targetMs;
             synchronized (session) {
-                if (session.closed || session.pendingFrameIndexes.isEmpty()) {
+                if (session.closed) {
                     session.predecodeScheduled = false;
                     return;
                 }
-                frameIndex = nextPendingFrameIndex(session);
-                session.pendingFrameIndexes.remove(frameIndex);
-            }
-            NativeImage frame;
-            try {
-                frame = decodeFrameAtMs(
-                        session.tempFile,
-                        Math.min(session.durationMs, frameIndex * session.frameIntervalMs));
-            } catch (Exception error) {
-                ChatUpgrade.LOGGER.debug("chat-upgrade: predecode frame {} failed for {}: {}", frameIndex,
-                        session.url, error.getMessage());
-                continue;
+                targetMs = session.requestedPositionMs;
+                seekMs = session.seekPendingMs;
+                session.seekPendingMs = null;
             }
             try {
-                Identifier textureId = registerTextureOnRenderThread(frame);
+                if (seekMs != null) {
+                    session.decoder.seekTo(seekMs);
+                }
+                DecodedFrame decoded = session.decoder.nextFrame();
+                if (decoded == null) {
+                    synchronized (session) {
+                        session.decoderEof = true;
+                        session.predecodeScheduled = false;
+                        ChatUpgrade.LOGGER.debug(
+                                "chat-upgrade: video decoder EOF url={} target={}ms lastDecoded={}ms cache={}",
+                                session.url,
+                                targetMs,
+                                session.lastDecodedPositionMs,
+                                cacheSummary(session));
+                    }
+                    return;
+                }
                 synchronized (session) {
                     if (session.closed) {
-                        releaseTexture(textureId);
                         return;
                     }
-                    session.frameTextureIds.put(frameIndex, textureId);
-                    int minIndex = Math.max(0, session.requestedFrameIndex - FRAME_CACHE_BEHIND);
-                    int maxIndex = Math.min(session.lastFrameIndex,
-                            session.requestedFrameIndex + FRAME_CACHE_AHEAD);
-                    releaseFramesOutsideWindow(session, minIndex, maxIndex);
+                    session.lastDecodedPositionMs = Math.max(session.lastDecodedPositionMs, decoded.presentationMs());
+                    long minMs = Math.max(0L, session.requestedPositionMs - FRAME_CACHE_BEHIND_MS);
+                    long maxMs = Math.min(session.durationMs,
+                            session.requestedPositionMs + FRAME_CACHE_AHEAD_MS);
+                    boolean retained = shouldRetainCachedFrame(decoded.presentationMs(), minMs, maxMs, false);
+                    if (retained) {
+                        CachedFrame previous = session.frameTextureIds.put(
+                                decoded.presentationMs(),
+                                new CachedFrame(
+                                        decoded.presentationMs(), decoded.rgbaPixels(), decoded.byteSize()));
+                        if (previous != null) {
+                            session.cachedBytes -= previous.byteSize();
+                        }
+                        session.cachedBytes += decoded.byteSize();
+                    }
+                    releaseFramesOutsideWindow(session, minMs, maxMs, false);
+                    if (session.lastDecodedPositionMs >= maxMs && session.seekPendingMs == null) {
+                        session.predecodeScheduled = false;
+                        return;
+                    }
                 }
             } catch (Exception error) {
-                ChatUpgrade.LOGGER.debug("chat-upgrade: upload predecoded frame {} failed for {}: {}", frameIndex,
-                        session.url, error.getMessage());
-                try {
-                    frame.close();
-                } catch (Exception ignored) {
+                ChatUpgrade.LOGGER.debug("chat-upgrade: streaming decode failed url={}", session.url, error);
+                synchronized (session) {
+                    session.predecodeScheduled = false;
+                    ChatUpgrade.LOGGER.debug(
+                            "chat-upgrade: video predecode stopped after failure url={} requested={}ms lastDecoded={}ms eof={} cache={}",
+                            session.url,
+                            session.requestedPositionMs,
+                            session.lastDecodedPositionMs,
+                            session.decoderEof,
+                            cacheSummary(session));
                 }
                 return;
             }
         }
     }
 
-    private static int nextPendingFrameIndex(VideoSession session) {
-        int center = session.requestedFrameIndex;
-        return session.pendingFrameIndexes.stream()
-                .min(java.util.Comparator.comparingInt(index -> Math.abs(index - center)))
-                .orElseThrow();
-    }
-
-    private static void releaseFramesOutsideWindow(VideoSession session, int minIndex, int maxIndex) {
+    private static void releaseFramesOutsideWindow(
+            VideoSession session,
+            long minMs,
+            long maxMs,
+            boolean releasePrefetchedFrames) {
         session.frameTextureIds.entrySet().removeIf(entry -> {
-            if (entry.getKey() >= minIndex && entry.getKey() <= maxIndex) {
+            if (shouldRetainCachedFrame(entry.getKey(), minMs, maxMs, releasePrefetchedFrames)) {
                 return false;
             }
-            releaseTexture(entry.getValue());
+            session.cachedBytes -= entry.getValue().byteSize();
             return true;
         });
+        while (session.cachedBytes > MAX_CACHE_BYTES && session.frameTextureIds.size() > 1) {
+            Map.Entry<Long, CachedFrame> oldest = session.frameTextureIds.firstEntry();
+            session.cachedBytes -= oldest.getValue().byteSize();
+            session.frameTextureIds.remove(oldest.getKey());
+        }
     }
 
-    private static Identifier registerTexture(NativeImage image) {
+    private static String cacheSummary(VideoSession session) {
+        Map.Entry<Long, CachedFrame> first = session.frameTextureIds.firstEntry();
+        Map.Entry<Long, CachedFrame> last = session.frameTextureIds.lastEntry();
+        if (first == null || last == null) {
+            return "empty(bytes=" + session.cachedBytes + ")";
+        }
+        return "frames=" + session.frameTextureIds.size()
+                + ",range=[" + first.getKey() + "," + last.getKey() + "]ms,bytes=" + session.cachedBytes;
+    }
+
+    private static VideoTexture registerTexture(byte[] rgbaPixels, int width, int height) {
         Minecraft mc = Minecraft.getInstance();
         int id = TEXTURE_COUNTER.getAndIncrement();
         Identifier location = Identifier.fromNamespaceAndPath(ChatUpgrade.MOD_ID, "upgrade_video_" + id);
+        NativeImage image = new NativeImage(NativeImage.Format.RGBA, width, height, false);
+        ByteBuffer uploadBuffer = ByteBuffer.allocateDirect(rgbaByteSize(width, height));
+        copyRgbaToNativeImage(rgbaPixels, image, uploadBuffer);
         DynamicTexture texture = new DynamicTexture(() -> "upgrade_video_" + id, image);
         mc.getTextureManager().register(location, texture);
-        return location;
+        return new VideoTexture(location, texture, image, uploadBuffer);
     }
 
-    private static Identifier registerTextureOnRenderThread(NativeImage image) throws Exception {
+    private static VideoTexture registerTextureOnRenderThread(byte[] rgbaPixels, int width, int height) throws Exception {
         Minecraft mc = Minecraft.getInstance();
-        CompletableFuture<Identifier> future = new CompletableFuture<>();
+        CompletableFuture<VideoTexture> future = new CompletableFuture<>();
         mc.execute(() -> {
             try {
-                future.complete(registerTexture(image));
+                future.complete(registerTexture(rgbaPixels, width, height));
             } catch (Exception e) {
                 future.completeExceptionally(e);
             }
@@ -413,68 +527,355 @@ public final class VideoPlayerService {
         mc.execute(() -> mc.getTextureManager().release(textureId));
     }
 
-    private record DecodedMeta(long durationMs, int rawWidth, int rawHeight, NativeImage firstFrame) {
+    private record DecodedFrame(
+            byte[] rgbaPixels,
+            int outputWidth,
+            int outputHeight,
+            long durationMs,
+            long presentationMs,
+            int byteSize) {
     }
 
-    private record DecodedFrame(NativeImage image, int rawWidth, int rawHeight, long durationMs) {
+    private static final class StreamingVideoDecoder {
+        private final AVFormatContext formatContext;
+        private final AVCodecContext codecContext;
+        private final AVPacket packet;
+        private final AVFrame frame;
+        private final int videoStreamIndex;
+        private final AVRational timeBase;
+        private final long durationMs;
+        private final int rawWidth;
+        private final int rawHeight;
+        private final int outputWidth;
+        private final int outputHeight;
+        private SwsContext sws;
+        private AVFrame rgba;
+        private BytePointer rgbaBuffer;
+        private byte[] rgbaBytes;
+        private int rgbaStride;
+        private boolean inputEof;
+        private boolean closed;
+
+        private StreamingVideoDecoder(
+                AVFormatContext formatContext,
+                AVCodecContext codecContext,
+                AVPacket packet,
+                AVFrame frame,
+                int videoStreamIndex,
+                AVRational timeBase,
+                long durationMs,
+                int rawWidth,
+                int rawHeight,
+                int outputWidth,
+                int outputHeight) {
+            this.formatContext = formatContext;
+            this.codecContext = codecContext;
+            this.packet = packet;
+            this.frame = frame;
+            this.videoStreamIndex = videoStreamIndex;
+            this.timeBase = timeBase;
+            this.durationMs = durationMs;
+            this.rawWidth = rawWidth;
+            this.rawHeight = rawHeight;
+            this.outputWidth = outputWidth;
+            this.outputHeight = outputHeight;
+            this.sws = null;
+            this.rgba = null;
+            this.rgbaBuffer = null;
+            this.rgbaBytes = null;
+            this.rgbaStride = 0;
+            this.inputEof = false;
+        }
+
+        static StreamingVideoDecoder open(Path path) throws Exception {
+            AVFormatContext formatContext = new AVFormatContext(null);
+            AVCodecContext codecContext = null;
+            AVPacket packet = null;
+            AVFrame frame = null;
+            try {
+                if (avformat_open_input(formatContext, path.toString(), null, (AVDictionary) null) < 0) {
+                    throw new IllegalStateException("open input failed");
+                }
+                if (avformat_find_stream_info(formatContext, (PointerPointer<?>) null) < 0) {
+                    throw new IllegalStateException("stream info failed");
+                }
+                int videoStreamIndex = av_find_best_stream(
+                        formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, (AVCodec) null, 0);
+                if (videoStreamIndex < 0) {
+                    throw new IllegalStateException("no video stream");
+                }
+                AVStream stream = formatContext.streams(videoStreamIndex);
+                AVCodecParameters parameters = stream.codecpar();
+                AVCodec codec = avcodec_find_decoder(parameters.codec_id());
+                if (codec == null || codec.id() == AV_CODEC_ID_NONE) {
+                    throw new IllegalStateException("no decoder");
+                }
+                codecContext = avcodec_alloc_context3(codec);
+                if (codecContext == null
+                        || avcodec_parameters_to_context(codecContext, parameters) < 0
+                        || avcodec_open2(codecContext, codec, (AVDictionary) null) < 0) {
+                    throw new IllegalStateException("open video decoder failed");
+                }
+                validateVideoDimensions(codecContext.width(), codecContext.height());
+                long durationMs = durationFrom(formatContext, stream);
+                if (durationMs <= 0L || durationMs > MAX_DURATION_MS) {
+                    throw new IllegalStateException("video duration exceeds policy");
+                }
+                packet = av_packet_alloc();
+                frame = av_frame_alloc();
+                if (packet == null || frame == null) {
+                    throw new IllegalStateException("alloc frame/packet failed");
+                }
+                int[] outputSize = scaledFrameSize(codecContext.width(), codecContext.height());
+                return new StreamingVideoDecoder(
+                        formatContext,
+                        codecContext,
+                        packet,
+                        frame,
+                        videoStreamIndex,
+                        stream.time_base(),
+                        durationMs,
+                        codecContext.width(),
+                        codecContext.height(),
+                        outputSize[0],
+                        outputSize[1]);
+            } catch (Exception error) {
+                if (frame != null) {
+                    av_frame_free(frame);
+                }
+                if (packet != null) {
+                    av_packet_free(packet);
+                }
+                if (codecContext != null) {
+                    avcodec_free_context(codecContext);
+                }
+                avformat_close_input(formatContext);
+                throw error;
+            }
+        }
+
+        synchronized long durationMs() {
+            return durationMs;
+        }
+
+        synchronized int rawWidth() {
+            return rawWidth;
+        }
+
+        synchronized int rawHeight() {
+            return rawHeight;
+        }
+
+        synchronized void seekTo(long positionMs) throws Exception {
+            requireOpen();
+            try (AVRational micros = new AVRational()) {
+                micros.num(1);
+                micros.den(1_000_000);
+                long timestamp = av_rescale_q(Math.max(0L, positionMs) * 1_000L, micros, timeBase);
+                ChatUpgrade.LOGGER.debug(
+                        "chat-upgrade: FFmpeg seek request position={}ms streamTimestamp={} timeBase={}/{}",
+                        positionMs,
+                        timestamp,
+                        timeBase.num(),
+                        timeBase.den());
+                if (av_seek_frame(formatContext, videoStreamIndex, timestamp, AVSEEK_FLAG_BACKWARD) < 0) {
+                    throw new IllegalStateException("video seek failed");
+                }
+            }
+            avcodec_flush_buffers(codecContext);
+            inputEof = false;
+        }
+
+        synchronized @Nullable DecodedFrame nextFrame() throws Exception {
+            requireOpen();
+            int packets = 0;
+            while (true) {
+                int receive = avcodec_receive_frame(codecContext, frame);
+                if (receive >= 0) {
+                    return copyFrame(frame);
+                }
+                if (inputEof) {
+                    return null;
+                }
+                int read = av_read_frame(formatContext, packet);
+                if (read < 0) {
+                    avcodec_send_packet(codecContext, null);
+                    inputEof = true;
+                    continue;
+                }
+                try {
+                    if (++packets > MAX_DECODE_PACKETS) {
+                        throw new IllegalStateException("video packet count exceeds policy");
+                    }
+                    if (packet.stream_index() == videoStreamIndex) {
+                        avcodec_send_packet(codecContext, packet);
+                    }
+                } finally {
+                    av_packet_unref(packet);
+                }
+            }
+        }
+
+        synchronized void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (sws != null) {
+                sws_freeContext(sws);
+                sws = null;
+            }
+            if (rgbaBuffer != null) {
+                av_free(rgbaBuffer);
+                rgbaBuffer = null;
+            }
+            rgbaBytes = null;
+            if (rgba != null) {
+                av_frame_free(rgba);
+                rgba = null;
+            }
+            av_frame_free(frame);
+            av_packet_free(packet);
+            avcodec_free_context(codecContext);
+            avformat_close_input(formatContext);
+        }
+
+        private void requireOpen() {
+            if (closed) {
+                throw new IllegalStateException("video decoder closed");
+            }
+        }
+
+        private DecodedFrame copyFrame(AVFrame source) throws Exception {
+            int width = source.width();
+            int height = source.height();
+            validateDecodedFrameDimensions(width, height);
+            if (width != rawWidth || height != rawHeight) {
+                throw new IllegalStateException("video frame dimensions changed");
+            }
+            if (sws == null) {
+                sws = sws_getContext(
+                        width, height, source.format(),
+                        outputWidth, outputHeight, AV_PIX_FMT_RGBA,
+                        SWS_BILINEAR,
+                        null, null, (double[]) null);
+                if (sws == null) {
+                    throw new IllegalStateException("sws context failed");
+                }
+                rgba = av_frame_alloc();
+                if (rgba == null) {
+                    throw new IllegalStateException("alloc rgba frame failed");
+                }
+                int bufferSize = av_image_get_buffer_size(AV_PIX_FMT_RGBA, outputWidth, outputHeight, 1);
+                if (bufferSize <= 0 || bufferSize > MAX_TEXTURE_DIMENSION * MAX_TEXTURE_DIMENSION * 4) {
+                    throw new IllegalStateException("invalid decoded frame buffer size");
+                }
+                rgbaBuffer = new BytePointer(av_malloc(bufferSize));
+                if (rgbaBuffer.isNull()) {
+                    throw new IllegalStateException("decoded frame allocation failed");
+                }
+                av_image_fill_arrays(
+                        rgba.data(), rgba.linesize(), rgbaBuffer,
+                        AV_PIX_FMT_RGBA, outputWidth, outputHeight, 1);
+                rgbaStride = rgba.linesize(0);
+                rgbaBytes = new byte[rgbaStride * outputHeight];
+            }
+            sws_scale(sws, source.data(), source.linesize(), 0, height, rgba.data(), rgba.linesize());
+            byte[] pixels = copyRgbaRows(rgbaBuffer, rgbaBytes, rgbaStride, outputWidth, outputHeight);
+            long presentationMs = timestampMs(source.best_effort_timestamp(), timeBase);
+            return new DecodedFrame(
+                    pixels,
+                    outputWidth,
+                    outputHeight,
+                    durationMs,
+                    presentationMs,
+                    pixels.length);
+        }
     }
 
-    private record CachePlan(long intervalMs, int lastFrameIndex) {
+    private record VideoTexture(
+            Identifier textureId,
+            DynamicTexture texture,
+            NativeImage pixels,
+            ByteBuffer uploadBuffer) {
+        void upload(byte[] rgbaPixels) {
+            copyRgbaToNativeImage(rgbaPixels, pixels, uploadBuffer);
+            texture.upload();
+        }
+    }
+
+    private record CachedFrame(long presentationMs, byte[] rgbaPixels, int byteSize) {
     }
 
     private static final class VideoSession {
         final String url;
         final long durationMs;
-        final NavigableMap<Integer, Identifier> frameTextureIds;
-        final Set<Integer> pendingFrameIndexes;
-        final int lastFrameIndex;
-        final long frameIntervalMs;
+        final int rawWidth;
+        final int rawHeight;
+        final StreamingVideoDecoder decoder;
+        final NavigableMap<Long, CachedFrame> frameTextureIds;
+        final VideoTexture videoTexture;
         final Path tempFile;
         final VideoAudioTrack audioTrack;
         boolean playing;
         boolean predecodeScheduled;
+        boolean decoderEof;
         volatile boolean closed;
         long playStartedAtMs;
         long pausedPositionMs;
-        int requestedFrameIndex;
-        @Nullable
-        VideoAudioPlayback audioPlayback;
+        long requestedPositionMs;
+        long lastDecodedPositionMs;
+        long displayedFrameMs = Long.MIN_VALUE;
+        long cachedBytes;
+        @Nullable Long seekPendingMs;
+        @Nullable VideoAudioPlayback audioPlayback;
 
         VideoSession(
                 String url,
                 long durationMs,
-                NavigableMap<Integer, Identifier> frameTextureIds,
-                long frameIntervalMs,
+                int rawWidth,
+                int rawHeight,
+                StreamingVideoDecoder decoder,
+                NavigableMap<Long, CachedFrame> frameTextureIds,
+                VideoTexture videoTexture,
                 Path tempFile,
                 @Nullable VideoAudioTrack audioTrack) {
             this.url = url;
             this.durationMs = durationMs;
+            this.rawWidth = rawWidth;
+            this.rawHeight = rawHeight;
+            this.decoder = decoder;
             this.frameTextureIds = frameTextureIds;
-            this.pendingFrameIndexes = new HashSet<>();
-            this.lastFrameIndex = frameIndexAt(durationMs, frameIntervalMs, Integer.MAX_VALUE);
-            this.frameIntervalMs = frameIntervalMs;
+            this.videoTexture = videoTexture;
             this.tempFile = tempFile;
             this.audioTrack = audioTrack;
             this.playing = false;
             this.predecodeScheduled = false;
+            this.decoderEof = false;
             this.closed = false;
             this.playStartedAtMs = 0L;
             this.pausedPositionMs = 0L;
-            this.requestedFrameIndex = 0;
+            this.requestedPositionMs = 0L;
+            this.lastDecodedPositionMs = frameTextureIds.lastKey();
+            this.cachedBytes = frameTextureIds.values().stream().mapToLong(CachedFrame::byteSize).sum();
+            this.seekPendingMs = null;
             this.audioPlayback = null;
         }
 
-        void close() {
+        synchronized void close() {
             this.closed = true;
+            ChatUpgrade.LOGGER.debug(
+                    "chat-upgrade: video session closing url={} playing={} requested={}ms lastDecoded={}ms eof={} cache={}",
+                    url,
+                    playing,
+                    requestedPositionMs,
+                    lastDecodedPositionMs,
+                    decoderEof,
+                    cacheSummary(this));
             stopAudioLocked(this);
-            Set<Identifier> dedupe = new HashSet<>();
-            for (Identifier id : frameTextureIds.values()) {
-                if (id != null && dedupe.add(id)) {
-                    releaseTexture(id);
-                }
-            }
+            decoder.close();
             frameTextureIds.clear();
-            pendingFrameIndexes.clear();
+            releaseTexture(videoTexture.textureId());
             try {
                 Files.deleteIfExists(tempFile);
             } catch (Exception ignored) {
@@ -486,157 +887,6 @@ public final class VideoPlayerService {
         Path path = Files.createTempFile("chat-upgrade-video-", ".bin");
         Files.write(path, bytes);
         return path;
-    }
-
-    private static DecodedFrame decodeFrame(Path path, long targetMs, boolean seek) throws Exception {
-        AVFormatContext fmt = new AVFormatContext(null);
-        AVCodecContext codecCtx = null;
-        AVPacket pkt = null;
-        AVFrame frame = null;
-        AVFrame rgba = null;
-        BytePointer rgbaBuffer = null;
-        SwsContext sws = null;
-        try {
-            if (avformat_open_input(fmt, path.toString(), null, (AVDictionary) null) < 0) {
-                throw new IllegalStateException("open input failed");
-            }
-            if (avformat_find_stream_info(fmt, (PointerPointer<?>) null) < 0) {
-                throw new IllegalStateException("stream info failed");
-            }
-            int videoIdx = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, (AVCodec) null, 0);
-            if (videoIdx < 0) {
-                throw new IllegalStateException("no video stream");
-            }
-            AVStream stream = fmt.streams(videoIdx);
-            AVCodecParameters codecpar = stream.codecpar();
-            AVCodec codec = avcodec_find_decoder(codecpar.codec_id());
-            if (codec == null || codec.id() == AV_CODEC_ID_NONE) {
-                throw new IllegalStateException("no decoder");
-            }
-            codecCtx = avcodec_alloc_context3(codec);
-            if (codecCtx == null) {
-                throw new IllegalStateException("alloc codec ctx failed");
-            }
-            if (avcodec_parameters_to_context(codecCtx, codecpar) < 0) {
-                throw new IllegalStateException("copy codec params failed");
-            }
-            validateVideoDimensions(codecCtx.width(), codecCtx.height());
-            if (avcodec_open2(codecCtx, codec, (AVDictionary) null) < 0) {
-                throw new IllegalStateException("open codec failed");
-            }
-
-            if (seek) {
-                AVRational tb = stream.time_base();
-                long ts;
-                try (AVRational micros = new AVRational()) {
-                    micros.num(1);
-                    micros.den(1000000);
-                    ts = av_rescale_q(targetMs * 1000L, micros, tb);
-                }
-                av_seek_frame(fmt, videoIdx, ts, AVSEEK_FLAG_BACKWARD);
-                avcodec_flush_buffers(codecCtx);
-            }
-
-            pkt = av_packet_alloc();
-            frame = av_frame_alloc();
-            if (pkt == null || frame == null) {
-                throw new IllegalStateException("alloc frame/packet failed");
-            }
-
-            long durationMs = durationFrom(fmt, stream);
-            if (durationMs <= 0L || durationMs > MAX_DURATION_MS) {
-                throw new IllegalStateException("video duration exceeds policy");
-            }
-            int rawW = codecCtx.width();
-            int rawH = codecCtx.height();
-            int packets = 0;
-
-            while (av_read_frame(fmt, pkt) >= 0) {
-                if (++packets > MAX_DECODE_PACKETS) {
-                    throw new IllegalStateException("video packet count exceeds policy");
-                }
-                try {
-                    if (pkt.stream_index() != videoIdx) {
-                        continue;
-                    }
-                    if (avcodec_send_packet(codecCtx, pkt) < 0) {
-                        continue;
-                    }
-                    while (avcodec_receive_frame(codecCtx, frame) >= 0) {
-                        if (seek) {
-                            long frameMs = timestampMs(frame.best_effort_timestamp(), stream.time_base());
-                            if (frameMs + 2 < targetMs) {
-                                continue;
-                            }
-                        }
-                        int w = frame.width();
-                        int h = frame.height();
-                        validateDecodedFrameDimensions(w, h);
-                        int[] outputSize = scaledFrameSize(w, h);
-                        int outputWidth = outputSize[0];
-                        int outputHeight = outputSize[1];
-                        sws = sws_getContext(
-                                w, h, frame.format(),
-                                outputWidth, outputHeight, AV_PIX_FMT_RGBA,
-                                SWS_BILINEAR,
-                                null, null, (double[]) null);
-                        if (sws == null) {
-                            throw new IllegalStateException("sws context failed");
-                        }
-                        rgba = av_frame_alloc();
-                        int bufferSize = av_image_get_buffer_size(
-                                AV_PIX_FMT_RGBA, outputWidth, outputHeight, 1);
-                        if (bufferSize <= 0 || bufferSize > MAX_TEXTURE_DIMENSION * MAX_TEXTURE_DIMENSION * 4) {
-                            throw new IllegalStateException("invalid decoded frame buffer size");
-                        }
-                        rgbaBuffer = new BytePointer(av_malloc(bufferSize));
-                        if (rgbaBuffer.isNull()) {
-                            throw new IllegalStateException("decoded frame allocation failed");
-                        }
-                        av_image_fill_arrays(
-                                rgba.data(),
-                                new IntPointer(rgba.linesize()),
-                                rgbaBuffer,
-                                AV_PIX_FMT_RGBA,
-                                outputWidth,
-                                outputHeight,
-                                1);
-                        sws_scale(sws, frame.data(), frame.linesize(), 0, h, rgba.data(), rgba.linesize());
-                        BufferedImage bi = bufferedImageFromRgba(
-                                rgbaBuffer, rgba.linesize(0), outputWidth, outputHeight);
-                        NativeImage out = RasterImageDecoder.fromBufferedImage(bi);
-                        return new DecodedFrame(
-                                out,
-                                rawW > 0 ? rawW : w,
-                                rawH > 0 ? rawH : h,
-                                durationMs);
-                    }
-                } finally {
-                    av_packet_unref(pkt);
-                }
-            }
-            throw new IllegalStateException("no decoded video frame");
-        } finally {
-            if (sws != null) {
-                sws_freeContext(sws);
-            }
-            if (rgbaBuffer != null) {
-                av_free(rgbaBuffer);
-            }
-            if (rgba != null) {
-                av_frame_free(rgba);
-            }
-            if (frame != null) {
-                av_frame_free(frame);
-            }
-            if (pkt != null) {
-                av_packet_free(pkt);
-            }
-            if (codecCtx != null) {
-                avcodec_free_context(codecCtx);
-            }
-            avformat_close_input(fmt);
-        }
     }
 
     private static void validateVideoDimensions(int width, int height) {
@@ -843,10 +1093,8 @@ public final class VideoPlayerService {
     private static final class VideoAudioPlayback {
         private final VideoAudioTrack track;
         private final long startMs;
-        private volatile int volumePercent;
-        private volatile boolean running = true;
-        private Thread worker;
-        private OpenAlPcmPlayer player;
+        private int volumePercent;
+        @Nullable private OpenAlPcmPlayer player;
 
         VideoAudioPlayback(VideoAudioTrack track, long startMs, int volumePercent) {
             this.track = track;
@@ -855,54 +1103,33 @@ public final class VideoPlayerService {
         }
 
         void start() {
-            worker = new Thread(this::run, "chat-upgrade-video-audio");
-            worker.setDaemon(true);
-            worker.start();
+            try {
+                OpenAlPcmPlayer p = new OpenAlPcmPlayer(track.pcmS16Le(), track.sampleRate(), track.channels());
+                p.setVolumePercent(volumePercent);
+                p.playFrom(startMs);
+                player = p;
+            } catch (Exception e) {
+                ChatUpgrade.LOGGER.debug("chat-upgrade: video audio playback failed: {}", e.getMessage());
+            }
         }
 
         void setVolumePercent(int percent) {
-            this.volumePercent = Math.clamp(percent, 1, 100);
-            OpenAlPcmPlayer p = this.player;
-            if (p != null) {
-                p.setVolumePercent(this.volumePercent);
+            volumePercent = Math.clamp(percent, 1, 100);
+            if (player != null) {
+                player.setVolumePercent(volumePercent);
             }
         }
 
         void stop() {
-            running = false;
-            try {
-                OpenAlPcmPlayer p = this.player;
-                if (p != null) {
-                    p.stop();
-                    p.close();
-                }
-            } catch (Exception ignored) {
+            if (player == null) {
+                return;
             }
-        }
-
-        private void run() {
             try {
-                OpenAlPcmPlayer p = new OpenAlPcmPlayer(track.pcmS16Le(), track.sampleRate(), track.channels());
-                this.player = p;
-                p.setVolumePercent(volumePercent);
-                p.playFrom(startMs);
-                long dur = p.durationMs();
-                while (running) {
-                    if (!p.isPlaying()) {
-                        break;
-                    }
-                    if (dur > 0L && p.positionMs() >= dur) {
-                        break;
-                    }
-                    try {
-                        Thread.sleep(20L);
-                    } catch (InterruptedException ignored) {
-                    }
-                }
-                p.stop();
-                p.close();
-            } catch (Exception e) {
-                ChatUpgrade.LOGGER.debug("chat-upgrade: video audio playback failed: {}", e.getMessage());
+                player.stop();
+                player.close();
+            } catch (Exception ignored) {
+            } finally {
+                player = null;
             }
         }
     }
@@ -928,19 +1155,43 @@ public final class VideoPlayerService {
         return Math.max(0L, (long) (pts * av_q2d(tb) * 1000.0));
     }
 
-    private static BufferedImage bufferedImageFromRgba(BytePointer src, int stride, int w, int h) {
-        BufferedImage bi = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < h; y++) {
-            int row = y * stride;
-            for (int x = 0; x < w; x++) {
-                int i = row + x * 4;
-                int r = src.get(i) & 0xFF;
-                int g = src.get(i + 1) & 0xFF;
-                int b = src.get(i + 2) & 0xFF;
-                int a = src.get(i + 3) & 0xFF;
-                bi.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
-            }
+    private static byte[] copyRgbaRows(
+            BytePointer source, byte[] sourceBytes, int sourceStride, int width, int height) {
+        source.position(0).get(sourceBytes, 0, sourceBytes.length);
+        return compactRgbaRows(sourceBytes, sourceStride, width, height);
+    }
+
+    static byte[] compactRgbaRows(byte[] source, int sourceStride, int width, int height) {
+        int rowBytes = rgbaByteSize(width, 1);
+        if (sourceStride < rowBytes || source.length < (long) sourceStride * height) {
+            throw new IllegalArgumentException("invalid video RGBA row stride");
         }
-        return bi;
+        byte[] compact = new byte[rgbaByteSize(width, height)];
+        for (int y = 0; y < height; y++) {
+            System.arraycopy(source, y * sourceStride, compact, y * rowBytes, rowBytes);
+        }
+        return compact;
+    }
+
+    static int rgbaByteSize(int width, int height) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("invalid video frame dimensions");
+        }
+        try {
+            return Math.multiplyExact(Math.multiplyExact(width, height), 4);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("video RGBA frame is too large", e);
+        }
+    }
+
+    private static void copyRgbaToNativeImage(byte[] rgbaPixels, NativeImage image, ByteBuffer uploadBuffer) {
+        int byteSize = rgbaByteSize(image.getWidth(), image.getHeight());
+        if (rgbaPixels.length != byteSize || uploadBuffer.capacity() != byteSize) {
+            throw new IllegalArgumentException("video frame dimensions changed");
+        }
+        uploadBuffer.clear();
+        uploadBuffer.put(rgbaPixels);
+        uploadBuffer.flip();
+        MemoryUtil.memCopy(MemoryUtil.memAddress(uploadBuffer), image.getPointer(), byteSize);
     }
 }

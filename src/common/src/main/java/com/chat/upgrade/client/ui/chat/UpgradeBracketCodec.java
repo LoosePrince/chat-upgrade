@@ -19,6 +19,7 @@ import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
@@ -389,9 +390,15 @@ public final class UpgradeBracketCodec {
                             : I18n.get("chatupgrade.detail.phase.download"));
                     case LOADED -> I18n.get("chatupgrade.detail.loaded");
                     case FAILED -> {
-                        ImageEntry.FailureKind fk = e.getFailureKind();
+                        MediaFailureKind fk = e.getFailureKind();
                         yield switch (fk) {
                             case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
+                            case INVALID_FILE -> I18n.get("chatupgrade.detail.failed.invalid");
+                            case EXPIRED_FILE -> I18n.get("chatupgrade.detail.failed.expired");
+                            case MISSING_FILE -> I18n.get("chatupgrade.detail.failed.missing");
+                            case UNAVAILABLE_FILE -> I18n.get("chatupgrade.detail.failed.unavailable");
+                            case NETWORK_ERROR -> I18n.get("chatupgrade.detail.failed.network_error");
+                            case DECODER_UNAVAILABLE, UNSUPPORTED_FORMAT -> I18n.get("chatupgrade.detail.failed.unknown");
                             case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
                     }
@@ -429,10 +436,15 @@ public final class UpgradeBracketCodec {
                     case LOADED -> AudioPlayerService.isPlaying(url) ? I18n.get("chatupgrade.detail.playing")
                             : I18n.get("chatupgrade.detail.loaded_paused");
                     case FAILED -> {
-                        AudioEntry.FailureKind fk = e.getFailureKind();
+                        MediaFailureKind fk = e.getFailureKind();
                         yield switch (fk) {
                             case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
-                            case UNSUPPORTED_AUDIO_FORMAT -> I18n.get("chatupgrade.detail.failed.audio_unsupported");
+                            case INVALID_FILE -> I18n.get("chatupgrade.detail.failed.invalid");
+                            case EXPIRED_FILE -> I18n.get("chatupgrade.detail.failed.expired");
+                            case MISSING_FILE -> I18n.get("chatupgrade.detail.failed.missing");
+                            case UNAVAILABLE_FILE -> I18n.get("chatupgrade.detail.failed.unavailable");
+                            case NETWORK_ERROR -> I18n.get("chatupgrade.detail.failed.network_error");
+                            case DECODER_UNAVAILABLE, UNSUPPORTED_FORMAT -> I18n.get("chatupgrade.detail.failed.audio_unsupported");
                             case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
                     }
@@ -458,15 +470,16 @@ public final class UpgradeBracketCodec {
                     case LOADED -> VideoPlayerService.isPlaying(url) ? I18n.get("chatupgrade.detail.playing")
                             : I18n.get("chatupgrade.detail.loaded_paused");
                     case FAILED -> {
-                        VideoEntry.FailureKind fk = e.getFailureKind();
+                        MediaFailureKind fk = e.getFailureKind();
                         yield switch (fk) {
                             case RESPONSE_BODY_TOO_LARGE -> I18n.get("chatupgrade.detail.failed.too_large");
                             case INVALID_FILE -> I18n.get("chatupgrade.detail.failed.invalid");
                             case EXPIRED_FILE -> I18n.get("chatupgrade.detail.failed.expired");
                             case MISSING_FILE -> I18n.get("chatupgrade.detail.failed.missing");
                             case UNAVAILABLE_FILE -> I18n.get("chatupgrade.detail.failed.unavailable");
+                            case NETWORK_ERROR -> I18n.get("chatupgrade.detail.failed.network_error");
                             case DECODER_UNAVAILABLE -> I18n.get("chatupgrade.detail.failed.decoder_unavailable");
-                            case UNSUPPORTED_VIDEO_FORMAT -> I18n.get("chatupgrade.detail.failed.video_unsupported");
+                            case UNSUPPORTED_FORMAT -> I18n.get("chatupgrade.detail.failed.video_unsupported");
                             case UNKNOWN -> I18n.get("chatupgrade.detail.failed.unknown");
                         };
                     }
@@ -529,15 +542,16 @@ public final class UpgradeBracketCodec {
 
     public static @Nullable FormattedCharSequence replaceVisibleVideoPlaceholderWithFailure(
             FormattedCharSequence seq,
-            VideoEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         String key = switch (failureKind) {
             case RESPONSE_BODY_TOO_LARGE -> "chatupgrade.visible.video.oversize";
             case INVALID_FILE -> "chatupgrade.visible.video.invalid";
             case EXPIRED_FILE -> "chatupgrade.visible.video.expired";
             case MISSING_FILE -> "chatupgrade.visible.video.missing";
             case UNAVAILABLE_FILE -> "chatupgrade.visible.video.unavailable";
+            case NETWORK_ERROR -> "chatupgrade.visible.video.network_error";
             case DECODER_UNAVAILABLE -> "chatupgrade.visible.video.decoder_unavailable";
-            case UNSUPPORTED_VIDEO_FORMAT -> "chatupgrade.visible.video.unsupported";
+            case UNSUPPORTED_FORMAT -> "chatupgrade.visible.video.unsupported";
             case UNKNOWN -> "chatupgrade.visible.video.load_failed";
         };
         return replaceVisiblePlaceholderWithVisibleText(seq, I18n.get(key));

@@ -15,6 +15,7 @@ import com.chat.upgrade.client.media.audio.AudioEntry;
 import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
@@ -182,7 +183,7 @@ public final class UpgradePhantomHudLayout {
     }
 
     private static void handleFailed(String url, List<GuiMessage.Line> trimmedMessages,
-            ImageEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         Set<GuiMessage> parents = new HashSet<>();
         Set<GuiMessage> registered = parentMap(InlineResourceType.IMAGE).remove(url);
         if (registered != null) {
@@ -203,7 +204,7 @@ public final class UpgradePhantomHudLayout {
     }
 
     private static void handleFailedAudio(String url, List<GuiMessage.Line> trimmedMessages,
-            AudioEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         Set<GuiMessage> parents = new HashSet<>();
         Set<GuiMessage> registered = parentMap(InlineResourceType.AUDIO).remove(url);
         if (registered != null) {
@@ -225,7 +226,7 @@ public final class UpgradePhantomHudLayout {
     }
 
     private static void handleFailedVideo(String url, List<GuiMessage.Line> trimmedMessages,
-            VideoEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         Set<GuiMessage> parents = new HashSet<>();
         Set<GuiMessage> registered = parentMap(InlineResourceType.VIDEO).remove(url);
         if (registered != null) {
@@ -335,7 +336,7 @@ public final class UpgradePhantomHudLayout {
     }
 
     private static void applyImageFailureOnTextLines(List<GuiMessage.Line> trim, GuiMessage parent,
-            ImageEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         for (int j = 0; j < trim.size(); j++) {
             GuiMessage.Line line = trim.get(j);
             if (!line.parent().equals(parent)) {
@@ -348,7 +349,7 @@ public final class UpgradePhantomHudLayout {
             FormattedCharSequence updated = switch (failureKind) {
                 case RESPONSE_BODY_TOO_LARGE ->
                     UpgradeBracketCodec.replaceVisiblePlaceholderWithOversize(readable.chatupgrade$content());
-                case UNKNOWN ->
+                default ->
                     UpgradeBracketCodec.replaceVisiblePlaceholderWithLoadFailed(readable.chatupgrade$content());
             };
             if (updated != null) {
@@ -358,7 +359,7 @@ public final class UpgradePhantomHudLayout {
     }
 
     private static void applyAudioFailureOnTextLines(List<GuiMessage.Line> trim, GuiMessage parent,
-            AudioEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         for (int j = 0; j < trim.size(); j++) {
             GuiMessage.Line line = trim.get(j);
             if (!line.parent().equals(parent)) {
@@ -371,7 +372,7 @@ public final class UpgradePhantomHudLayout {
             FormattedCharSequence updated = switch (failureKind) {
                 case RESPONSE_BODY_TOO_LARGE ->
                     UpgradeBracketCodec.replaceVisibleAudioPlaceholderWithOversize(readable.chatupgrade$content());
-                case UNKNOWN, UNSUPPORTED_AUDIO_FORMAT ->
+                default ->
                     UpgradeBracketCodec.replaceVisibleAudioPlaceholderWithLoadFailed(readable.chatupgrade$content());
             };
             if (updated != null) {
@@ -381,7 +382,7 @@ public final class UpgradePhantomHudLayout {
     }
 
     private static void applyVideoFailureOnTextLines(List<GuiMessage.Line> trim, GuiMessage parent,
-            VideoEntry.FailureKind failureKind) {
+            MediaFailureKind failureKind) {
         for (int j = 0; j < trim.size(); j++) {
             GuiMessage.Line line = trim.get(j);
             if (!line.parent().equals(parent)) {

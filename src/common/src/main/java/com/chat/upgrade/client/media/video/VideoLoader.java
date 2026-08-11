@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.chat.upgrade.ChatUpgrade;
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.MediaFetchSupport;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 import com.chat.upgrade.client.net.servermedia.ServerMediaClient;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
@@ -50,7 +51,7 @@ public final class VideoLoader {
         int maxReceive = ChatUpgradeConfig.get().maxReceiveBytes;
         if (body.length > maxReceive) {
             ChatUpgrade.LOGGER.warn("chat-upgrade: video bytes exceed limit ({}) for {}", maxReceive, url);
-            markFailed(url, entry, VideoEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+            markFailed(url, entry, MediaFailureKind.RESPONSE_BODY_TOO_LARGE);
             return;
         }
         entry.setTransferMetadata(body.length, contentType == null ? "unknown" : contentType, md5Hex);
@@ -58,7 +59,7 @@ public final class VideoLoader {
         CompletableFuture.runAsync(() -> {
             if (!FfmpegNativeBootstrap.ensureReady()) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: video runtime not ready for {}, FFmpeg natives unavailable", url);
-                markFailed(url, entry, VideoEntry.FailureKind.DECODER_UNAVAILABLE);
+                markFailed(url, entry, MediaFailureKind.DECODER_UNAVAILABLE);
                 return;
             }
             VideoPlayerService.Prepared meta;
@@ -79,7 +80,7 @@ public final class VideoLoader {
         return CACHE.get(url);
     }
 
-    public static void failServerMediaRequest(String url, VideoEntry.FailureKind failureKind) {
+    public static void failServerMediaRequest(String url, MediaFailureKind failureKind) {
         VideoEntry entry = CACHE.get(url);
         if (entry != null) {
             markFailed(url, entry, failureKind);
@@ -102,7 +103,7 @@ public final class VideoLoader {
     private static void startLoad(String url, VideoEntry entry) {
         if (ServerMediaClient.isServerMediaUrl(url)) {
             if (!ServerMediaClient.capability().enabled()) {
-                markFailed(url, entry, VideoEntry.FailureKind.UNKNOWN);
+                markFailed(url, entry, MediaFailureKind.UNKNOWN);
                 return;
             }
             ServerMediaClient.requestIfNeeded(url);
@@ -113,7 +114,7 @@ public final class VideoLoader {
                 .thenAccept(payload -> {
             if (payload == null) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: video fetch failed url={}", url);
-                markFailed(url, entry, VideoEntry.FailureKind.UNKNOWN);
+                markFailed(url, entry, MediaFailureKind.UNKNOWN);
                 return;
             }
             long declaredLength = payload.declaredLength();
@@ -128,7 +129,7 @@ public final class VideoLoader {
                 if (!FfmpegNativeBootstrap.ensureReady()) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: video runtime not ready for {}, FFmpeg natives unavailable",
                             url);
-                    markFailed(url, entry, VideoEntry.FailureKind.DECODER_UNAVAILABLE);
+                    markFailed(url, entry, MediaFailureKind.DECODER_UNAVAILABLE);
                     return;
                 }
                 byte[] body = payload.body();
@@ -139,7 +140,7 @@ public final class VideoLoader {
                     meta = VideoPlayerService.prepare(url, body);
                 } catch (Exception ex) {
                     ChatUpgrade.LOGGER.warn("chat-upgrade: unsupported video {}: {}", url, ex.getMessage());
-                    markFailed(url, entry, VideoEntry.FailureKind.DECODER_UNAVAILABLE);
+                    markFailed(url, entry, MediaFailureKind.DECODER_UNAVAILABLE);
                     return;
                 }
                 PreviewLayout layout = computePreviewLayout(meta.rawWidth(), meta.rawHeight());
@@ -148,25 +149,25 @@ public final class VideoLoader {
                 notifyChanged(url);
             } catch (Exception e) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: failed to decode video {}: {}", url, e.getMessage());
-                markFailed(url, entry, VideoEntry.FailureKind.UNKNOWN);
+                markFailed(url, entry, MediaFailureKind.UNKNOWN);
             }
         }).exceptionally(e -> {
             if (hasCause(e, MediaFetchSupport.ResponseBodyTooLarge.class)) {
                 ChatUpgrade.LOGGER.warn("chat-upgrade: video body exceeds limit ({}) for {}", maxReceive, url);
-                markFailed(url, entry, VideoEntry.FailureKind.RESPONSE_BODY_TOO_LARGE);
+                markFailed(url, entry, MediaFailureKind.RESPONSE_BODY_TOO_LARGE);
                 return null;
             }
             ChatUpgrade.LOGGER.warn("chat-upgrade: video load pipeline failed {}: {}", url, rootCauseMessage(e));
-            markFailed(url, entry, VideoEntry.FailureKind.UNKNOWN);
+            markFailed(url, entry, MediaFailureKind.UNKNOWN);
             return null;
         });
     }
 
-    private static VideoEntry.FailureKind decodeFailure(Exception failure) {
+    private static MediaFailureKind decodeFailure(Exception failure) {
         String message = rootCauseMessage(failure).toLowerCase(java.util.Locale.ROOT);
         return message.contains("no decoder") || message.contains("unsupported")
-                ? VideoEntry.FailureKind.UNSUPPORTED_VIDEO_FORMAT
-                : VideoEntry.FailureKind.INVALID_FILE;
+                ? MediaFailureKind.UNSUPPORTED_FORMAT
+                : MediaFailureKind.INVALID_FILE;
     }
 
     private static boolean hasCause(Throwable failure, Class<? extends Throwable> type) {
@@ -193,7 +194,7 @@ public final class VideoLoader {
         return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
     }
 
-    private static void markFailed(String url, VideoEntry entry, VideoEntry.FailureKind kind) {
+    private static void markFailed(String url, VideoEntry entry, MediaFailureKind kind) {
         entry.setFailed(kind);
         VideoPlayerService.remove(url);
         notifyChanged(url);

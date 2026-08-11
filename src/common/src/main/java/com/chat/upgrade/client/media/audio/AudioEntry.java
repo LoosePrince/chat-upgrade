@@ -1,16 +1,11 @@
 package com.chat.upgrade.client.media.audio;
 
 import com.chat.upgrade.client.media.model.BaseMediaEntry;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 
-public final class AudioEntry extends BaseMediaEntry<AudioEntry.State, AudioEntry.FailureKind, AudioEntry.LoadPhase> {
+public final class AudioEntry extends BaseMediaEntry<AudioEntry.State, MediaFailureKind, AudioEntry.LoadPhase> {
     public enum State {
         LOADING, LOADED, FAILED
-    }
-
-    public enum FailureKind {
-        UNKNOWN,
-        RESPONSE_BODY_TOO_LARGE,
-        UNSUPPORTED_AUDIO_FORMAT
     }
 
     public enum LoadPhase {
@@ -20,7 +15,7 @@ public final class AudioEntry extends BaseMediaEntry<AudioEntry.State, AudioEntr
     private volatile long durationMs = 0L;
 
     public AudioEntry() {
-        super(State.LOADING, FailureKind.UNKNOWN, LoadPhase.FETCH);
+        super(State.LOADING, MediaFailureKind.UNKNOWN, LoadPhase.FETCH);
     }
 
     public void setLoaded(long durationMs) {
@@ -28,8 +23,8 @@ public final class AudioEntry extends BaseMediaEntry<AudioEntry.State, AudioEntr
         setState(State.LOADED);
     }
 
-    public void setFailed(FailureKind kind) {
-        setFailureKind(kind != null ? kind : FailureKind.UNKNOWN);
+    public void setFailed(MediaFailureKind kind) {
+        setFailureKind(kind != null ? kind : MediaFailureKind.UNKNOWN);
         setState(State.FAILED);
     }
 

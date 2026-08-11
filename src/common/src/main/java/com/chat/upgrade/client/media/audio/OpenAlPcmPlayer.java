@@ -3,6 +3,7 @@ import java.nio.ByteBuffer;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.openal.AL10;
+import org.lwjgl.openal.AL11;
 
 /**
  * Minimal OpenAL-based PCM player for S16LE mono/stereo buffers.
@@ -51,6 +52,7 @@ public final class OpenAlPcmPlayer implements AutoCloseable {
         float sec = Math.max(0.0f, Math.min(durationMs / 1000.0f, startMs / 1000.0f));
         this.lastStartMs = (long) (sec * 1000.0f);
         AL10.alSourceStop(sourceId);
+        AL10.alSourcef(sourceId, AL11.AL_SEC_OFFSET, sec);
         AL10.alSourcePlay(sourceId);
         requireNoOpenAlError("start audio source");
         this.playing = true;
@@ -67,14 +69,7 @@ public final class OpenAlPcmPlayer implements AutoCloseable {
     }
 
     public void seekTo(long targetMs) {
-        float sec = Math.max(0.0f, Math.min(durationMs / 1000.0f, targetMs / 1000.0f));
-        boolean wasPlaying = isPlaying();
-        AL10.alSourceStop(sourceId);
-        this.lastStartMs = (long) (sec * 1000.0f);
-        if (wasPlaying) {
-            AL10.alSourcePlay(sourceId);
-            this.playing = true;
-        }
+        playFrom(targetMs);
     }
 
     public boolean isPlaying() {
@@ -86,9 +81,7 @@ public final class OpenAlPcmPlayer implements AutoCloseable {
         if (!playing) {
             return lastStartMs;
         }
-        // We don't have AL_SEC_OFFSET; approximate using source state is limited.
-        // For preview/progress UI we can fall back to start offset.
-        return lastStartMs;
+        return Math.max(0L, Math.min(durationMs, (long) (AL10.alGetSourcef(sourceId, AL11.AL_SEC_OFFSET) * 1000.0f)));
     }
 
     public void setLooping(boolean loop) {

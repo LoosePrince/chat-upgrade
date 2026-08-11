@@ -1,21 +1,11 @@
 package com.chat.upgrade.client.media.video;
 
 import com.chat.upgrade.client.media.model.BaseMediaEntry;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 
-public final class VideoEntry extends BaseMediaEntry<VideoEntry.State, VideoEntry.FailureKind, VideoEntry.LoadPhase> {
+public final class VideoEntry extends BaseMediaEntry<VideoEntry.State, MediaFailureKind, VideoEntry.LoadPhase> {
     public enum State {
         LOADING, LOADED, FAILED
-    }
-
-    public enum FailureKind {
-        UNKNOWN,
-        RESPONSE_BODY_TOO_LARGE,
-        INVALID_FILE,
-        EXPIRED_FILE,
-        MISSING_FILE,
-        UNAVAILABLE_FILE,
-        DECODER_UNAVAILABLE,
-        UNSUPPORTED_VIDEO_FORMAT
     }
 
     public enum LoadPhase {
@@ -29,7 +19,7 @@ public final class VideoEntry extends BaseMediaEntry<VideoEntry.State, VideoEntr
     private volatile int displayHeight = 0;
 
     public VideoEntry() {
-        super(State.LOADING, FailureKind.UNKNOWN, LoadPhase.FETCH);
+        super(State.LOADING, MediaFailureKind.UNKNOWN, LoadPhase.FETCH);
     }
 
     public void setLoaded(long durationMs, int rawWidth, int rawHeight, int displayWidth, int displayHeight) {
@@ -41,8 +31,8 @@ public final class VideoEntry extends BaseMediaEntry<VideoEntry.State, VideoEntr
         setState(State.LOADED);
     }
 
-    public void setFailed(FailureKind kind) {
-        setFailureKind(kind != null ? kind : FailureKind.UNKNOWN);
+    public void setFailed(MediaFailureKind kind) {
+        setFailureKind(kind != null ? kind : MediaFailureKind.UNKNOWN);
         setState(State.FAILED);
     }
 

@@ -7,6 +7,7 @@ import com.chat.upgrade.client.media.audio.AudioLoader;
 import com.chat.upgrade.client.media.audio.AudioPlayerService;
 import com.chat.upgrade.client.media.image.ImageEntry;
 import com.chat.upgrade.client.media.image.ImageLoader;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoEntry;
@@ -243,15 +244,16 @@ public final class UpgradeHudInlinePaint {
         }
     }
 
-    private static String videoFailureLabel(VideoEntry.FailureKind failureKind) {
+    private static String videoFailureLabel(MediaFailureKind failureKind) {
         return I18n.get(switch (failureKind) {
             case RESPONSE_BODY_TOO_LARGE -> "chatupgrade.hud.video.failed.too_large";
             case INVALID_FILE -> "chatupgrade.hud.video.failed.invalid";
             case EXPIRED_FILE -> "chatupgrade.hud.video.failed.expired";
             case MISSING_FILE -> "chatupgrade.hud.video.failed.missing";
             case UNAVAILABLE_FILE -> "chatupgrade.hud.video.failed.unavailable";
+            case NETWORK_ERROR -> "chatupgrade.hud.video.failed.network_error";
             case DECODER_UNAVAILABLE -> "chatupgrade.hud.video.failed.decoder_unavailable";
-            case UNSUPPORTED_VIDEO_FORMAT -> "chatupgrade.hud.video.failed.unsupported";
+            case UNSUPPORTED_FORMAT -> "chatupgrade.hud.video.failed.unsupported";
             case UNKNOWN -> "chatupgrade.hud.video.failed";
         });
     }

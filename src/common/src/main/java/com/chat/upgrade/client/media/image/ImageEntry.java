@@ -6,19 +6,13 @@ import org.jetbrains.annotations.Nullable;
 
 import com.chat.upgrade.client.ChatUpgradeConfig;
 import com.chat.upgrade.client.media.model.BaseMediaEntry;
+import com.chat.upgrade.client.media.model.MediaFailureKind;
 
 import net.minecraft.resources.Identifier;
 
-public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntry.FailureKind, ImageEntry.LoadPhase> {
+public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, MediaFailureKind, ImageEntry.LoadPhase> {
     public enum State {
         LOADING, LOADED, FAILED
-    }
-
-    /** Why {@link State#FAILED} was set (for chat line replacement text). */
-    public enum FailureKind {
-        UNKNOWN,
-        /** HTTP body exceeded {@link ChatUpgradeConfig#maxReceiveBytes}. */
-        RESPONSE_BODY_TOO_LARGE
     }
 
     /** Sub-state while {@link State#LOADING}; only for UI hints. */
@@ -58,7 +52,7 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
     private volatile @Nullable String decodedFormatName;
 
     public ImageEntry() {
-        super(State.LOADING, FailureKind.UNKNOWN, LoadPhase.FETCH);
+        super(State.LOADING, MediaFailureKind.UNKNOWN, LoadPhase.FETCH);
     }
 
     public void setDecodedFormatName(@Nullable String decodedFormatName) {
@@ -186,8 +180,8 @@ public final class ImageEntry extends BaseMediaEntry<ImageEntry.State, ImageEntr
         }
     }
 
-    public void setFailed(FailureKind kind) {
-        setFailureKind(kind != null ? kind : FailureKind.UNKNOWN);
+    public void setFailed(MediaFailureKind kind) {
+        setFailureKind(kind != null ? kind : MediaFailureKind.UNKNOWN);
         setState(State.FAILED);
     }
 
