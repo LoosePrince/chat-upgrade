@@ -98,6 +98,20 @@ public final class ServerMediaNetworking {
         restoreClientHistory();
     }
 
+    public static boolean isSessionOpen() {
+        return SESSION_OPEN.get();
+    }
+
+    public static void clearClientChatHistory() {
+        clearHistoryRecovery();
+        String sessionKey = historySessionKey;
+        if (sessionKey.isBlank()) {
+            sessionKey = ChatHistorySession.resolve(Minecraft.getInstance());
+        }
+        ChatHistoryStore.clear(sessionKey);
+        historyAfterTimestampMs = System.currentTimeMillis();
+    }
+
     public static void onClientTick() {
         long nowMs = System.currentTimeMillis();
         cleanupExpiredIncoming(nowMs);

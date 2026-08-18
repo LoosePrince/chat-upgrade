@@ -86,7 +86,7 @@ public final class ChatUpgradeConfig {
         public int panelBackgroundOpacityPercent;
         public boolean panelBorderEnabled;
         public int panelBorderWidth = 1;
-        public int panelBorderColor = 0x526176;
+        public int panelBorderColor = 0x808080;
 
         public boolean vanillaStyleInput = true;
         public boolean animationsEnabled;
@@ -98,10 +98,10 @@ public final class ChatUpgradeConfig {
         public int messageBackgroundOpacityPercent = 100;
         public boolean messageBubbles;
         public int bubblePadding = 3;
-        public int bubbleColor = 0x2B3547;
+        public int bubbleColor = 0x404040;
         public boolean bubbleBorderEnabled = true;
         public int bubbleBorderWidth = 1;
-        public int bubbleBorderColor = 0x5D7598;
+        public int bubbleBorderColor = 0x808080;
 
         public boolean splitOwnMessages;
         public NonPlayerAlignment nonPlayerAlignment = NonPlayerAlignment.LEFT;
@@ -110,11 +110,58 @@ public final class ChatUpgradeConfig {
         public int groupGap;
 
         public int contextMenuScalePercent = 100;
-        public int contextMenuBackgroundColor = 0x12141A;
+        public int contextMenuBackgroundColor = 0x202020;
         public boolean contextMenuBorderEnabled = true;
         public int contextMenuBorderWidth = 1;
-        public int contextMenuBorderColor = 0x526176;
+        public int contextMenuBorderColor = 0x808080;
         public int contextMenuCornerRadius = 4;
+
+        public int surfaceSeparatorColor = 0x606060;
+        public int surfaceTitleColor = 0xF2F2F2;
+        public int surfaceMutedColor = 0xB8B8B8;
+        public int surfaceRestrictedColor = 0xF0C070;
+        public int surfaceRestrictedHudBackgroundColor = 0x302820;
+        public int surfaceRestrictedHudBorderColor = 0x8A8060;
+        public int surfaceResizeGripColor = 0x909090;
+
+        public int messageSystemBackgroundColor = 0x303030;
+        public int messageSystemBorderColor = 0x707070;
+        public int messageAnnouncementBackgroundColor = 0x454545;
+        public int messageAnnouncementBorderColor = 0x9A8A60;
+        public int messageErrorBackgroundColor = 0x452F2F;
+        public int messageErrorBorderColor = 0xB06060;
+        public int messageReplyBackgroundColor = 0x3A3A3A;
+        public int messageReplyBorderColor = 0x888888;
+        public int messageDeletedBackgroundColor = 0x303030;
+        public int messageDeletedBorderColor = 0x707070;
+        public int messageTextColor = 0xF2F2F2;
+        public int messageSystemTextColor = 0xD7D7D7;
+        public int messageReplyTextColor = 0xE0E0E0;
+        public int messageDeletedTextColor = 0xA3A3A3;
+
+        public int identityNameColor = 0xDDDDDD;
+        public int identityAvatarBorderColor = 0xFFFFFF;
+
+        public int mediaCardBackgroundColor = 0x303030;
+        public int mediaCardBorderColor = 0x808080;
+        public int mediaBackgroundColor = 0x181818;
+        public int mediaLoadingBackgroundColor = 0x303030;
+        public int mediaPendingBackgroundColor = 0x252525;
+        public int mediaFailureBackgroundColor = 0x452F2F;
+        public int mediaTextColor = 0xDCDCDC;
+        public int mediaMutedColor = 0xBDBDBD;
+        public int mediaFailureTextColor = 0xF08080;
+        public int mediaControlBackgroundColor = 0x444444;
+        public int mediaControlHoverBackgroundColor = 0x666666;
+        public int mediaControlActiveBackgroundColor = 0x888888;
+        public int mediaProgressTrackColor = 0x606060;
+        public int mediaProgressFillColor = 0xA0A0A0;
+        public int mediaScrimColor = 0x000000;
+        public int mediaEmojiLoadingBackgroundColor = 0x303030;
+
+        public int scrollbarThumbColor = 0x808080;
+        public int scrollbarTrackColor = 0x484848;
+        public int scrollbarNewMessageThumbColor = 0xB0B0B0;
 
         public AppearanceConfig copy() {
             return GSON.fromJson(GSON.toJson(this), AppearanceConfig.class);
@@ -363,6 +410,53 @@ public final class ChatUpgradeConfig {
         value.contextMenuBackgroundColor = rgb(value.contextMenuBackgroundColor);
         value.contextMenuBorderWidth = Math.clamp(value.contextMenuBorderWidth, 1, 4);
         value.contextMenuBorderColor = rgb(value.contextMenuBorderColor);
+
+        value.surfaceSeparatorColor = rgb(value.surfaceSeparatorColor);
+        value.surfaceTitleColor = rgb(value.surfaceTitleColor);
+        value.surfaceMutedColor = rgb(value.surfaceMutedColor);
+        value.surfaceRestrictedColor = rgb(value.surfaceRestrictedColor);
+        value.surfaceRestrictedHudBackgroundColor = rgb(value.surfaceRestrictedHudBackgroundColor);
+        value.surfaceRestrictedHudBorderColor = rgb(value.surfaceRestrictedHudBorderColor);
+        value.surfaceResizeGripColor = rgb(value.surfaceResizeGripColor);
+
+        value.messageSystemBackgroundColor = rgb(value.messageSystemBackgroundColor);
+        value.messageSystemBorderColor = rgb(value.messageSystemBorderColor);
+        value.messageAnnouncementBackgroundColor = rgb(value.messageAnnouncementBackgroundColor);
+        value.messageAnnouncementBorderColor = rgb(value.messageAnnouncementBorderColor);
+        value.messageErrorBackgroundColor = rgb(value.messageErrorBackgroundColor);
+        value.messageErrorBorderColor = rgb(value.messageErrorBorderColor);
+        value.messageReplyBackgroundColor = rgb(value.messageReplyBackgroundColor);
+        value.messageReplyBorderColor = rgb(value.messageReplyBorderColor);
+        value.messageDeletedBackgroundColor = rgb(value.messageDeletedBackgroundColor);
+        value.messageDeletedBorderColor = rgb(value.messageDeletedBorderColor);
+        value.messageTextColor = rgb(value.messageTextColor);
+        value.messageSystemTextColor = rgb(value.messageSystemTextColor);
+        value.messageReplyTextColor = rgb(value.messageReplyTextColor);
+        value.messageDeletedTextColor = rgb(value.messageDeletedTextColor);
+
+        value.identityNameColor = rgb(value.identityNameColor);
+        value.identityAvatarBorderColor = rgb(value.identityAvatarBorderColor);
+
+        value.mediaCardBackgroundColor = rgb(value.mediaCardBackgroundColor);
+        value.mediaCardBorderColor = rgb(value.mediaCardBorderColor);
+        value.mediaBackgroundColor = rgb(value.mediaBackgroundColor);
+        value.mediaLoadingBackgroundColor = rgb(value.mediaLoadingBackgroundColor);
+        value.mediaPendingBackgroundColor = rgb(value.mediaPendingBackgroundColor);
+        value.mediaFailureBackgroundColor = rgb(value.mediaFailureBackgroundColor);
+        value.mediaTextColor = rgb(value.mediaTextColor);
+        value.mediaMutedColor = rgb(value.mediaMutedColor);
+        value.mediaFailureTextColor = rgb(value.mediaFailureTextColor);
+        value.mediaControlBackgroundColor = rgb(value.mediaControlBackgroundColor);
+        value.mediaControlHoverBackgroundColor = rgb(value.mediaControlHoverBackgroundColor);
+        value.mediaControlActiveBackgroundColor = rgb(value.mediaControlActiveBackgroundColor);
+        value.mediaProgressTrackColor = rgb(value.mediaProgressTrackColor);
+        value.mediaProgressFillColor = rgb(value.mediaProgressFillColor);
+        value.mediaScrimColor = rgb(value.mediaScrimColor);
+        value.mediaEmojiLoadingBackgroundColor = rgb(value.mediaEmojiLoadingBackgroundColor);
+
+        value.scrollbarThumbColor = rgb(value.scrollbarThumbColor);
+        value.scrollbarTrackColor = rgb(value.scrollbarTrackColor);
+        value.scrollbarNewMessageThumbColor = rgb(value.scrollbarNewMessageThumbColor);
         value.contextMenuCornerRadius = Math.clamp(value.contextMenuCornerRadius, 0, 12);
     }
 

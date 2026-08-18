@@ -11,22 +11,12 @@ import com.chat.upgrade.client.net.servermedia.ServerMediaNetworking;
 import com.chat.upgrade.client.plugin.ExternalImageIoPluginLoader;
 import com.chat.upgrade.client.plugin.FfmpegNativeBootstrap;
 import com.chat.upgrade.client.ui.chat.AudioFloatingWindow;
-import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
+import com.chat.upgrade.client.ui.chat.ChatMessageClearService;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCoordinator;
-import com.chat.upgrade.client.ui.chat.UpgradePhantomCoordinator;
 import com.chat.upgrade.client.ui.chat.interaction.ChatGestureArena;
 import com.chat.upgrade.client.ui.chat.interaction.ChatMessageVisibilityStore;
-import com.chat.upgrade.client.ui.chat.notification.MentionNotificationService;
-import com.chat.upgrade.client.ui.chat.state.ChatMessageGroupStore;
-import com.chat.upgrade.client.ui.chat.state.ChatPrivateMessageResolver;
-import com.chat.upgrade.client.ui.chat.state.RichChatIngress;
-import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
-import com.chat.upgrade.client.ui.chat.surface.ChatMessageGroupSidebar;
 import com.chat.upgrade.client.ui.chat.surface.ChatSurfaceController;
 import com.chat.upgrade.client.ui.animation.UiMotion;
-import com.chat.upgrade.client.ui.chat.interaction.ChatTextSelectionState;
-import com.chat.upgrade.client.ui.chat.viewport.RichChatInteractionRouter;
-import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
 
 import net.minecraft.client.Minecraft;
@@ -45,7 +35,6 @@ public final class ChatUpgradeClientBootstrap {
     }
 
     public static void init() {
-        System.setProperty("java.awt.headless", "false");
         ChatUpgradeConfig.load();
         ChatUpgrade.LOGGER.info(
                 "chat-upgrade: loaded config from {} | maxReceive={} maxUpload={} manual(image/audio/video)={}/{}/{} volume(audio/video)={}/{}",
@@ -92,19 +81,8 @@ public final class ChatUpgradeClientBootstrap {
     }
 
     public static void clearAllChatRuntimeState() {
-        RichChatIngress.clear();
-        RichChatProjectionCoordinator.clear();
-        ChatMessageGroupStore.clearSession();
-        ChatMessageGroupSidebar.clearSession();
-        ChatPrivateMessageResolver.clearSession();
-        RichChatInteractionRouter.clear();
+        ChatMessageClearService.clearRuntimeState();
         ChatMessageVisibilityStore.clearSession();
-        ChatTextSelectionState.clear();
-        MentionNotificationService.clear();
-        RichChatViewport.invalidateAll();
-        RichChatViewport.state().clear();
-        ChatUpgradeChatRenderState.cancelWheelOverscroll();
-        UpgradePhantomCoordinator.clear();
         UiMotion.clear();
         ChatSurfaceController.onChatScreenClosed();
         ChatGestureArena.resetPointerState();
@@ -113,7 +91,7 @@ public final class ChatUpgradeClientBootstrap {
     public static void clearAllMediaRuntimeState() {
         AudioLoader.invalidateAudioCache();
         VideoLoader.invalidateVideoCache();
-        ImageLoader.invalidateTextureCache();
+        ImageLoader.clearRuntimeCache();
         UiTextureAtlas.invalidate();
         AudioFloatingWindow.clear();
         ServerMediaClient.clearRuntimeState();

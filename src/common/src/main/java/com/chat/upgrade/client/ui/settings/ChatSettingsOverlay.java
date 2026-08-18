@@ -2,7 +2,9 @@ package com.chat.upgrade.client.ui.settings;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -18,6 +20,7 @@ import com.chat.upgrade.client.ui.chat.viewport.RichChatBounds;
 import com.chat.upgrade.client.ui.render.UiPrimitives;
 import com.chat.upgrade.client.ui.render.UiTextureAtlas;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -48,17 +51,17 @@ public final class ChatSettingsOverlay {
     private static final float TEXT_SCALE = 0.75F;
 
     private static final int DIM = 0xA0000000;
-    private static final int PANEL = 0xF2181D26;
-    private static final int PANEL_BORDER = 0xFF526176;
-    private static final int HEADER = 0xFF202936;
-    private static final int NAV = 0xFF141922;
-    private static final int ROW = 0xA8252E3C;
-    private static final int ROW_HOVER = 0xD0334153;
-    private static final int ACTIVE = 0xFF4C6284;
-    private static final int CONTROL = 0xFF11161D;
-    private static final int TRACK = 0xFF3B4657;
-    private static final int TEXT = 0xFFF2F5FA;
-    private static final int MUTED = 0xFFA9B4C3;
+    private static final int PANEL = 0xF2181818;
+    private static final int PANEL_BORDER = 0xFF808080;
+    private static final int HEADER = 0xFF303030;
+    private static final int NAV = 0xFF202020;
+    private static final int ROW = 0xA0383838;
+    private static final int ROW_HOVER = 0xD0505050;
+    private static final int ACTIVE = 0xFF707070;
+    private static final int CONTROL = 0xFF202020;
+    private static final int TRACK = 0xFF606060;
+    private static final int TEXT = 0xFFF2F2F2;
+    private static final int MUTED = 0xFFB8B8B8;
     private static final int ERROR = 0xFFFF8585;
 
     private boolean open;
@@ -68,6 +71,7 @@ public final class ChatSettingsOverlay {
     private double scrollY;
     private @Nullable ActiveSlider activeSlider;
     private @Nullable EditBox textEditor;
+    private final Map<String, EditBox> colorEditors = new HashMap<>();
     private @Nullable SettingsOption.TextOption visibleTextOption;
     private @Nullable SettingsOption.KeyOption capturingKeyOption;
     private boolean syncingTextEditor;
@@ -88,6 +92,7 @@ public final class ChatSettingsOverlay {
         scrollY = 0.0D;
         activeSlider = null;
         errorMessage = null;
+        colorEditors.clear();
         UiMotion.begin(UiMotion.SETTINGS);
         open = true;
         createTextEditor(font);
@@ -154,6 +159,11 @@ public final class ChatSettingsOverlay {
         if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
             textEditor.keyPressed(event);
         }
+        for (EditBox colorEditor : colorEditors.values()) {
+            if (colorEditor.visible && colorEditor.isFocused()) {
+                colorEditor.keyPressed(event);
+            }
+        }
         return true;
     }
 
@@ -164,6 +174,11 @@ public final class ChatSettingsOverlay {
         if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
             textEditor.charTyped(event);
         }
+        for (EditBox colorEditor : colorEditors.values()) {
+            if (colorEditor.visible && colorEditor.isFocused()) {
+                colorEditor.charTyped(event);
+            }
+        }
         return true;
     }
 
@@ -173,6 +188,11 @@ public final class ChatSettingsOverlay {
         }
         if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
             textEditor.preeditUpdated(event);
+        }
+        for (EditBox colorEditor : colorEditors.values()) {
+            if (colorEditor.visible && colorEditor.isFocused()) {
+                colorEditor.preeditUpdated(event);
+            }
         }
         return true;
     }
@@ -217,6 +237,7 @@ public final class ChatSettingsOverlay {
             return true;
         }
         layoutTextEditor(layout);
+        layoutColorEditors(layout);
         if (textEditor != null && textEditor.visible) {
             if (textEditor.isMouseOver(event.x(), event.y())) {
                 textEditor.setFocused(true);
@@ -228,6 +249,30 @@ public final class ChatSettingsOverlay {
         for (OptionRow row : optionRows(layout)) {
             if (!row.bounds().contains(round(event.x()), round(event.y()))) {
                 continue;
+            }
+            if (row.option() instanceof SettingsOption.ColorOption colorOption
+                    && colorPreviewBounds(row).contains(round(event.x()), round(event.y()))) {
+                StandardColorPicker.open(
+                        I18n.get(colorOption.labelKey()),
+                        colorOption.getter().getAsInt(),
+                        value -> {
+                            colorOption.setter().accept(value);
+                            syncColorEditorValue(colorOption);
+                            previewDraft();
+                        });
+                return true;
+            }
+            if (row.option() instanceof SettingsOption.ColorOption
+                    && colorEditors.values().stream().anyMatch(editor -> editor.isMouseOver(event.x(), event.y()))) {
+                for (EditBox colorEditor : colorEditors.values()) {
+                    if (colorEditor.isMouseOver(event.x(), event.y())) {
+                        for (EditBox editor : colorEditors.values()) {
+                            editor.setFocused(editor == colorEditor);
+                        }
+                        colorEditor.mouseClicked(event, doubleClick);
+                        return true;
+                    }
+                }
             }
             activateOption(row, event.x(), event.y());
             return true;
@@ -242,6 +287,11 @@ public final class ChatSettingsOverlay {
         if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
             textEditor.mouseDragged(event, dx, dy);
         }
+        for (EditBox colorEditor : colorEditors.values()) {
+            if (colorEditor.visible && colorEditor.isFocused()) {
+                colorEditor.mouseDragged(event, dx, dy);
+            }
+        }
         if (activeSlider != null) {
             updateSlider(activeSlider, event.x());
         }
@@ -254,6 +304,11 @@ public final class ChatSettingsOverlay {
         }
         if (textEditor != null && textEditor.visible && textEditor.isFocused()) {
             textEditor.mouseReleased(event);
+        }
+        for (EditBox colorEditor : colorEditors.values()) {
+            if (colorEditor.visible && colorEditor.isFocused()) {
+                colorEditor.mouseReleased(event);
+            }
         }
         if (event.button() == 0) {
             activeSlider = null;
@@ -292,6 +347,7 @@ public final class ChatSettingsOverlay {
         pose.pushMatrix();
         pose.translate(0, motionOffsetY);
         layoutTextEditor(layout);
+        layoutColorEditors(layout);
         graphics.fill(0, 0, screenWidth, screenHeight, DIM);
         UiPrimitives.paintBox(graphics, layout.panel(), 7, 1, PANEL, PANEL_BORDER);
         graphics.fill(
@@ -383,13 +439,13 @@ public final class ChatSettingsOverlay {
                             I18n.get(heading.labelKey()),
                             row.bounds().left() + 2,
                             row.bounds().top() + 7,
-                            0xFF8FB8EC);
+                            0xFFD0D0D0);
                     graphics.fill(
                             row.bounds().left(),
                             row.bounds().bottom() - 1,
                             row.bounds().right(),
                             row.bounds().bottom(),
-                            0x553F516A);
+                            0x55606060);
                     continue;
                 }
                 if (row.option() instanceof SettingsOption.TextOption textOption) {
@@ -436,6 +492,12 @@ public final class ChatSettingsOverlay {
                             MUTED);
                 }
                 paintOptionControl(graphics, font, row, mouseX, mouseY);
+                if (row.option() instanceof SettingsOption.ColorOption colorOption) {
+                    EditBox colorEditor = colorEditors.get(colorOption.labelKey());
+                    if (colorEditor != null && colorEditor.visible) {
+                        colorEditor.extractWidgetRenderState(graphics, mouseX, mouseY, 0.0F);
+                    }
+                }
             }
         } finally {
             graphics.disableScissor();
@@ -520,26 +582,8 @@ public final class ChatSettingsOverlay {
             SettingsOption.ColorOption option,
             OptionRow row) {
         int color = option.getter().getAsInt() & 0x00FFFFFF;
-        RichChatBounds swatch = RichChatBounds.ofSize(row.bounds().left() + 7, row.bounds().top() + 25, 40, 14);
+        RichChatBounds swatch = colorPreviewBounds(row);
         UiPrimitives.paintBox(graphics, swatch, 3, 1, 0xFF000000 | color, PANEL_BORDER);
-        paintText(graphics, font, String.format("#%06X", color), swatch.right() + 6, swatch.top() + 3, MUTED);
-        for (int channel = 0; channel < 3; channel++) {
-            RichChatBounds track = row.colorChannels().get(channel);
-            int value = channelValue(color, channel);
-            int knobX = sliderX(value, 0, 255, track);
-            int channelColor = switch (channel) {
-                case 0 -> 0xFFE45B5B;
-                case 1 -> 0xFF65C37A;
-                default -> 0xFF6598E8;
-            };
-            graphics.fill(track.left(), track.top() + 3, track.right(), track.top() + 5, TRACK);
-            graphics.fill(track.left(), track.top() + 3, knobX, track.top() + 5, channelColor);
-            UiTextureAtlas.drawIcon(
-                    graphics,
-                    UiTextureAtlas.Icon.SLIDER_KNOB,
-                    RichChatBounds.ofSize(knobX - 4, track.top(), 8, 8),
-                    TEXT);
-        }
     }
 
     private void paintFooter(
@@ -614,19 +658,8 @@ public final class ChatSettingsOverlay {
             return;
         }
         if (option instanceof SettingsOption.IntOption intOption && row.control().contains(round(mouseX), round(mouseY))) {
-            activeSlider = new ActiveSlider(option, -1, row.control());
+            activeSlider = new ActiveSlider(intOption, row.control());
             updateSlider(activeSlider, mouseX);
-            return;
-        }
-        if (option instanceof SettingsOption.ColorOption) {
-            for (int channel = 0; channel < row.colorChannels().size(); channel++) {
-                RichChatBounds track = row.colorChannels().get(channel);
-                if (track.contains(round(mouseX), round(mouseY))) {
-                    activeSlider = new ActiveSlider(option, channel, track);
-                    updateSlider(activeSlider, mouseX);
-                    return;
-                }
-            }
         }
     }
 
@@ -634,20 +667,10 @@ public final class ChatSettingsOverlay {
         double progress = slider.track().width() <= 1
                 ? 0.0D
                 : Math.clamp((mouseX - slider.track().left()) / slider.track().width(), 0.0D, 1.0D);
-        if (slider.option() instanceof SettingsOption.IntOption option) {
-            int value = option.min() + (int) Math.round(progress * (option.max() - option.min()));
-            option.setter().accept(value);
-            previewDraft();
-            return;
-        }
-        if (slider.option() instanceof SettingsOption.ColorOption option) {
-            int value = Math.clamp((int) Math.round(progress * 255.0D), 0, 255);
-            int color = option.getter().getAsInt() & 0x00FFFFFF;
-            int shift = (2 - slider.channel()) * 8;
-            int next = (color & ~(0xFF << shift)) | (value << shift);
-            option.setter().accept(next);
-            previewDraft();
-        }
+        SettingsOption.IntOption option = slider.option();
+        int value = option.min() + (int) Math.round(progress * (option.max() - option.min()));
+        option.setter().accept(value);
+        previewDraft();
     }
 
     private List<OptionRow> optionRows(Layout layout) {
@@ -663,7 +686,6 @@ public final class ChatSettingsOverlay {
                     layout.optionsViewport().width() - 8,
                     height);
             RichChatBounds control;
-            List<RichChatBounds> channels = List.of();
             if (option instanceof SettingsOption.BooleanOption) {
                 control = RichChatBounds.ofSize(controlRight - 60, y + Math.max(5, (height - 16) / 2), 60, 16);
             } else if (option instanceof SettingsOption.TextOption) {
@@ -675,16 +697,11 @@ public final class ChatSettingsOverlay {
             } else if (option instanceof SettingsOption.IntOption) {
                 control = RichChatBounds.ofSize(controlRight - controlWidth - 48, y + 6, controlWidth, 12);
             } else if (option instanceof SettingsOption.ColorOption) {
-                int trackLeft = controlRight - controlWidth;
-                channels = List.of(
-                        RichChatBounds.ofSize(trackLeft, y + 5, controlWidth, 8),
-                        RichChatBounds.ofSize(trackLeft, y + 19, controlWidth, 8),
-                        RichChatBounds.ofSize(trackLeft, y + 33, controlWidth, 8));
-                control = RichChatBounds.ofSize(trackLeft, y + 4, controlWidth, 40);
+                control = RichChatBounds.ofSize(controlRight - 124, y + 24, 124, 18);
             } else {
                 control = RichChatBounds.ofSize(controlRight, y, 0, 0);
             }
-            rows.add(new OptionRow(option, bounds, control, channels));
+            rows.add(new OptionRow(option, bounds, control));
             y += height + OPTION_GAP;
         }
         return rows;
@@ -722,6 +739,22 @@ public final class ChatSettingsOverlay {
                         value -> appearance.panelBorderWidth = value, 1, 4, SettingsOption.ValueFormat.PIXELS),
                 color("chatupgrade.settings.option.panel_border_color", () -> appearance.panelBorderColor,
                         value -> appearance.panelBorderColor = value),
+                color("chatupgrade.settings.option.surface_separator", () -> appearance.surfaceSeparatorColor,
+                        value -> appearance.surfaceSeparatorColor = value),
+                color("chatupgrade.settings.option.surface_title", () -> appearance.surfaceTitleColor,
+                        value -> appearance.surfaceTitleColor = value),
+                color("chatupgrade.settings.option.surface_muted", () -> appearance.surfaceMutedColor,
+                        value -> appearance.surfaceMutedColor = value),
+                color("chatupgrade.settings.option.surface_restricted", () -> appearance.surfaceRestrictedColor,
+                        value -> appearance.surfaceRestrictedColor = value),
+                color("chatupgrade.settings.option.surface_restricted_hud_background",
+                        () -> appearance.surfaceRestrictedHudBackgroundColor,
+                        value -> appearance.surfaceRestrictedHudBackgroundColor = value),
+                color("chatupgrade.settings.option.surface_restricted_hud_border",
+                        () -> appearance.surfaceRestrictedHudBorderColor,
+                        value -> appearance.surfaceRestrictedHudBorderColor = value),
+                color("chatupgrade.settings.option.surface_resize_grip", () -> appearance.surfaceResizeGripColor,
+                        value -> appearance.surfaceResizeGripColor = value),
                 integer("chatupgrade.settings.option.corner_radius", () -> appearance.cornerRadius,
                         value -> appearance.cornerRadius = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
                 heading("chatupgrade.settings.group.animation"),
@@ -739,6 +772,37 @@ public final class ChatSettingsOverlay {
                         0,
                         100,
                         SettingsOption.ValueFormat.PERCENT),
+                color("chatupgrade.settings.option.message_system_background", () -> appearance.messageSystemBackgroundColor,
+                        value -> appearance.messageSystemBackgroundColor = value),
+                color("chatupgrade.settings.option.message_system_border", () -> appearance.messageSystemBorderColor,
+                        value -> appearance.messageSystemBorderColor = value),
+                color("chatupgrade.settings.option.message_announcement_background",
+                        () -> appearance.messageAnnouncementBackgroundColor,
+                        value -> appearance.messageAnnouncementBackgroundColor = value),
+                color("chatupgrade.settings.option.message_announcement_border",
+                        () -> appearance.messageAnnouncementBorderColor,
+                        value -> appearance.messageAnnouncementBorderColor = value),
+                color("chatupgrade.settings.option.message_error_background", () -> appearance.messageErrorBackgroundColor,
+                        value -> appearance.messageErrorBackgroundColor = value),
+                color("chatupgrade.settings.option.message_error_border", () -> appearance.messageErrorBorderColor,
+                        value -> appearance.messageErrorBorderColor = value),
+                color("chatupgrade.settings.option.message_reply_background", () -> appearance.messageReplyBackgroundColor,
+                        value -> appearance.messageReplyBackgroundColor = value),
+                color("chatupgrade.settings.option.message_reply_border", () -> appearance.messageReplyBorderColor,
+                        value -> appearance.messageReplyBorderColor = value),
+                color("chatupgrade.settings.option.message_deleted_background",
+                        () -> appearance.messageDeletedBackgroundColor,
+                        value -> appearance.messageDeletedBackgroundColor = value),
+                color("chatupgrade.settings.option.message_deleted_border", () -> appearance.messageDeletedBorderColor,
+                        value -> appearance.messageDeletedBorderColor = value),
+                color("chatupgrade.settings.option.message_text", () -> appearance.messageTextColor,
+                        value -> appearance.messageTextColor = value),
+                color("chatupgrade.settings.option.message_system_text", () -> appearance.messageSystemTextColor,
+                        value -> appearance.messageSystemTextColor = value),
+                color("chatupgrade.settings.option.message_reply_text", () -> appearance.messageReplyTextColor,
+                        value -> appearance.messageReplyTextColor = value),
+                color("chatupgrade.settings.option.message_deleted_text", () -> appearance.messageDeletedTextColor,
+                        value -> appearance.messageDeletedTextColor = value),
                 integer("chatupgrade.settings.option.message_gap", () -> appearance.messageGap,
                         value -> appearance.messageGap = value, 0, 16, SettingsOption.ValueFormat.PIXELS),
                 integer("chatupgrade.settings.option.group_gap", () -> appearance.groupGap,
@@ -749,6 +813,10 @@ public final class ChatSettingsOverlay {
                         value -> appearance.showPlayerAvatars = value),
                 bool("chatupgrade.settings.option.avatar_first_line_only", () -> appearance.avatarFirstLineOnly,
                         value -> appearance.avatarFirstLineOnly = value),
+                color("chatupgrade.settings.option.identity_name", () -> appearance.identityNameColor,
+                        value -> appearance.identityNameColor = value),
+                color("chatupgrade.settings.option.identity_avatar_border", () -> appearance.identityAvatarBorderColor,
+                        value -> appearance.identityAvatarBorderColor = value),
                 bool("chatupgrade.settings.option.double_line", () -> appearance.doubleLineLayout,
                         value -> appearance.doubleLineLayout = value),
                 bool("chatupgrade.settings.option.message_bubbles", () -> appearance.messageBubbles,
@@ -763,6 +831,44 @@ public final class ChatSettingsOverlay {
                         value -> appearance.bubbleBorderWidth = value, 1, 4, SettingsOption.ValueFormat.PIXELS),
                 color("chatupgrade.settings.option.bubble_border_color", () -> appearance.bubbleBorderColor,
                         value -> appearance.bubbleBorderColor = value),
+                color("chatupgrade.settings.option.media_card_background", () -> appearance.mediaCardBackgroundColor,
+                        value -> appearance.mediaCardBackgroundColor = value),
+                color("chatupgrade.settings.option.media_card_border", () -> appearance.mediaCardBorderColor,
+                        value -> appearance.mediaCardBorderColor = value),
+                color("chatupgrade.settings.option.media_background", () -> appearance.mediaBackgroundColor,
+                        value -> appearance.mediaBackgroundColor = value),
+                color("chatupgrade.settings.option.media_loading_background", () -> appearance.mediaLoadingBackgroundColor,
+                        value -> appearance.mediaLoadingBackgroundColor = value),
+                color("chatupgrade.settings.option.media_pending_background", () -> appearance.mediaPendingBackgroundColor,
+                        value -> appearance.mediaPendingBackgroundColor = value),
+                color("chatupgrade.settings.option.media_failure_background", () -> appearance.mediaFailureBackgroundColor,
+                        value -> appearance.mediaFailureBackgroundColor = value),
+                color("chatupgrade.settings.option.media_text", () -> appearance.mediaTextColor,
+                        value -> appearance.mediaTextColor = value),
+                color("chatupgrade.settings.option.media_muted", () -> appearance.mediaMutedColor,
+                        value -> appearance.mediaMutedColor = value),
+                color("chatupgrade.settings.option.media_failure_text", () -> appearance.mediaFailureTextColor,
+                        value -> appearance.mediaFailureTextColor = value),
+                color("chatupgrade.settings.option.media_control_background", () -> appearance.mediaControlBackgroundColor,
+                        value -> appearance.mediaControlBackgroundColor = value),
+                color("chatupgrade.settings.option.media_control_hover", () -> appearance.mediaControlHoverBackgroundColor,
+                        value -> appearance.mediaControlHoverBackgroundColor = value),
+                color("chatupgrade.settings.option.media_control_active", () -> appearance.mediaControlActiveBackgroundColor,
+                        value -> appearance.mediaControlActiveBackgroundColor = value),
+                color("chatupgrade.settings.option.media_progress_track", () -> appearance.mediaProgressTrackColor,
+                        value -> appearance.mediaProgressTrackColor = value),
+                color("chatupgrade.settings.option.media_progress_fill", () -> appearance.mediaProgressFillColor,
+                        value -> appearance.mediaProgressFillColor = value),
+                color("chatupgrade.settings.option.media_scrim", () -> appearance.mediaScrimColor,
+                        value -> appearance.mediaScrimColor = value),
+                color("chatupgrade.settings.option.media_emoji_loading", () -> appearance.mediaEmojiLoadingBackgroundColor,
+                        value -> appearance.mediaEmojiLoadingBackgroundColor = value),
+                color("chatupgrade.settings.option.scrollbar_thumb", () -> appearance.scrollbarThumbColor,
+                        value -> appearance.scrollbarThumbColor = value),
+                color("chatupgrade.settings.option.scrollbar_track", () -> appearance.scrollbarTrackColor,
+                        value -> appearance.scrollbarTrackColor = value),
+                color("chatupgrade.settings.option.scrollbar_new_message", () -> appearance.scrollbarNewMessageThumbColor,
+                        value -> appearance.scrollbarNewMessageThumbColor = value),
                 bool("chatupgrade.settings.option.split_own_messages", () -> appearance.splitOwnMessages,
                         value -> appearance.splitOwnMessages = value),
                 enumeration(
@@ -981,6 +1087,93 @@ public final class ChatSettingsOverlay {
         } finally {
             syncingTextEditor = false;
         }
+    }
+
+    private void createColorEditor(Font font, SettingsOption.ColorOption option) {
+        if (font == null || colorEditors.containsKey(option.labelKey())) {
+            return;
+        }
+        EditBox editor = new EditBox(
+                font,
+                0,
+                0,
+                124,
+                18,
+                Component.translatable(option.labelKey()));
+        editor.setMaxLength(7);
+        editor.setValue(formatColor(option.getter().getAsInt()));
+        editor.setResponder(value -> {
+            Integer parsed = parseColor(value);
+            if (parsed != null) {
+                option.setter().accept(parsed);
+                previewDraft();
+            }
+        });
+        editor.setVisible(false);
+        colorEditors.put(option.labelKey(), editor);
+    }
+
+    private void layoutColorEditors(Layout layout) {
+        for (EditBox editor : colorEditors.values()) {
+            editor.setVisible(false);
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (draft == null || minecraft == null) {
+            return;
+        }
+        for (OptionRow row : optionRows(layout)) {
+            if (!(row.option() instanceof SettingsOption.ColorOption option)
+                    || !intersects(row.bounds(), layout.optionsViewport())) {
+                continue;
+            }
+            createColorEditor(minecraft.font, option);
+            EditBox editor = colorEditors.get(option.labelKey());
+            if (editor == null) {
+                continue;
+            }
+            editor.setRectangle(row.control().width(), row.control().height(), row.control().left(), row.control().top());
+            editor.setVisible(true);
+            syncColorEditorValue(option);
+        }
+        for (EditBox editor : colorEditors.values()) {
+            if (!editor.visible) {
+                editor.setFocused(false);
+            }
+        }
+    }
+
+    private void syncColorEditorValue(SettingsOption.ColorOption option) {
+        EditBox editor = colorEditors.get(option.labelKey());
+        if (editor == null || editor.isFocused()) {
+            return;
+        }
+        editor.setValue(formatColor(option.getter().getAsInt()));
+    }
+
+    private static String formatColor(int color) {
+        return String.format("#%06X", color & 0x00FFFFFF);
+    }
+
+    private static @Nullable Integer parseColor(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        if (normalized.startsWith("#")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.length() != 6) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(normalized, 16) & 0x00FFFFFF;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static RichChatBounds colorPreviewBounds(OptionRow row) {
+        return RichChatBounds.ofSize(row.bounds().left() + 7, row.bounds().top() + 25, 40, 14);
     }
 
     private void setTextEditorFocused(boolean focused) {
@@ -1296,10 +1489,9 @@ public final class ChatSettingsOverlay {
     private record OptionRow(
             SettingsOption option,
             RichChatBounds bounds,
-            RichChatBounds control,
-            List<RichChatBounds> colorChannels) {
+            RichChatBounds control) {
     }
 
-    private record ActiveSlider(SettingsOption option, int channel, RichChatBounds track) {
+    private record ActiveSlider(SettingsOption.IntOption option, RichChatBounds track) {
     }
 }

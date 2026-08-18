@@ -21,6 +21,7 @@ import com.chat.upgrade.client.media.image.ImageLoader;
 import com.chat.upgrade.client.media.model.InlineResourceType;
 import com.chat.upgrade.client.media.model.RichAttachment;
 import com.chat.upgrade.client.media.video.VideoLoader;
+import com.chat.upgrade.client.ui.chat.ChatMessageClearService;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatPipelineGate;
 import com.chat.upgrade.client.ui.chat.ChatUpgradeChatRenderState;
 import com.chat.upgrade.client.ui.chat.InlineEmojiCodec;
@@ -37,7 +38,6 @@ import com.chat.upgrade.client.ui.chat.state.RichChatMessageSource;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjection;
 import com.chat.upgrade.client.ui.chat.state.RichChatProjectionCoordinator;
 import com.chat.upgrade.client.ui.chat.viewport.RichChatViewport;
-
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
@@ -184,6 +184,11 @@ public abstract class ChatComponentMixin implements UpgradeChatHudSync {
     @Inject(method = { "addClientSystemMessage", "addServerSystemMessage" }, at = @At("TAIL"))
     private void chatupgrade$insertPhantomLinesSystem(Component message, CallbackInfo ci) {
         chatupgrade$insertPhantoms();
+    }
+
+    @Inject(method = "clearMessages", at = @At("TAIL"))
+    private void chatupgrade$clearRichMessagesAndHistory(boolean clearRecentChat, CallbackInfo ci) {
+        ChatMessageClearService.clearMessagesAndHistory();
     }
 
     @Inject(method = "scrollChat", at = @At("HEAD"), cancellable = true)

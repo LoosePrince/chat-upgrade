@@ -72,18 +72,34 @@ public final class ImageLoader {
     }
 
     /**
-     * Releases every registered chat-image texture and clears the URL cache. Call
-     * when GUI scale or window size
-     * changes so subsequent loads match the new logical→screen mapping.
+     * Releases loaded chat-image textures. Failed entries remain cached as a stable
+     * negative result; only an explicit reload starts another request.
      */
     public static void invalidateTextureCache() {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null)
             return;
         var textures = mc.getTextureManager();
-        for (ImageEntry e : new ArrayList<>(CACHE.values())) {
-            if (e.isLoaded()) {
-                e.forEachRegisteredTexture(textures::release);
+        CACHE.entrySet().removeIf(entry -> {
+            ImageEntry image = entry.getValue();
+            if (!image.isLoaded()) {
+                return false;
+            }
+            image.forEachRegisteredTexture(textures::release);
+            return true;
+        });
+        clearCompatLayoutRegistrations();
+        RichChatViewport.invalidateAll();
+    }
+
+    public static void clearRuntimeCache() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) {
+            var textures = mc.getTextureManager();
+            for (ImageEntry image : new ArrayList<>(CACHE.values())) {
+                if (image.isLoaded()) {
+                    image.forEachRegisteredTexture(textures::release);
+                }
             }
         }
         CACHE.clear();
@@ -92,9 +108,8 @@ public final class ImageLoader {
     }
 
     /**
-     * Returns the entry for the given URL, starting a load if not already cached.
-     * Failed loads are not kept in {@link #CACHE}; the next call starts a new
-     * attempt.
+     * Returns the cached entry and starts a load only when the URL has no prior
+     * result. Failed entries are retained until {@link #forceReload(String)}.
      */
     public static ImageEntry getOrLoad(String url) {
         return CACHE.computeIfAbsent(url, u -> {
@@ -327,13 +342,11 @@ public final class ImageLoader {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
             RichChatViewport.invalidateMedia(url);
-            CACHE.remove(url, entry);
             return;
         }
         mc.execute(() -> {
             notifyCompatLayoutForUrl(url);
             RichChatViewport.invalidateMedia(url);
-            CACHE.remove(url, entry);
         });
     }
 
